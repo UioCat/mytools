@@ -81,11 +81,15 @@ public struct ClipboardRowView: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, isImage ? 14 : 12)
-            .background(rowBackground)
+            .background(rowBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(selectedOverlay)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 3)
 
-            Divider()
-                .padding(.leading, 24)
+            Rectangle()
+                .fill(Color.primary.opacity(0.11))
+                .frame(height: 1)
+                .padding(.horizontal, 28)
         }
     }
 
@@ -98,8 +102,9 @@ public struct ClipboardRowView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3))
                 .overlay(
                     RoundedRectangle(cornerRadius: 3)
-                        .stroke(.quaternary, lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
                 )
+                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 8)
         } else {
             Image(systemName: iconName)
                 .font(.system(size: 42, weight: .regular))
@@ -124,16 +129,22 @@ public struct ClipboardRowView: View {
     }
 
     private var rowBackground: some ShapeStyle {
-        isSelected ? Color.accentColor.opacity(0.08) : Color.clear
+        isSelected ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color.white.opacity(0.001))
     }
 
     @ViewBuilder
     private var selectedOverlay: some View {
         if isSelected {
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.accentColor, lineWidth: 2)
-                .padding(.horizontal, 2)
-                .padding(.vertical, 2)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.85), Color.white.opacity(0.58)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    lineWidth: 2
+                )
+                .shadow(color: Color.accentColor.opacity(0.22), radius: 9, x: 0, y: 3)
         }
     }
 
@@ -228,6 +239,7 @@ private struct StatusLabel: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(.quaternary, in: Capsule())
+            .background(.thinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.24), lineWidth: 1))
     }
 }

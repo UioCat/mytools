@@ -12,14 +12,21 @@ public final class MainPanelController {
     public func show() {
         if panel == nil {
             let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
+                contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
                 styleMask: [.titled, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
             panel.titleVisibility = .hidden
             panel.titlebarAppearsTransparent = true
-            panel.contentView = NSHostingView(rootView: rootView)
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+
+            let hostingView = NSHostingView(rootView: rootView)
+            hostingView.wantsLayer = true
+            hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+            panel.contentView = hostingView
             self.panel = panel
         }
 

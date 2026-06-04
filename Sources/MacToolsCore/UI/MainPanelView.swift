@@ -33,7 +33,7 @@ public enum ClipboardPanelMode: CaseIterable {
         case .all:
             return "doc.on.clipboard"
         case .text:
-            return "textformat"
+            return "text.justify.leading"
         case .images:
             return "photo"
         case .folders:
@@ -82,31 +82,46 @@ public struct MainPanelView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(.horizontal, 18)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(glassHighlight)
 
-            modeSwitcher
-                .padding(.horizontal, 6)
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, 22)
+                    .padding(.top, 20)
+                    .padding(.bottom, 14)
 
-            Divider()
+                modeSwitcher
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
 
-            ClipboardListView(
-                items: filteredItems,
-                selectedItemID: selectedItem?.id,
-                mode: mode,
-                onSelect: selectAndPaste,
-                onFavoriteToggle: onFavoriteToggle,
-                onDelete: onDelete
-            )
-                .overlay(alignment: .bottomTrailing) {
-                    keyboardActions
-                        .frame(width: 1, height: 1)
-                        .opacity(0.01)
+                Rectangle()
+                    .fill(Color.white.opacity(0.22))
+                    .frame(height: 1)
+
+                ClipboardListView(
+                    items: filteredItems,
+                    selectedItemID: selectedItem?.id,
+                    mode: mode,
+                    onSelect: selectAndPaste,
+                    onFavoriteToggle: onFavoriteToggle,
+                    onDelete: onDelete
+                )
+                    .overlay(alignment: .bottomTrailing) {
+                        keyboardActions
+                            .frame(width: 1, height: 1)
+                            .opacity(0.01)
+                    }
                 }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.42), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 28, x: 0, y: 18)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
         .frame(width: 900, height: 620)
         .onChange(of: items) { _ in
@@ -126,28 +141,52 @@ public struct MainPanelView: View {
                 Image(systemName: "doc.on.clipboard.fill")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 7))
+                    .frame(width: 34, height: 34)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.accentColor, Color.accentColor.opacity(0.72)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                    )
 
                 Text("剪贴板")
                     .font(.system(size: 22, weight: .semibold))
             }
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
                 .frame(height: 28)
+                .frame(width: 1)
 
             TextField("搜索...", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .regular))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.26), lineWidth: 1)
+                )
 
             Button {
                 onClear()
             } label: {
                 Label("清空", systemImage: "trash")
                     .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
             }
             .buttonStyle(.plain)
             .foregroundStyle(clearButtonColor)
+            .background(.thinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
             .disabled(items.filter { !$0.isFavorite }.isEmpty)
         }
     }
@@ -167,16 +206,23 @@ public struct MainPanelView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(mode == itemMode ? Color.primary : Color.secondary)
                 .background(
-                    mode == itemMode ? Color(nsColor: .controlBackgroundColor) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8)
+                    mode == itemMode ? Color.white.opacity(0.34) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
+                .overlay(tabBorder(isSelected: mode == itemMode))
             }
         }
         .padding(.bottom, 2)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(Color.white.opacity(0.24), lineWidth: 1)
+        )
     }
 
     private var keyboardActions: some View {
@@ -229,6 +275,30 @@ public struct MainPanelView: View {
 
     private var clearButtonColor: Color {
         items.contains(where: { !$0.isFavorite }) ? Color.secondary : Color.secondary.opacity(0.45)
+    }
+
+    private var glassHighlight: some View {
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.32), lineWidth: 1)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.28), Color.white.opacity(0.05), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+    }
+
+    @ViewBuilder
+    private func tabBorder(isSelected: Bool) -> some View {
+        if isSelected {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                .shadow(color: Color.white.opacity(0.22), radius: 5, x: 0, y: 1)
+        }
     }
 
     private func selectAndPaste(_ item: ClipboardItem) {

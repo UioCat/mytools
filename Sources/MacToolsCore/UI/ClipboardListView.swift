@@ -74,7 +74,9 @@ public struct ClipboardListView: View {
                         }
                     }
                 }
+                .padding(.vertical, 8)
             }
+            .background(Color.clear)
             .onChange(of: selectedItemID) { id in
                 guard let id else {
                     return
