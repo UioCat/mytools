@@ -44,6 +44,7 @@ final class FileCacheTests: XCTestCase {
 
     func testRemoveAllRemovesRootAndAllowsMissingRoot() throws {
         let root = makeTemporaryRoot()
+        defer { removeTemporaryRoot(root) }
         let cache = FileCache(rootDirectory: root)
         _ = try cache.store(data: Data([1, 2, 3]), preferredExtension: "png")
 
