@@ -36,7 +36,7 @@ public struct ClipboardListView: View {
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 0) {
+                LazyVStack(spacing: 10) {
                     if items.isEmpty {
                         emptyState
                     } else {
@@ -74,7 +74,7 @@ public struct ClipboardListView: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 2)
             }
             .background(Color.clear)
             .onChange(of: selectedItemID) { id in
@@ -93,13 +93,14 @@ public struct ClipboardListView: View {
         VStack(spacing: 10) {
             Image(systemName: "tray")
                 .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.72))
 
             Text("没有匹配的剪贴板内容")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.72))
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 120)
+        .padding(.vertical, 72)
+        .liquidGlassModule(cornerRadius: 24)
     }
 }

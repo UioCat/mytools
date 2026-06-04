@@ -27,70 +27,60 @@ public struct ClipboardRowView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(item.displayTitle)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(.primary)
-                        .lineLimit(isImage ? 1 : 2)
+        VStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(item.displayTitle)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(isImage ? 1 : 2)
 
-                    Spacer(minLength: 12)
+                Spacer(minLength: 12)
 
-                    if !isImage {
-                        Text(primaryMetric)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Text("\(index)")
+                if !isImage {
+                    Text(primaryMetric)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, alignment: .trailing)
+                        .foregroundStyle(Color.white.opacity(0.72))
+                        .lineLimit(1)
                 }
+
+                Text("\(index)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.68))
+                    .frame(width: 24, alignment: .trailing)
+            }
+
+            if isImage {
+                imagePreview
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 190)
+            }
+
+            HStack(spacing: 8) {
+                Text(relativeCreatedAt)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.66))
+
+                if item.isPinned {
+                    StatusLabel(title: "置顶")
+                }
+
+                if item.isFavorite {
+                    StatusLabel(title: "收藏")
+                }
+
+                Spacer(minLength: 12)
 
                 if isImage {
-                    imagePreview
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 190)
-                }
-
-                HStack(spacing: 8) {
-                    Text(relativeCreatedAt)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    if item.isPinned {
-                        StatusLabel(title: "置顶")
-                    }
-
-                    if item.isFavorite {
-                        StatusLabel(title: "收藏")
-                    }
-
-                    Spacer(minLength: 12)
-
-                    if isImage {
-                        Text(primaryMetric)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(primaryMetric)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                        .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, isImage ? 14 : 12)
-            .background(rowBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(selectedOverlay)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 3)
-
-            Rectangle()
-                .fill(Color.primary.opacity(0.11))
-                .frame(height: 1)
-                .padding(.horizontal, 28)
         }
+        .padding(.horizontal, 24)
+        .padding(.vertical, isImage ? 16 : 14)
+        .liquidGlassModule(cornerRadius: 24, isSelected: isSelected)
     }
 
     @ViewBuilder
@@ -102,13 +92,13 @@ public struct ClipboardRowView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3))
                 .overlay(
                     RoundedRectangle(cornerRadius: 3)
-                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.26), lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(0.26), radius: 14, x: 0, y: 8)
         } else {
             Image(systemName: iconName)
                 .font(.system(size: 42, weight: .regular))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.64))
         }
     }
 
@@ -126,30 +116,6 @@ public struct ClipboardRowView: View {
 
     private var isImage: Bool {
         item.kind == .imageData || item.kind == .imageFile
-    }
-
-    private var rowBackground: some ShapeStyle {
-        isSelected ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(Color.white.opacity(0.001))
-    }
-
-    @ViewBuilder
-    private var selectedOverlay: some View {
-        if isSelected {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.cyan.opacity(0.52), Color.indigo.opacity(0.32), Color.white.opacity(0.56)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 2
-                        )
-                )
-                .shadow(color: Color.cyan.opacity(0.16), radius: 10, x: 0, y: 4)
-        }
     }
 
     private var primaryMetric: String {
@@ -240,10 +206,11 @@ private struct StatusLabel: View {
     var body: some View {
         Text(title)
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.white.opacity(0.76))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(.thinMaterial, in: Capsule())
+            .background(Color.black.opacity(0.24), in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.24), lineWidth: 1))
     }
 }

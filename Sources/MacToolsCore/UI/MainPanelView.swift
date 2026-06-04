@@ -86,44 +86,28 @@ public struct MainPanelView: View {
     }
 
     public var body: some View {
-        ZStack {
-            auroraGlassBackground
+        VStack(spacing: 12) {
+            header
 
-            VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 24)
-                    .padding(.top, 20)
-                    .padding(.bottom, 14)
+            modeSwitcher
 
-                modeSwitcher
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 8)
-
-                Rectangle()
-                    .fill(Color.white.opacity(0.22))
-                    .frame(height: 1)
-
-                ClipboardListView(
-                    items: filteredItems,
-                    selectedItemID: selectedItem?.id,
-                    mode: mode,
-                    onSelect: selectAndPaste,
-                    onFavoriteToggle: onFavoriteToggle,
-                    onDelete: onDelete
-                )
-                    .overlay(alignment: .bottomTrailing) {
-                        keyboardActions
-                            .frame(width: 1, height: 1)
-                            .opacity(0.01)
-                    }
+            ClipboardListView(
+                items: filteredItems,
+                selectedItemID: selectedItem?.id,
+                mode: mode,
+                onSelect: selectAndPaste,
+                onFavoriteToggle: onFavoriteToggle,
+                onDelete: onDelete
+            )
+                .overlay(alignment: .bottomTrailing) {
+                    keyboardActions
+                        .frame(width: 1, height: 1)
+                        .opacity(0.01)
                 }
         }
+        .padding(18)
+        .liquidGlassPanel(cornerRadius: 30)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.42), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 28, x: 0, y: 18)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
         .frame(
             minWidth: 720,
@@ -151,18 +135,11 @@ public struct MainPanelView: View {
         HStack(spacing: 14) {
             TextField("搜索...", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .regular))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .background(
-                    Color(nsColor: .windowBackgroundColor).opacity(0.18),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.34), lineWidth: 1)
-                )
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 14)
+                .liquidGlassModule(cornerRadius: 24)
                 .onSubmit {
                     performSelectedAction(.copyAndPaste)
                 }
@@ -172,20 +149,18 @@ public struct MainPanelView: View {
             } label: {
                 Label("清空", systemImage: "trash")
                     .font(.system(size: 13, weight: .medium))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 13)
             }
             .buttonStyle(.plain)
             .foregroundStyle(clearButtonColor)
-            .background(.thinMaterial, in: Capsule())
-            .background(Color(nsColor: .windowBackgroundColor).opacity(0.16), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.34), lineWidth: 1))
+            .liquidGlassModule(cornerRadius: 22)
             .disabled(items.filter { !$0.isFavorite }.isEmpty)
         }
     }
 
     private var modeSwitcher: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             ForEach(ClipboardPanelMode.allCases, id: \.self) { itemMode in
                 Button {
                     mode = itemMode
@@ -198,28 +173,14 @@ public struct MainPanelView: View {
                             .font(.system(size: 15, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(height: 46)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(mode == itemMode ? Color.primary : Color.secondary)
-                .background(
-                    mode == itemMode ? Color.white.opacity(0.28) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                )
-                .overlay(tabBorder(isSelected: mode == itemMode))
+                .foregroundStyle(mode == itemMode ? Color.white : Color.white.opacity(0.68))
+                .liquidGlassModule(cornerRadius: 20, isSelected: mode == itemMode)
             }
         }
-        .padding(.bottom, 2)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .background(
-            Color(nsColor: .windowBackgroundColor).opacity(0.14),
-            in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(Color.white.opacity(0.30), lineWidth: 1)
-        )
     }
 
     private var keyboardActions: some View {
@@ -271,70 +232,7 @@ public struct MainPanelView: View {
     }
 
     private var clearButtonColor: Color {
-        items.contains(where: { !$0.isFavorite }) ? Color.secondary : Color.secondary.opacity(0.45)
-    }
-
-    private var auroraGlassBackground: some View {
-        RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.24))
-            )
-            .overlay(auroraRefraction)
-            .overlay(glassHighlight)
-    }
-
-    private var auroraRefraction: some View {
-        RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.cyan.opacity(0.16),
-                        Color.clear,
-                        Color.indigo.opacity(0.13)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .blendMode(.screen)
-    }
-
-    private var glassHighlight: some View {
-        RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .strokeBorder(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.58),
-                        Color.cyan.opacity(0.22),
-                        Color.indigo.opacity(0.20),
-                        Color.white.opacity(0.26)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
-            .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.24), Color.white.opacity(0.08), Color.clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            )
-    }
-
-    @ViewBuilder
-    private func tabBorder(isSelected: Bool) -> some View {
-        if isSelected {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.48), lineWidth: 1)
-                .shadow(color: Color.white.opacity(0.22), radius: 5, x: 0, y: 1)
-        }
+        items.contains(where: { !$0.isFavorite }) ? Color.white.opacity(0.82) : Color.white.opacity(0.36)
     }
 
     private func selectAndPaste(_ item: ClipboardItem) {
