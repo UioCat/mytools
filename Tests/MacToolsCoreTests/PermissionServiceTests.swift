@@ -47,6 +47,17 @@ final class PermissionServiceTests: XCTestCase {
         XCTAssertTrue(summary.canUseSuperRightClick)
         XCTAssertEqual(summary.missingPermissions, [])
     }
+
+    func testPermissionSpecificSystemSettingsURLs() throws {
+        XCTAssertEqual(
+            PermissionService.systemSettingsURL(for: .accessibility),
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        )
+        XCTAssertEqual(
+            PermissionService.systemSettingsURL(for: .inputMonitoring),
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+        )
+    }
 }
 
 private struct FakePermissionChecker: PermissionChecking {

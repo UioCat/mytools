@@ -5,15 +5,18 @@ public struct SettingsView: View {
     public let settings: AppSettings
     public let permissionSummary: PermissionSummary
     public let openSystemSettings: () -> Void
+    public let openPermissionSettings: (AppPermission) -> Void
 
     public init(
         settings: AppSettings,
         permissionSummary: PermissionSummary,
-        openSystemSettings: @escaping () -> Void
+        openSystemSettings: @escaping () -> Void,
+        openPermissionSettings: @escaping (AppPermission) -> Void = { _ in }
     ) {
         self.settings = settings
         self.permissionSummary = permissionSummary
         self.openSystemSettings = openSystemSettings
+        self.openPermissionSettings = openPermissionSettings
     }
 
     public var body: some View {
@@ -46,11 +49,23 @@ public struct SettingsView: View {
                     }
 
                     SettingsSection(title: "权限", iconName: "lock.shield") {
-                        StatusRow(title: "辅助功能", isEnabled: permissionSummary.hasAccessibility)
-                        StatusRow(title: "输入监控", isEnabled: permissionSummary.hasInputMonitoring)
-                        StatusRow(
+                        PermissionStatusRow(
+                            title: "辅助功能",
+                            isEnabled: permissionSummary.hasAccessibility,
+                            permission: .accessibility,
+                            openPermissionSettings: openPermissionSettings
+                        )
+                        PermissionStatusRow(
+                            title: "输入监控",
+                            isEnabled: permissionSummary.hasInputMonitoring,
+                            permission: .inputMonitoring,
+                            openPermissionSettings: openPermissionSettings
+                        )
+                        PermissionStatusRow(
                             title: "超级右键",
-                            isEnabled: permissionSummary.canUseSuperRightClick
+                            isEnabled: permissionSummary.canUseSuperRightClick,
+                            permission: .accessibility,
+                            openPermissionSettings: openPermissionSettings
                         )
                     }
 
@@ -157,5 +172,43 @@ private struct StatusRow: View {
 
     var body: some View {
         SettingsRow(title: title, value: isEnabled ? "已允许" : "未授权")
+    }
+}
+
+private struct PermissionStatusRow: View {
+    let title: String
+    let isEnabled: Bool
+    let permission: AppPermission
+    let openPermissionSettings: (AppPermission) -> Void
+
+    var body: some View {
+        if isEnabled {
+            SettingsRow(title: title, value: "已允许")
+        } else {
+            Button {
+                openPermissionSettings(permission)
+            } label: {
+                HStack(spacing: 12) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Text("去授权")
+                            .font(.system(size: 13, weight: .medium))
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.cyan.opacity(0.86))
+                    .lineLimit(1)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 }

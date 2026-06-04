@@ -59,7 +59,8 @@ struct RuntimeSettingsView: View {
         SettingsView(
             settings: settings,
             permissionSummary: permissionSummary,
-            openSystemSettings: permissionService.openSystemSettings
+            openSystemSettings: permissionService.openSystemSettings,
+            openPermissionSettings: permissionService.openSystemSettings(for:)
         )
         .onAppear {
             permissionSummary = permissionService.summary()

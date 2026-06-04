@@ -65,15 +65,30 @@ public final class PermissionService {
     }
 
     public func openSystemSettings() {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ) else {
+        openSystemSettings(for: .accessibility)
+    }
+
+    public func openSystemSettings(for permission: AppPermission) {
+        guard let url = Self.systemSettingsURL(for: permission) else {
             return
         }
 
         #if canImport(AppKit)
         NSWorkspace.shared.open(url)
         #endif
+    }
+
+    public static func systemSettingsURL(for permission: AppPermission) -> URL? {
+        switch permission {
+        case .accessibility:
+            return URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            )
+        case .inputMonitoring:
+            return URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+            )
+        }
     }
 }
 
