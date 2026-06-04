@@ -105,6 +105,18 @@ public final class ClipboardRepository {
         }
     }
 
+    public func delete(id: UUID) throws {
+        try database.writer.write { db in
+            try db.execute(
+                sql: """
+                DELETE FROM clipboard_items
+                WHERE id = ?
+                """,
+                arguments: [id.uuidString]
+            )
+        }
+    }
+
     public func markUsed(id: UUID, at date: Date) throws {
         try database.writer.write { db in
             try db.execute(

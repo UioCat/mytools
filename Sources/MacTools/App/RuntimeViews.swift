@@ -11,16 +11,26 @@ final class PanelDismissHandler {
 
 struct RuntimeMainPanelView: View {
     @ObservedObject var model: ClipboardPanelModel
+    let onCopy: (ClipboardItem) -> Void
+    let onCopyAndPaste: (ClipboardItem) -> Void
     let onDismiss: () -> Void
 
     var body: some View {
         MainPanelView(
             items: model.items,
             onSelect: { item, action in
-                model.perform(action, on: item)
+                switch action {
+                case .copy:
+                    onCopy(item)
+                case .copyAndPaste:
+                    onCopyAndPaste(item)
+                }
             },
             onFavoriteToggle: { item in
                 model.toggleFavorite(item)
+            },
+            onDelete: { item in
+                model.delete(item)
             },
             onDismiss: onDismiss
         )

@@ -46,12 +46,31 @@ final class ClipboardPanelModel: ObservableObject {
         }
     }
 
+    func copy(_ item: ClipboardItem) throws {
+        try pasteActionService.copy(item)
+        try repository.markUsed(id: item.id, at: Date())
+        refresh()
+    }
+
+    func paste() {
+        pasteActionService.paste()
+    }
+
     func toggleFavorite(_ item: ClipboardItem) {
         do {
             try repository.setFavorite(id: item.id, isFavorite: !item.isFavorite)
             refresh()
         } catch {
             logger.error("favorite toggle failed: \(error)")
+        }
+    }
+
+    func delete(_ item: ClipboardItem) {
+        do {
+            try repository.delete(id: item.id)
+            refresh()
+        } catch {
+            logger.error("clipboard delete failed: \(error)")
         }
     }
 }

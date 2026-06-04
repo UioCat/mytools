@@ -99,6 +99,21 @@ final class ClipboardRepositoryTests: XCTestCase {
         XCTAssertTrue(favorites[0].isFavorite)
     }
 
+    func testDeleteRemovesClipboardItem() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let item = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000013")!,
+            title: "delete me",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+
+        try repository.upsert(item)
+        try repository.delete(id: item.id)
+
+        XCTAssertTrue(try repository.search("", limit: 20).isEmpty)
+    }
+
     func testMarkUsedUpdatesLastUsedAtAndIncrementsUseCount() throws {
         let database = try ClipboardDatabase.inMemory()
         let repository = ClipboardRepository(database: database)

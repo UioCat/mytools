@@ -14,6 +14,7 @@ final class AppEnvironment {
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
     private let mainPanelDismissHandler = PanelDismissHandler()
     private var clipboardTimer: Timer?
+    private var appBeforePanel: NSRunningApplication?
 
     private lazy var clipboardModel = ClipboardPanelModel(
         repository: repository,
@@ -25,6 +26,12 @@ final class AppEnvironment {
     lazy var mainPanel = MainPanelController(
         rootView: RuntimeMainPanelView(
             model: clipboardModel,
+            onCopy: { [weak self] item in
+                self?.copyFromPanel(item)
+            },
+            onCopyAndPaste: { [weak self] item in
+                self?.pasteFromPanel(item)
+            },
             onDismiss: { [mainPanelDismissHandler] in
                 mainPanelDismissHandler.dismiss()
             }
@@ -106,6 +113,7 @@ final class AppEnvironment {
     }
 
     func openMainPanel() {
+        captureFrontmostApplicationBeforePanel()
         clipboardModel.refresh()
         mainPanel.show()
     }
@@ -129,6 +137,39 @@ final class AppEnvironment {
             clipboardModel.refresh()
         } catch {
             logger.error("clipboard poll failed: \(error)")
+        }
+    }
+
+    private func captureFrontmostApplicationBeforePanel() {
+        let frontmostApplication = NSWorkspace.shared.frontmostApplication
+        let ownProcessIdentifier = ProcessInfo.processInfo.processIdentifier
+        guard frontmostApplication?.processIdentifier != ownProcessIdentifier else {
+            return
+        }
+
+        appBeforePanel = frontmostApplication
+    }
+
+    private func copyFromPanel(_ item: ClipboardItem) {
+        do {
+            try clipboardModel.copy(item)
+        } catch {
+            logger.error("clipboard copy failed: \(error)")
+        }
+    }
+
+    private func pasteFromPanel(_ item: ClipboardItem) {
+        do {
+            try clipboardModel.copy(item)
+        } catch {
+            logger.error("clipboard copy before paste failed: \(error)")
+            return
+        }
+
+        mainPanel.hide()
+        appBeforePanel?.activate(options: [.activateIgnoringOtherApps])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.clipboardModel.paste()
         }
     }
 

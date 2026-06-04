@@ -37,6 +37,10 @@ public final class PasteActionService {
 
     public func copyAndPaste(_ item: ClipboardItem) throws {
         try copy(item)
+        paste()
+    }
+
+    public func paste() {
         eventSender.sendPasteShortcut()
     }
 }

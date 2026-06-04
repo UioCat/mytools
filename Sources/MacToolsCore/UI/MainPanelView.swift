@@ -28,12 +28,14 @@ public struct MainPanelView: View {
     public let items: [ClipboardItem]
     public let onSelect: (ClipboardItem, ClipboardSelectionAction) -> Void
     public let onFavoriteToggle: (ClipboardItem) -> Void
+    public let onDelete: (ClipboardItem) -> Void
     public let onDismiss: () -> Void
 
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
         self.items = items
         self.onSelect = { item, _ in onSelect(item) }
         self.onFavoriteToggle = { _ in }
+        self.onDelete = { _ in }
         self.onDismiss = {}
     }
 
@@ -41,11 +43,13 @@ public struct MainPanelView: View {
         items: [ClipboardItem],
         onSelect: @escaping (ClipboardItem, ClipboardSelectionAction) -> Void,
         onFavoriteToggle: @escaping (ClipboardItem) -> Void = { _ in },
+        onDelete: @escaping (ClipboardItem) -> Void = { _ in },
         onDismiss: @escaping () -> Void = {}
     ) {
         self.items = items
         self.onSelect = onSelect
         self.onFavoriteToggle = onFavoriteToggle
+        self.onDelete = onDelete
         self.onDismiss = onDismiss
     }
 
@@ -65,8 +69,10 @@ public struct MainPanelView: View {
             ClipboardListView(
                 items: filteredItems,
                 selectedItemID: selectedItem?.id,
+                mode: mode,
                 onSelect: selectAndPaste,
-                onFavoriteToggle: onFavoriteToggle
+                onFavoriteToggle: onFavoriteToggle,
+                onDelete: onDelete
             )
                 .overlay(alignment: .bottomTrailing) {
                     keyboardActions

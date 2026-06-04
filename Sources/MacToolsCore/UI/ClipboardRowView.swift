@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 public struct ClipboardRowView: View {
@@ -23,10 +24,8 @@ public struct ClipboardRowView: View {
 
     public var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: iconName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 34)
+            preview
+                .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.displayTitle)
@@ -40,16 +39,6 @@ public struct ClipboardRowView: View {
             }
 
             Spacer()
-
-            Button {
-                onFavoriteToggle()
-            } label: {
-                Image(systemName: item.isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(item.isFavorite ? .yellow : .secondary)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
 
             if item.isPinned {
                 StatusLabel(title: "置顶")
@@ -65,6 +54,36 @@ public struct ClipboardRowView: View {
             isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
             in: RoundedRectangle(cornerRadius: 6)
         )
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        if let image = previewImage {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(.quaternary, lineWidth: 1)
+                )
+        } else {
+            Image(systemName: iconName)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var previewImage: NSImage? {
+        guard item.kind == .imageData || item.kind == .imageFile else {
+            return nil
+        }
+
+        guard let path = item.cachedFilePath ?? item.originalPath else {
+            return nil
+        }
+
+        return NSImage(contentsOfFile: path)
     }
 
     private var iconName: String {
