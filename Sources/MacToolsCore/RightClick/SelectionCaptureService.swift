@@ -14,7 +14,7 @@ public final class SelectionCaptureService: SelectionCapturing {
     }
 
     public func captureSelection() -> ClipboardPayload {
-        eventSender.sendPasteShortcut()
+        eventSender.sendCopyShortcut()
         Thread.sleep(forTimeInterval: 0.05)
         return pasteboard.readPayload()
     }

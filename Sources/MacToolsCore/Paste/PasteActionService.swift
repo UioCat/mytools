@@ -8,6 +8,7 @@ public protocol WritablePasteboard {
 }
 
 public protocol PasteEventSender {
+    func sendCopyShortcut()
     func sendPasteShortcut()
 }
 
@@ -65,10 +66,18 @@ public final class SystemWritablePasteboard: WritablePasteboard {
 public final class SystemPasteEventSender: PasteEventSender {
     public init() {}
 
+    public func sendCopyShortcut() {
+        sendCommandShortcut(virtualKey: 8)
+    }
+
     public func sendPasteShortcut() {
+        sendCommandShortcut(virtualKey: 9)
+    }
+
+    private func sendCommandShortcut(virtualKey: CGKeyCode) {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false)
 
         keyDown?.flags = [.maskCommand]
         keyUp?.flags = [.maskCommand]

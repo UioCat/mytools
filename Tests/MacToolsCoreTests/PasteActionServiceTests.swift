@@ -13,6 +13,7 @@ final class PasteActionServiceTests: XCTestCase {
         XCTAssertEqual(pasteboard.writtenText, "hello")
         XCTAssertNil(pasteboard.writtenFileURL)
         XCTAssertFalse(sender.didSendPaste)
+        XCTAssertFalse(sender.didSendCopy)
     }
 
     func testCopyWritesOriginalPathAsFileURLWhenTextIsMissing() throws {
@@ -54,7 +55,8 @@ final class PasteActionServiceTests: XCTestCase {
 
         XCTAssertEqual(pasteboard.operations, [.writeText("hello")])
         XCTAssertTrue(sender.didSendPaste)
-        XCTAssertEqual(sender.sendCount, 1)
+        XCTAssertFalse(sender.didSendCopy)
+        XCTAssertEqual(sender.sendPasteCount, 1)
     }
 }
 
@@ -90,14 +92,23 @@ private final class FakeWritablePasteboard: WritablePasteboard {
 }
 
 private final class FakePasteEventSender: PasteEventSender {
-    private(set) var sendCount = 0
+    private(set) var sendCopyCount = 0
+    private(set) var sendPasteCount = 0
+
+    var didSendCopy: Bool {
+        sendCopyCount > 0
+    }
 
     var didSendPaste: Bool {
-        sendCount > 0
+        sendPasteCount > 0
+    }
+
+    func sendCopyShortcut() {
+        sendCopyCount += 1
     }
 
     func sendPasteShortcut() {
-        sendCount += 1
+        sendPasteCount += 1
     }
 }
 

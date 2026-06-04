@@ -40,7 +40,7 @@ final class RightClickStateMachineTests: XCTestCase {
 }
 
 final class SelectionCaptureServiceTests: XCTestCase {
-    func testCaptureSelectionSendsPasteShortcutThenReadsPayload() {
+    func testCaptureSelectionSendsCopyShortcutThenReadsPayload() {
         let pasteboard = FakePasteboardClient(payload: ClipboardPayload(text: "selected text"))
         let sender = FakePasteEventSender()
         let service = SelectionCaptureService(pasteboard: pasteboard, eventSender: sender)
@@ -48,7 +48,8 @@ final class SelectionCaptureServiceTests: XCTestCase {
         let payload = service.captureSelection()
 
         XCTAssertEqual(payload, ClipboardPayload(text: "selected text"))
-        XCTAssertEqual(sender.sendPasteCount, 1)
+        XCTAssertEqual(sender.sendCopyCount, 1)
+        XCTAssertEqual(sender.sendPasteCount, 0)
         XCTAssertEqual(pasteboard.readCount, 1)
     }
 }
@@ -127,7 +128,12 @@ private final class FakePasteboardClient: PasteboardClient {
 }
 
 private final class FakePasteEventSender: PasteEventSender {
+    private(set) var sendCopyCount = 0
     private(set) var sendPasteCount = 0
+
+    func sendCopyShortcut() {
+        sendCopyCount += 1
+    }
 
     func sendPasteShortcut() {
         sendPasteCount += 1
