@@ -117,6 +117,17 @@ public final class ClipboardRepository {
         }
     }
 
+    public func deleteAllNonFavorites() throws {
+        try database.writer.write { db in
+            try db.execute(
+                sql: """
+                DELETE FROM clipboard_items
+                WHERE isFavorite = 0
+                """
+            )
+        }
+    }
+
     public func markUsed(id: UUID, at date: Date) throws {
         try database.writer.write { db in
             try db.execute(

@@ -8,14 +8,38 @@ public enum ClipboardSelectionAction {
 
 public enum ClipboardPanelMode: CaseIterable {
     case all
+    case text
+    case images
+    case folders
     case favorites
 
     var title: String {
         switch self {
         case .all:
             return "全部"
+        case .text:
+            return "文本"
+        case .images:
+            return "图片"
+        case .folders:
+            return "文件夹"
         case .favorites:
             return "收藏"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .all:
+            return "doc.on.clipboard"
+        case .text:
+            return "textformat"
+        case .images:
+            return "photo"
+        case .folders:
+            return "folder"
+        case .favorites:
+            return "star.fill"
         }
     }
 }
@@ -29,6 +53,7 @@ public struct MainPanelView: View {
     public let onSelect: (ClipboardItem, ClipboardSelectionAction) -> Void
     public let onFavoriteToggle: (ClipboardItem) -> Void
     public let onDelete: (ClipboardItem) -> Void
+    public let onClear: () -> Void
     public let onDismiss: () -> Void
 
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
@@ -36,6 +61,7 @@ public struct MainPanelView: View {
         self.onSelect = { item, _ in onSelect(item) }
         self.onFavoriteToggle = { _ in }
         self.onDelete = { _ in }
+        self.onClear = {}
         self.onDismiss = {}
     }
 
@@ -44,25 +70,26 @@ public struct MainPanelView: View {
         onSelect: @escaping (ClipboardItem, ClipboardSelectionAction) -> Void,
         onFavoriteToggle: @escaping (ClipboardItem) -> Void = { _ in },
         onDelete: @escaping (ClipboardItem) -> Void = { _ in },
+        onClear: @escaping () -> Void = {},
         onDismiss: @escaping () -> Void = {}
     ) {
         self.items = items
         self.onSelect = onSelect
         self.onFavoriteToggle = onFavoriteToggle
         self.onDelete = onDelete
+        self.onClear = onClear
         self.onDismiss = onDismiss
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            TextField("搜索工具和剪贴板", text: $query)
-                .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .medium))
-                .padding(16)
+            header
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
 
             modeSwitcher
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 6)
 
             Divider()
 
@@ -81,7 +108,7 @@ public struct MainPanelView: View {
                 }
         }
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
-        .frame(width: 760, height: 520)
+        .frame(width: 900, height: 620)
         .onChange(of: items) { _ in
             normalizeSelection()
         }
@@ -93,30 +120,63 @@ public struct MainPanelView: View {
         }
     }
 
+    private var header: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 7))
+
+                Text("剪贴板")
+                    .font(.system(size: 22, weight: .semibold))
+            }
+
+            Divider()
+                .frame(height: 28)
+
+            TextField("搜索...", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 22, weight: .regular))
+
+            Button {
+                onClear()
+            } label: {
+                Label("清空", systemImage: "trash")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(clearButtonColor)
+            .disabled(items.filter { !$0.isFavorite }.isEmpty)
+        }
+    }
+
     private var modeSwitcher: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             ForEach(ClipboardPanelMode.allCases, id: \.self) { itemMode in
                 Button {
                     mode = itemMode
                 } label: {
-                    Text(itemMode.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 52, height: 28)
+                    HStack(spacing: 8) {
+                        Image(systemName: itemMode.iconName)
+                            .font(.system(size: 15, weight: .semibold))
+
+                        Text(tabTitle(for: itemMode))
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(mode == itemMode ? .white : .secondary)
+                .foregroundStyle(mode == itemMode ? Color.primary : Color.secondary)
                 .background(
-                    mode == itemMode ? Color.accentColor : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 6)
+                    mode == itemMode ? Color(nsColor: .controlBackgroundColor) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8)
                 )
             }
-
-            Spacer()
-
-            Text("↑↓ 选择  ←→ 切换  Enter 粘贴  ⌘Enter 复制  Esc 关闭")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
         }
+        .padding(.bottom, 2)
     }
 
     private var keyboardActions: some View {
@@ -138,6 +198,12 @@ public struct MainPanelView: View {
         switch mode {
         case .all:
             modeItems = items
+        case .text:
+            modeItems = items.filter { $0.kind == .text || $0.kind == .url }
+        case .images:
+            modeItems = items.filter { $0.kind == .imageData || $0.kind == .imageFile }
+        case .folders:
+            modeItems = items.filter { $0.kind == .folder }
         case .favorites:
             modeItems = items.filter(\.isFavorite)
         }
@@ -151,6 +217,18 @@ public struct MainPanelView: View {
             item.displayTitle.localizedCaseInsensitiveContains(trimmedQuery)
                 || item.searchableText.localizedCaseInsensitiveContains(trimmedQuery)
         }
+    }
+
+    private func tabTitle(for mode: ClipboardPanelMode) -> String {
+        if mode == .favorites {
+            return "\(mode.title) (\(items.filter(\.isFavorite).count))"
+        }
+
+        return mode.title
+    }
+
+    private var clearButtonColor: Color {
+        items.contains(where: { !$0.isFavorite }) ? Color.secondary : Color.secondary.opacity(0.45)
     }
 
     private func selectAndPaste(_ item: ClipboardItem) {

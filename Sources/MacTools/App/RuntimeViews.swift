@@ -32,6 +32,9 @@ struct RuntimeMainPanelView: View {
             onDelete: { item in
                 model.delete(item)
             },
+            onClear: {
+                model.clearNonFavorites()
+            },
             onDismiss: onDismiss
         )
         .onAppear {

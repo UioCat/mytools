@@ -114,6 +114,29 @@ final class ClipboardRepositoryTests: XCTestCase {
         XCTAssertTrue(try repository.search("", limit: 20).isEmpty)
     }
 
+    func testDeleteAllNonFavoritesKeepsFavoriteItems() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let normalItem = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000014")!,
+            title: "remove me",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        let favoriteItem = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000015")!,
+            title: "keep me",
+            createdAt: Date(timeIntervalSince1970: 200),
+            isFavorite: true
+        )
+
+        try repository.upsert(normalItem)
+        try repository.upsert(favoriteItem)
+        try repository.deleteAllNonFavorites()
+
+        let results = try repository.search("", limit: 20)
+        XCTAssertEqual(results.map(\.id), [favoriteItem.id])
+    }
+
     func testMarkUsedUpdatesLastUsedAtAndIncrementsUseCount() throws {
         let database = try ClipboardDatabase.inMemory()
         let repository = ClipboardRepository(database: database)

@@ -34,34 +34,70 @@ public struct ClipboardListView: View {
     }
 
     public var body: some View {
-        List(items) { item in
-            ClipboardRowView(
-                item: item,
-                isSelected: item.id == selectedItemID,
-                onFavoriteToggle: {
-                    onFavoriteToggle(item)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    if items.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            ClipboardRowView(
+                                item: item,
+                                index: index + 1,
+                                isSelected: item.id == selectedItemID,
+                                onFavoriteToggle: {
+                                    onFavoriteToggle(item)
+                                }
+                            )
+                            .id(item.id)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                onSelect(item)
+                            }
+                            .contextMenu {
+                                if mode == .favorites {
+                                    Button("取消收藏") {
+                                        onFavoriteToggle(item)
+                                    }
+                                } else {
+                                    Button(item.isFavorite ? "取消收藏" : "加入收藏") {
+                                        onFavoriteToggle(item)
+                                    }
+                                }
+
+                                Divider()
+
+                                Button("删除", role: .destructive) {
+                                    onDelete(item)
+                                }
+                            }
+                        }
+                    }
                 }
-            )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onSelect(item)
             }
-            .contextMenu {
-                if mode == .favorites {
-                    Button("取消收藏") {
-                        onFavoriteToggle(item)
-                    }
-                } else {
-                    Button(item.isFavorite ? "取消收藏" : "加入收藏") {
-                        onFavoriteToggle(item)
-                    }
+            .onChange(of: selectedItemID) { id in
+                guard let id else {
+                    return
                 }
 
-                Button("删除") {
-                    onDelete(item)
+                withAnimation(.easeOut(duration: 0.12)) {
+                    proxy.scrollTo(id, anchor: .center)
                 }
             }
         }
-        .listStyle(.plain)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "tray")
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(.secondary)
+
+            Text("没有匹配的剪贴板内容")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 120)
     }
 }

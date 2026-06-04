@@ -73,4 +73,13 @@ final class ClipboardPanelModel: ObservableObject {
             logger.error("clipboard delete failed: \(error)")
         }
     }
+
+    func clearNonFavorites() {
+        do {
+            try repository.deleteAllNonFavorites()
+            refresh()
+        } catch {
+            logger.error("clipboard clear failed: \(error)")
+        }
+    }
 }
