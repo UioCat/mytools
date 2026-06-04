@@ -90,6 +90,76 @@ final class ClipboardServiceTests: XCTestCase {
 
         XCTAssertTrue(try repository.search("", limit: 10).isEmpty)
     }
+
+    func testRetriesSameChangeAfterFailedPersistence() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let pasteboard = FakePasteboardClient(
+            payload: ClipboardPayload(text: "retry me"),
+            changeCount: 0
+        )
+        var upsertAttempts = 0
+        let service = ClipboardService(
+            pasteboard: pasteboard,
+            classifier: ClipboardClassifier(),
+            settings: .defaults,
+            upsert: { item in
+                upsertAttempts += 1
+                if upsertAttempts == 1 {
+                    throw TestPersistenceError.writeFailed
+                }
+                try repository.upsert(item)
+            }
+        )
+
+        pasteboard.changeCount = 1
+        XCTAssertThrowsError(try service.pollOnce(sourceApp: "Tests"))
+        XCTAssertTrue(try repository.search("", limit: 10).isEmpty)
+
+        try service.pollOnce(sourceApp: "Tests")
+
+        let results = try repository.search("retry", limit: 10)
+        XCTAssertEqual(upsertAttempts, 2)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].text, "retry me")
+    }
+
+    func testUnknownPayloadAdvancesLastChangeCount() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let pasteboard = FakePasteboardClient(
+            payload: ClipboardPayload(),
+            changeCount: 0
+        )
+        let service = ClipboardService(
+            pasteboard: pasteboard,
+            classifier: ClipboardClassifier(),
+            repository: repository,
+            settings: .defaults
+        )
+
+        pasteboard.changeCount = 1
+        try service.pollOnce(sourceApp: "Tests")
+        pasteboard.payload = ClipboardPayload(text: "same change count")
+        try service.pollOnce(sourceApp: "Tests")
+
+        XCTAssertTrue(try repository.search("", limit: 10).isEmpty)
+    }
+}
+
+final class PasteboardClientTests: XCTestCase {
+    func testFileURLsFromObjectsFiltersOutWebURLs() {
+        let fileURL = URL(fileURLWithPath: "/tmp/document.txt")
+        let webURL = URL(string: "https://example.com/document.txt")!
+
+        let fileURLs = SystemPasteboardClient.fileURLs(from: [webURL as NSURL, fileURL as NSURL])
+
+        XCTAssertEqual(fileURLs, [fileURL])
+    }
+}
+
+private enum TestPersistenceError: Error {
+    case writeFailed
 }
 
 private final class FakePasteboardClient: PasteboardClient {

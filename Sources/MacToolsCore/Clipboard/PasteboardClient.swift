@@ -25,16 +25,29 @@ public final class SystemPasteboardClient: PasteboardClient {
         return ClipboardPayload(text: text, fileURLs: fileURLs, imageData: imageData)
     }
 
-    private func readFileURLs() -> [URL] {
-        let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) ?? []
-        return objects.compactMap { object in
-            if let url = object as? URL {
-                return url
+    static func fileURLs(from objects: [Any]) -> [URL] {
+        objects.compactMap { object in
+            let url: URL?
+
+            if let value = object as? URL {
+                url = value
+            } else if let value = object as? NSURL {
+                url = value as URL
+            } else {
+                url = nil
             }
-            if let url = object as? NSURL {
-                return url as URL
+
+            guard let url, url.isFileURL else {
+                return nil
             }
-            return nil
+
+            return url
         }
+    }
+
+    private func readFileURLs() -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: options) ?? []
+        return Self.fileURLs(from: objects)
     }
 }
