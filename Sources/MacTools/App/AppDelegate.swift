@@ -1,6 +1,7 @@
 import AppKit
 import MacToolsCore
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let environment = AppEnvironment()
     private lazy var menuBarController = MenuBarController(environment: environment)
@@ -8,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menuBarController.install()
-        hotKeyService.configure(settings: .defaults) { [weak self] target in
+        environment.start()
+        hotKeyService.configure(settings: environment.settings) { [weak self] target in
             self?.handleHotKey(target)
         }
         environment.logger.info("application did finish launching")
@@ -17,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleHotKey(_ target: HotKeyTarget) {
         switch target {
         case .mainPanel, .clipboard:
-            environment.mainPanel.show()
+            environment.openMainPanel()
         case .reservedTool2, .reservedTool3:
             environment.logger.info("reserved hotkey selected: \(target.rawValue)")
         }

@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 final class MenuBarController {
     private let environment: AppEnvironment
     private var statusItem: NSStatusItem?
@@ -16,6 +17,10 @@ final class MenuBarController {
         let openItem = NSMenuItem(title: "Open", action: #selector(open), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
+
+        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -28,6 +33,11 @@ final class MenuBarController {
 
     @objc func open() {
         environment.logger.info("menu open selected")
-        environment.mainPanel.show()
+        environment.openMainPanel()
+    }
+
+    @objc func openSettings() {
+        environment.logger.info("menu settings selected")
+        environment.openSettings()
     }
 }

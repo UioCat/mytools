@@ -47,6 +47,37 @@ final class ClipboardServiceTests: XCTestCase {
         XCTAssertTrue(try repository.search("", limit: 10).isEmpty)
     }
 
+    func testCachesImageDataBeforeRecording() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let imageData = Data([1, 2, 3])
+        let cachedPath = "/tmp/cached-image.png"
+        let pasteboard = FakePasteboardClient(
+            payload: ClipboardPayload(imageData: imageData),
+            changeCount: 0
+        )
+        let service = ClipboardService(
+            pasteboard: pasteboard,
+            classifier: ClipboardClassifier(),
+            settings: .defaults,
+            upsert: { item in
+                try repository.upsert(item)
+            },
+            cacheImageData: { data in
+                XCTAssertEqual(data, imageData)
+                return cachedPath
+            }
+        )
+
+        pasteboard.changeCount = 1
+        try service.pollOnce(sourceApp: "Tests")
+
+        let results = try repository.search("image", limit: 10)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].kind, .imageData)
+        XCTAssertEqual(results[0].cachedFilePath, cachedPath)
+    }
+
     func testPausedPollAdvancesLastChangeCount() throws {
         let database = try ClipboardDatabase.inMemory()
         let repository = ClipboardRepository(database: database)
