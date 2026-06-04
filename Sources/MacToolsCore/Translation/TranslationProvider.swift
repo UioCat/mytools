@@ -1,9 +1,9 @@
 import Foundation
 
 public struct TranslationRequest: Equatable {
-    public let text: String
-    public let sourceLanguage: String?
-    public let targetLanguage: String
+    public var text: String
+    public var sourceLanguage: String?
+    public var targetLanguage: String
 
     public init(text: String, sourceLanguage: String?, targetLanguage: String) {
         self.text = text
@@ -13,8 +13,8 @@ public struct TranslationRequest: Equatable {
 }
 
 public struct TranslationResponse: Equatable {
-    public let translatedText: String
-    public let providerID: String
+    public var translatedText: String
+    public var providerID: String
 
     public init(translatedText: String, providerID: String) {
         self.translatedText = translatedText
