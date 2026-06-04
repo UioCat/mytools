@@ -36,7 +36,10 @@ final class ContextPanelController {
             panel = makePanel()
         }
 
-        panel?.contentView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        panel?.contentView = hostingView
         panel?.setFrameOrigin(panelOrigin())
         panel?.orderFrontRegardless()
     }
@@ -50,6 +53,11 @@ final class ContextPanelController {
         )
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
         return panel
     }
 

@@ -6,20 +6,42 @@ public struct SettingsView: View {
     public let permissionSummary: PermissionSummary
     public let openSystemSettings: () -> Void
     public let openPermissionSettings: (AppPermission) -> Void
+    private let presentation: ToolModulePresentation
 
     public init(
         settings: AppSettings,
         permissionSummary: PermissionSummary,
         openSystemSettings: @escaping () -> Void,
-        openPermissionSettings: @escaping (AppPermission) -> Void = { _ in }
+        openPermissionSettings: @escaping (AppPermission) -> Void = { _ in },
+        presentation: ToolModulePresentation = .window
     ) {
         self.settings = settings
         self.permissionSummary = permissionSummary
         self.openSystemSettings = openSystemSettings
         self.openPermissionSettings = openPermissionSettings
+        self.presentation = presentation
     }
 
+    @ViewBuilder
     public var body: some View {
+        if presentation == .window {
+            content
+                .liquidGlassPanel(cornerRadius: 30)
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .frame(
+                    minWidth: 560,
+                    idealWidth: 720,
+                    maxWidth: .infinity,
+                    minHeight: 460,
+                    idealHeight: 620,
+                    maxHeight: .infinity
+                )
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
@@ -62,6 +84,12 @@ public struct SettingsView: View {
                             openPermissionSettings: openPermissionSettings
                         )
                         PermissionStatusRow(
+                            title: "自动粘贴",
+                            isEnabled: permissionSummary.canPasteAutomatically,
+                            permission: .postEvent,
+                            openPermissionSettings: openPermissionSettings
+                        )
+                        PermissionStatusRow(
                             title: "超级右键",
                             isEnabled: permissionSummary.canUseSuperRightClick,
                             permission: .accessibility,
@@ -83,16 +111,6 @@ public struct SettingsView: View {
             }
             .padding(22)
         }
-        .liquidGlassPanel(cornerRadius: 30)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .frame(
-            minWidth: 560,
-            idealWidth: 720,
-            maxWidth: .infinity,
-            minHeight: 460,
-            idealHeight: 620,
-            maxHeight: .infinity
-        )
     }
 
     private var header: some View {

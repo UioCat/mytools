@@ -22,25 +22,35 @@ public struct ContextActionView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(item.displayTitle)
                 .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
                 .lineLimit(1)
 
-            Button("复制路径") {
-                copyPath(item)
-            }
+            actionButton(title: "复制路径", systemImage: "doc.on.doc", action: { copyPath(item) })
 
             if item.kind == .folder {
-                Button("在终端中打开") {
-                    openTerminal(item)
-                }
+                actionButton(title: "在终端中打开", systemImage: "terminal", action: { openTerminal(item) })
             }
 
             if shouldShowRevealInFinder {
-                Button("在访达中显示") {
-                    reveal(item)
-                }
+                actionButton(title: "在访达中显示", systemImage: "folder", action: { reveal(item) })
             }
         }
-        .padding(12)
+        .padding(14)
+        .liquidGlassPanel(cornerRadius: 22)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func actionButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.white.opacity(0.86))
+        .liquidGlassModule(cornerRadius: 14)
     }
 
     private var shouldShowRevealInFinder: Bool {

@@ -19,7 +19,7 @@ public final class MainPanelController {
 
     public func show() {
         if panel == nil {
-            let panel = NSPanel(
+            let panel = EscapeDismissPanel(
                 contentRect: NSRect(origin: .zero, size: initialSize),
                 styleMask: [.titled, .fullSizeContentView, .resizable],
                 backing: .buffered,
@@ -35,6 +35,9 @@ public final class MainPanelController {
             panel.hasShadow = true
             panel.minSize = minimumSize
             panel.isMovableByWindowBackground = true
+            panel.onDismiss = { [weak self] in
+                self?.hide()
+            }
 
             let hostingView = NSHostingView(rootView: rootView)
             hostingView.wantsLayer = true
@@ -50,5 +53,23 @@ public final class MainPanelController {
 
     public func hide() {
         panel?.orderOut(nil)
+    }
+}
+
+private final class EscapeDismissPanel: NSPanel {
+    var onDismiss: (() -> Void)?
+    private let resolver = PanelKeyCommandResolver()
+
+    override func keyDown(with event: NSEvent) {
+        if resolver.command(forKeyCode: event.keyCode) == .dismiss {
+            onDismiss?()
+            return
+        }
+
+        super.keyDown(with: event)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        onDismiss?()
     }
 }

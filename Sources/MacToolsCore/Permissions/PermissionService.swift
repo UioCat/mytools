@@ -4,6 +4,10 @@ import Foundation
 import ApplicationServices
 #endif
 
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
 #if canImport(IOKit)
 import IOKit.hid
 #endif
@@ -15,19 +19,26 @@ import AppKit
 public enum AppPermission: String, Equatable {
     case accessibility
     case inputMonitoring
+    case postEvent
 }
 
 public struct PermissionSummary: Equatable {
     public var hasAccessibility: Bool
     public var hasInputMonitoring: Bool
+    public var hasPostEvent: Bool
 
-    public init(hasAccessibility: Bool, hasInputMonitoring: Bool) {
+    public init(hasAccessibility: Bool, hasInputMonitoring: Bool, hasPostEvent: Bool = false) {
         self.hasAccessibility = hasAccessibility
         self.hasInputMonitoring = hasInputMonitoring
+        self.hasPostEvent = hasPostEvent
     }
 
     public var canUseSuperRightClick: Bool {
-        hasAccessibility
+        hasAccessibility && hasPostEvent
+    }
+
+    public var canPasteAutomatically: Bool {
+        hasPostEvent
     }
 
     public var missingPermissions: [AppPermission] {
@@ -41,6 +52,10 @@ public struct PermissionSummary: Equatable {
             permissions.append(.inputMonitoring)
         }
 
+        if !hasPostEvent {
+            permissions.append(.postEvent)
+        }
+
         return permissions
     }
 }
@@ -48,6 +63,14 @@ public struct PermissionSummary: Equatable {
 public protocol PermissionChecking {
     func hasAccessibilityPermission() -> Bool
     func hasInputMonitoringPermission() -> Bool
+    func hasPostEventPermission() -> Bool
+    func requestPostEventPermission() -> Bool
+}
+
+public extension PermissionChecking {
+    func requestPostEventPermission() -> Bool {
+        hasPostEventPermission()
+    }
 }
 
 public final class PermissionService {
@@ -60,8 +83,13 @@ public final class PermissionService {
     public func summary() -> PermissionSummary {
         PermissionSummary(
             hasAccessibility: checker.hasAccessibilityPermission(),
-            hasInputMonitoring: checker.hasInputMonitoringPermission()
+            hasInputMonitoring: checker.hasInputMonitoringPermission(),
+            hasPostEvent: checker.hasPostEventPermission()
         )
+    }
+
+    public func requestPostEventPermission() -> Bool {
+        checker.requestPostEventPermission()
     }
 
     public func openSystemSettings() {
@@ -88,6 +116,10 @@ public final class PermissionService {
             return URL(
                 string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
             )
+        case .postEvent:
+            return URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            )
         }
     }
 }
@@ -106,6 +138,22 @@ public struct SystemPermissionChecker: PermissionChecking {
     public func hasInputMonitoringPermission() -> Bool {
         #if canImport(IOKit)
         return IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        #else
+        return false
+        #endif
+    }
+
+    public func hasPostEventPermission() -> Bool {
+        #if canImport(CoreGraphics)
+        return CGPreflightPostEventAccess()
+        #else
+        return false
+        #endif
+    }
+
+    public func requestPostEventPermission() -> Bool {
+        #if canImport(CoreGraphics)
+        return CGRequestPostEventAccess()
         #else
         return false
         #endif

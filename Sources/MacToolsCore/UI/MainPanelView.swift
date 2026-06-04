@@ -56,6 +56,7 @@ public struct MainPanelView: View {
     public let onDelete: (ClipboardItem) -> Void
     public let onClear: () -> Void
     public let onDismiss: () -> Void
+    private let presentation: ToolModulePresentation
 
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
         self.items = items
@@ -65,6 +66,7 @@ public struct MainPanelView: View {
         self.onDelete = { _ in }
         self.onClear = {}
         self.onDismiss = {}
+        self.presentation = .window
     }
 
     public init(
@@ -74,7 +76,8 @@ public struct MainPanelView: View {
         onFavoriteToggle: @escaping (ClipboardItem) -> Void = { _ in },
         onDelete: @escaping (ClipboardItem) -> Void = { _ in },
         onClear: @escaping () -> Void = {},
-        onDismiss: @escaping () -> Void = {}
+        onDismiss: @escaping () -> Void = {},
+        presentation: ToolModulePresentation = .window
     ) {
         self.items = items
         self.resetToken = resetToken
@@ -83,9 +86,29 @@ public struct MainPanelView: View {
         self.onDelete = onDelete
         self.onClear = onClear
         self.onDismiss = onDismiss
+        self.presentation = presentation
     }
 
+    @ViewBuilder
     public var body: some View {
+        if presentation == .window {
+            content
+                .liquidGlassPanel(cornerRadius: 30)
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .frame(
+                    minWidth: 720,
+                    idealWidth: 900,
+                    maxWidth: .infinity,
+                    minHeight: 480,
+                    idealHeight: 620,
+                    maxHeight: .infinity
+                )
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 12) {
             header
 
@@ -106,17 +129,7 @@ public struct MainPanelView: View {
                 }
         }
         .padding(18)
-        .liquidGlassPanel(cornerRadius: 30)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
-        .frame(
-            minWidth: 720,
-            idealWidth: 900,
-            maxWidth: .infinity,
-            minHeight: 480,
-            idealHeight: 620,
-            maxHeight: .infinity
-        )
         .onChange(of: items) { _ in
             normalizeSelection()
         }
@@ -296,12 +309,14 @@ public struct MainPanelView: View {
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
+        if PanelKeyCommandResolver().command(forKeyCode: event.keyCode) == .dismiss {
+            onDismiss()
+            return true
+        }
+
         switch event.keyCode {
         case 36, 76:
             performSelectedAction(event.modifierFlags.contains(.command) ? .copy : .copyAndPaste)
-            return true
-        case 53:
-            onDismiss()
             return true
         case 123:
             switchMode(by: -1)

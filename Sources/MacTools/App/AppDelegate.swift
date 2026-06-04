@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .mainPanel:
             environment.openSettings()
         case .clipboard:
-            environment.openMainPanel()
+            environment.openClipboard()
         case .reservedTool2, .reservedTool3:
             environment.logger.info("reserved hotkey selected: \(target.rawValue)")
         }

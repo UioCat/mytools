@@ -24,6 +24,10 @@ final class MenuBarController {
         let settingsItem = NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
+
+        let clipboardItem = NSMenuItem(title: "剪贴板", action: #selector(openClipboard), keyEquivalent: "")
+        clipboardItem.target = self
+        menu.addItem(clipboardItem)
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -42,5 +46,10 @@ final class MenuBarController {
     @objc func openSettings() {
         environment.logger.info("menu settings selected")
         environment.openSettings()
+    }
+
+    @objc func openClipboard() {
+        environment.logger.info("menu clipboard selected")
+        environment.openClipboard()
     }
 }

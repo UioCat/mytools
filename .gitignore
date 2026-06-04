@@ -1,3 +1,25 @@
 .worktrees/
 .build/
 build/
+.swiftpm/
+DerivedData/
+out/
+
+# macOS and editor state
+.DS_Store
+.idea/
+*.iml
+
+# Local configuration and credentials
+.env
+.env.*
+*.local
+*.secret
+*.secrets
+secrets/
+
+# Runtime data can contain clipboard contents or user files.
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+ClipboardCache/

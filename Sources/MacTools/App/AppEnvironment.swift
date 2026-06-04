@@ -12,6 +12,7 @@ final class AppEnvironment {
     private let pasteActionService: PasteActionService
     private let permissionService = PermissionService()
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
+    private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
     private var clipboardTimer: Timer?
     private var appBeforePanel: NSRunningApplication?
@@ -24,10 +25,13 @@ final class AppEnvironment {
     )
 
     lazy var mainPanel = MainPanelController(
-        initialSize: NSSize(width: 900, height: 620),
-        minimumSize: NSSize(width: 720, height: 480),
-        rootView: RuntimeMainPanelView(
+        initialSize: NSSize(width: 1080, height: 720),
+        minimumSize: NSSize(width: 900, height: 620),
+        rootView: RuntimeMainWorkspaceView(
+            router: mainPanelRouter,
             model: clipboardModel,
+            settings: settings,
+            permissionService: permissionService,
             onCopy: { [weak self] item in
                 self?.copyFromPanel(item)
             },
@@ -37,15 +41,6 @@ final class AppEnvironment {
             onDismiss: { [mainPanelDismissHandler] in
                 mainPanelDismissHandler.dismiss()
             }
-        )
-    )
-
-    lazy var settingsPanel = MainPanelController(
-        initialSize: NSSize(width: 720, height: 620),
-        minimumSize: NSSize(width: 560, height: 460),
-        rootView: RuntimeSettingsView(
-            settings: settings,
-            permissionService: permissionService
         )
     )
 
@@ -118,14 +113,19 @@ final class AppEnvironment {
 
     func openMainPanel() {
         captureFrontmostApplicationBeforePanel()
+        mainPanelRouter.open(.settings)
+        mainPanel.show()
+    }
+
+    func openClipboard() {
+        captureFrontmostApplicationBeforePanel()
         clipboardModel.prepareForPresentation()
-        settingsPanel.hide()
+        mainPanelRouter.open(.clipboard)
         mainPanel.show()
     }
 
     func openSettings() {
-        mainPanel.hide()
-        settingsPanel.show()
+        openMainPanel()
     }
 
     private func startClipboardPolling() {
@@ -174,9 +174,9 @@ final class AppEnvironment {
             return
         }
 
-        guard permissionService.summary().hasAccessibility else {
-            logger.error("paste failed: missing accessibility permission")
-            showAccessibilityRequiredAlert()
+        guard canPostPasteEvent() else {
+            logger.error("paste failed: missing post event permission")
+            showPostEventRequiredAlert()
             return
         }
 
@@ -236,6 +236,15 @@ final class AppEnvironment {
         }
     }
 
+    private func canPostPasteEvent() -> Bool {
+        let summary = permissionService.summary()
+        if summary.canPasteAutomatically {
+            return true
+        }
+
+        return permissionService.requestPostEventPermission()
+    }
+
     private func handleSuperRightClickItem(_ item: ClipboardItem) {
         switch item.kind {
         case .text:
@@ -256,16 +265,16 @@ final class AppEnvironment {
         alert.runModal()
     }
 
-    private func showAccessibilityRequiredAlert() {
+    private func showPostEventRequiredAlert() {
         let alert = NSAlert()
-        alert.messageText = "需要辅助功能权限"
-        alert.informativeText = "内容已复制到剪贴板。自动粘贴需要把 Command+V 发送到当前应用，请在系统设置里允许 MacTools 使用辅助功能。"
+        alert.messageText = "需要自动粘贴权限"
+        alert.informativeText = "内容已复制到剪贴板。自动粘贴需要把 Command+V 发送到当前应用，请在系统设置里允许 MacTools 发送键盘事件。"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "稍后")
 
         if alert.runModal() == .alertFirstButtonReturn {
-            permissionService.openSystemSettings()
+            permissionService.openSystemSettings(for: .postEvent)
         }
     }
 
