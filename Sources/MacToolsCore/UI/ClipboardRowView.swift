@@ -2,9 +2,23 @@ import SwiftUI
 
 public struct ClipboardRowView: View {
     public let item: ClipboardItem
+    public let isSelected: Bool
+    public let onFavoriteToggle: () -> Void
 
     public init(item: ClipboardItem) {
         self.item = item
+        self.isSelected = false
+        self.onFavoriteToggle = {}
+    }
+
+    public init(
+        item: ClipboardItem,
+        isSelected: Bool,
+        onFavoriteToggle: @escaping () -> Void
+    ) {
+        self.item = item
+        self.isSelected = isSelected
+        self.onFavoriteToggle = onFavoriteToggle
     }
 
     public var body: some View {
@@ -27,15 +41,30 @@ public struct ClipboardRowView: View {
 
             Spacer()
 
+            Button {
+                onFavoriteToggle()
+            } label: {
+                Image(systemName: item.isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(item.isFavorite ? .yellow : .secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+
             if item.isPinned {
-                StatusLabel(title: "Pinned")
+                StatusLabel(title: "置顶")
             }
 
             if item.isFavorite {
-                StatusLabel(title: "Favorite")
+                StatusLabel(title: "收藏")
             }
         }
+        .padding(.horizontal, 8)
         .padding(.vertical, 6)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 6)
+        )
     }
 
     private var iconName: String {
@@ -57,10 +86,29 @@ public struct ClipboardRowView: View {
 
     private var sourceLabel: String {
         if let sourceApp = item.sourceApp, !sourceApp.isEmpty {
-            return "\(sourceApp) - \(item.kind.rawValue)"
+            return "\(sourceApp) - \(kindTitle)"
         }
 
-        return item.kind.rawValue
+        return kindTitle
+    }
+
+    private var kindTitle: String {
+        switch item.kind {
+        case .text:
+            return "文本"
+        case .url:
+            return "链接"
+        case .file:
+            return "文件"
+        case .folder:
+            return "文件夹"
+        case .imageFile:
+            return "图片文件"
+        case .imageData:
+            return "图片"
+        case .unknown:
+            return "未知"
+        }
     }
 }
 

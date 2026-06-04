@@ -24,18 +24,18 @@ public struct ContextActionView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
 
-            Button("Copy Path") {
+            Button("复制路径") {
                 copyPath(item)
             }
 
             if item.kind == .folder {
-                Button("Open in Terminal") {
+                Button("在终端中打开") {
                     openTerminal(item)
                 }
             }
 
             if shouldShowRevealInFinder {
-                Button("Reveal in Finder") {
+                Button("在访达中显示") {
                     reveal(item)
                 }
             }

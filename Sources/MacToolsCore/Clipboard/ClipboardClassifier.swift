@@ -7,9 +7,10 @@ public final class ClipboardClassifier {
 
     public func classify(payload: ClipboardPayload, sourceApp: String?) -> ClipboardItem {
         let now = Date()
+        let contentHash = ClipboardContentHasher.md5(for: payload)
 
         if let firstURL = payload.fileURLs.first {
-            return classifyFileURL(firstURL, sourceApp: sourceApp, now: now)
+            return classifyFileURL(firstURL, sourceApp: sourceApp, contentHash: contentHash, now: now)
         }
 
         if let imageData = payload.imageData, !imageData.isEmpty {
@@ -21,6 +22,7 @@ public final class ClipboardClassifier {
                 text: nil,
                 originalPath: nil,
                 sourceApp: sourceApp,
+                contentHash: contentHash,
                 now: now
             )
         }
@@ -34,6 +36,7 @@ public final class ClipboardClassifier {
                 text: text,
                 originalPath: nil,
                 sourceApp: sourceApp,
+                contentHash: contentHash,
                 now: now
             )
         }
@@ -45,11 +48,17 @@ public final class ClipboardClassifier {
             text: nil,
             originalPath: nil,
             sourceApp: sourceApp,
+            contentHash: contentHash,
             now: now
         )
     }
 
-    private func classifyFileURL(_ url: URL, sourceApp: String?, now: Date) -> ClipboardItem {
+    private func classifyFileURL(
+        _ url: URL,
+        sourceApp: String?,
+        contentHash: String?,
+        now: Date
+    ) -> ClipboardItem {
         let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         let isImageFile = imageFileExtensions.contains(url.pathExtension.lowercased())
         let kind: ClipboardContentKind
@@ -69,6 +78,7 @@ public final class ClipboardClassifier {
             text: nil,
             originalPath: url.path,
             sourceApp: sourceApp,
+            contentHash: contentHash,
             now: now
         )
     }
@@ -80,6 +90,7 @@ public final class ClipboardClassifier {
         text: String?,
         originalPath: String?,
         sourceApp: String?,
+        contentHash: String?,
         now: Date
     ) -> ClipboardItem {
         ClipboardItem(
@@ -92,6 +103,7 @@ public final class ClipboardClassifier {
             cachedFilePath: nil,
             thumbnailPath: nil,
             sourceApp: sourceApp,
+            contentHash: contentHash,
             createdAt: now,
             lastUsedAt: nil,
             useCount: 0,

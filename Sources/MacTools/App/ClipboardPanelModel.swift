@@ -45,4 +45,13 @@ final class ClipboardPanelModel: ObservableObject {
             logger.error("clipboard selection failed: \(error)")
         }
     }
+
+    func toggleFavorite(_ item: ClipboardItem) {
+        do {
+            try repository.setFavorite(id: item.id, isFavorite: !item.isFavorite)
+            refresh()
+        } catch {
+            logger.error("favorite toggle failed: \(error)")
+        }
+    }
 }

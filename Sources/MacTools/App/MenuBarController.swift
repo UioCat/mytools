@@ -10,20 +10,23 @@ final class MenuBarController {
     }
 
     func install() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "MT"
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.title = ""
+        item.button?.image = MenuBarLogoImage.make()
+        item.button?.imagePosition = .imageOnly
+        item.button?.toolTip = "剪贴工具"
 
         let menu = NSMenu()
-        let openItem = NSMenuItem(title: "Open", action: #selector(open), keyEquivalent: "")
+        let openItem = NSMenuItem(title: "打开", action: #selector(open), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
 
-        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.target = NSApplication.shared
         menu.addItem(quitItem)
 

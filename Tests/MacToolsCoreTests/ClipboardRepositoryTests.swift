@@ -53,6 +53,52 @@ final class ClipboardRepositoryTests: XCTestCase {
         XCTAssertEqual(results.map(\.id), [olderPinned.id, newerNormal.id, olderNormal.id])
     }
 
+    func testUpsertDeduplicatesByContentHash() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let first = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000010")!,
+            title: "first",
+            createdAt: Date(timeIntervalSince1970: 100),
+            contentHash: "same-md5"
+        )
+        let second = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!,
+            title: "second",
+            createdAt: Date(timeIntervalSince1970: 200),
+            contentHash: "same-md5"
+        )
+
+        try repository.upsert(first)
+        try repository.upsert(second)
+
+        let results = try repository.search("", limit: 20)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].id, first.id)
+        XCTAssertEqual(results[0].displayTitle, "second")
+        XCTAssertEqual(results[0].contentHash, "same-md5")
+    }
+
+    func testFavoritesCanBeFilteredAndToggled() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let item = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000012")!,
+            title: "favorite me",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+
+        try repository.upsert(item)
+        XCTAssertTrue(try repository.search("", limit: 20, favoritesOnly: true).isEmpty)
+
+        try repository.setFavorite(id: item.id, isFavorite: true)
+
+        let favorites = try repository.search("", limit: 20, favoritesOnly: true)
+        XCTAssertEqual(favorites.count, 1)
+        XCTAssertEqual(favorites[0].id, item.id)
+        XCTAssertTrue(favorites[0].isFavorite)
+    }
+
     func testMarkUsedUpdatesLastUsedAtAndIncrementsUseCount() throws {
         let database = try ClipboardDatabase.inMemory()
         let repository = ClipboardRepository(database: database)
@@ -100,7 +146,8 @@ private extension ClipboardItem {
         lastUsedAt: Date? = nil,
         useCount: Int = 0,
         isPinned: Bool = false,
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        contentHash: String? = nil
     ) -> ClipboardItem {
         ClipboardItem(
             id: id,
@@ -112,6 +159,7 @@ private extension ClipboardItem {
             cachedFilePath: nil,
             thumbnailPath: nil,
             sourceApp: sourceApp,
+            contentHash: contentHash,
             createdAt: createdAt,
             lastUsedAt: lastUsedAt,
             useCount: useCount,

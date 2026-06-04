@@ -36,6 +36,16 @@ final class ClipboardClassifierTests: XCTestCase {
         XCTAssertEqual(item.text, longURL)
     }
 
+    func testSameTextPayloadProducesSameContentHash() {
+        let classifier = ClipboardClassifier()
+
+        let first = classifier.classify(payload: ClipboardPayload(text: "same text"), sourceApp: "A")
+        let second = classifier.classify(payload: ClipboardPayload(text: "same text"), sourceApp: "B")
+
+        XCTAssertNotNil(first.contentHash)
+        XCTAssertEqual(first.contentHash, second.contentHash)
+    }
+
     func testClassifiesFolderPath() throws {
         let folderURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

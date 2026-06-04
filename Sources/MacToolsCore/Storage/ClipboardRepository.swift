@@ -10,21 +10,63 @@ public final class ClipboardRepository {
 
     public func upsert(_ item: ClipboardItem) throws {
         try database.writer.write { db in
-            try item.save(db)
+            try db.execute(
+                sql: """
+                INSERT INTO clipboard_items (
+                    id, kind, displayTitle, searchableText, text, originalPath,
+                    cachedFilePath, thumbnailPath, sourceApp, contentHash, createdAt,
+                    lastUsedAt, useCount, isPinned, isFavorite
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(contentHash) DO UPDATE SET
+                    kind = excluded.kind,
+                    displayTitle = excluded.displayTitle,
+                    searchableText = excluded.searchableText,
+                    text = excluded.text,
+                    originalPath = excluded.originalPath,
+                    cachedFilePath = COALESCE(excluded.cachedFilePath, clipboard_items.cachedFilePath),
+                    thumbnailPath = COALESCE(excluded.thumbnailPath, clipboard_items.thumbnailPath),
+                    sourceApp = excluded.sourceApp,
+                    createdAt = excluded.createdAt
+                """,
+                arguments: [
+                    item.id.uuidString,
+                    item.kind.rawValue,
+                    item.displayTitle,
+                    item.searchableText,
+                    item.text,
+                    item.originalPath,
+                    item.cachedFilePath,
+                    item.thumbnailPath,
+                    item.sourceApp,
+                    item.contentHash,
+                    item.createdAt,
+                    item.lastUsedAt,
+                    item.useCount,
+                    item.isPinned,
+                    item.isFavorite
+                ]
+            )
         }
     }
 
     public func search(_ query: String, limit: Int) throws -> [ClipboardItem] {
+        try search(query, limit: limit, favoritesOnly: false)
+    }
+
+    public func search(_ query: String, limit: Int, favoritesOnly: Bool) throws -> [ClipboardItem] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let boundedLimit = max(limit, 0)
 
         return try database.writer.read { db in
+            let favoriteClause = favoritesOnly ? "WHERE isFavorite = 1" : ""
             if trimmedQuery.isEmpty {
                 return try ClipboardItem.fetchAll(
                     db,
                     sql: """
                     SELECT *
                     FROM clipboard_items
+                    \(favoriteClause)
                     ORDER BY isPinned DESC, createdAt DESC
                     LIMIT ?
                     """,
@@ -33,17 +75,32 @@ public final class ClipboardRepository {
             }
 
             let pattern = Self.likePattern(for: trimmedQuery)
+            let prefix = favoritesOnly ? "WHERE isFavorite = 1 AND" : "WHERE"
             return try ClipboardItem.fetchAll(
                 db,
                 sql: """
                 SELECT *
                 FROM clipboard_items
-                WHERE searchableText LIKE ? ESCAPE '\\'
+                \(prefix) (searchableText LIKE ? ESCAPE '\\'
                    OR displayTitle LIKE ? ESCAPE '\\'
+                )
                 ORDER BY isPinned DESC, createdAt DESC
                 LIMIT ?
                 """,
                 arguments: [pattern, pattern, boundedLimit]
+            )
+        }
+    }
+
+    public func setFavorite(id: UUID, isFavorite: Bool) throws {
+        try database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE clipboard_items
+                SET isFavorite = ?
+                WHERE id = ?
+                """,
+                arguments: [isFavorite, id.uuidString]
             )
         }
     }
@@ -94,6 +151,7 @@ extension ClipboardItem: FetchableRecord, PersistableRecord {
             cachedFilePath: row["cachedFilePath"],
             thumbnailPath: row["thumbnailPath"],
             sourceApp: row["sourceApp"],
+            contentHash: row["contentHash"],
             createdAt: row["createdAt"],
             lastUsedAt: row["lastUsedAt"],
             useCount: row["useCount"],
@@ -112,6 +170,7 @@ extension ClipboardItem: FetchableRecord, PersistableRecord {
         container["cachedFilePath"] = cachedFilePath
         container["thumbnailPath"] = thumbnailPath
         container["sourceApp"] = sourceApp
+        container["contentHash"] = contentHash
         container["createdAt"] = createdAt
         container["lastUsedAt"] = lastUsedAt
         container["useCount"] = useCount

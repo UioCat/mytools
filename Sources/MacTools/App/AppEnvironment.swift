@@ -12,6 +12,7 @@ final class AppEnvironment {
     private let pasteActionService: PasteActionService
     private let permissionService = PermissionService()
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
+    private let mainPanelDismissHandler = PanelDismissHandler()
     private var clipboardTimer: Timer?
 
     private lazy var clipboardModel = ClipboardPanelModel(
@@ -22,7 +23,12 @@ final class AppEnvironment {
     )
 
     lazy var mainPanel = MainPanelController(
-        rootView: RuntimeMainPanelView(model: clipboardModel)
+        rootView: RuntimeMainPanelView(
+            model: clipboardModel,
+            onDismiss: { [mainPanelDismissHandler] in
+                mainPanelDismissHandler.dismiss()
+            }
+        )
     )
 
     lazy var settingsPanel = MainPanelController(
@@ -92,6 +98,9 @@ final class AppEnvironment {
     }
 
     func start() {
+        mainPanelDismissHandler.onDismiss = { [weak self] in
+            self?.mainPanel.hide()
+        }
         startClipboardPolling()
         superRightClickMonitor.start()
     }
@@ -137,8 +146,8 @@ final class AppEnvironment {
 
     private func showTranslationUnavailableAlert() {
         let alert = NSAlert()
-        alert.messageText = "Translation Not Configured"
-        alert.informativeText = "Baidu translation credentials have not been configured yet."
+        alert.messageText = "翻译未配置"
+        alert.informativeText = "百度翻译凭证还没有配置。"
         alert.alertStyle = .informational
         alert.runModal()
     }

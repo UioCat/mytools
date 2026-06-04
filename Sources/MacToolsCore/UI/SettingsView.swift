@@ -18,38 +18,38 @@ public struct SettingsView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Settings")
+                Text("设置")
                     .font(.system(size: 22, weight: .semibold))
 
-                SettingsSection(title: "Shortcuts") {
-                    SettingsRow(title: "Main Panel", value: settings.mainPanelShortcut.displayValue)
-                    SettingsRow(title: "Clipboard", value: settings.clipboardShortcut.displayValue)
-                    SettingsRow(title: "Tool 2", value: settings.reservedTool2Shortcut.displayValue)
-                    SettingsRow(title: "Tool 3", value: settings.reservedTool3Shortcut.displayValue)
+                SettingsSection(title: "快捷键") {
+                    SettingsRow(title: "主面板", value: settings.mainPanelShortcut.displayValue)
+                    SettingsRow(title: "剪贴板", value: settings.clipboardShortcut.displayValue)
+                    SettingsRow(title: "工具 2", value: settings.reservedTool2Shortcut.displayValue)
+                    SettingsRow(title: "工具 3", value: settings.reservedTool3Shortcut.displayValue)
                 }
 
-                SettingsSection(title: "Clipboard") {
-                    StatusRow(title: "Recording", isEnabled: settings.clipboard.isRecordingEnabled)
+                SettingsSection(title: "剪贴板") {
+                    StatusRow(title: "记录状态", isEnabled: settings.clipboard.isRecordingEnabled)
                     SettingsRow(
-                        title: "History Limit",
-                        value: "\(settings.clipboard.maxHistoryCount) items"
+                        title: "历史上限",
+                        value: "\(settings.clipboard.maxHistoryCount) 条"
                     )
                     SettingsRow(
-                        title: "Cache Limit",
+                        title: "缓存上限",
                         value: "\(settings.clipboard.maxCacheMegabytes) MB"
                     )
                 }
 
-                SettingsSection(title: "Permissions") {
-                    StatusRow(title: "Accessibility", isEnabled: permissionSummary.hasAccessibility)
-                    StatusRow(title: "Input Monitoring", isEnabled: permissionSummary.hasInputMonitoring)
+                SettingsSection(title: "权限") {
+                    StatusRow(title: "辅助功能", isEnabled: permissionSummary.hasAccessibility)
+                    StatusRow(title: "输入监控", isEnabled: permissionSummary.hasInputMonitoring)
                     StatusRow(
-                        title: "Super Right Click",
+                        title: "超级右键",
                         isEnabled: permissionSummary.canUseSuperRightClick
                     )
 
                     Button(action: openSystemSettings) {
-                        Label("Open System Settings", systemImage: "gearshape")
+                        Label("打开系统设置", systemImage: "gearshape")
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 4)
@@ -106,6 +106,6 @@ private struct StatusRow: View {
     let isEnabled: Bool
 
     var body: some View {
-        SettingsRow(title: title, value: isEnabled ? "Allowed" : "Missing")
+        SettingsRow(title: title, value: isEnabled ? "已允许" : "未授权")
     }
 }

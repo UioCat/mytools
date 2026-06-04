@@ -32,6 +32,7 @@ public final class ClipboardDatabase {
                 table.column("cachedFilePath", .text)
                 table.column("thumbnailPath", .text)
                 table.column("sourceApp", .text)
+                table.column("contentHash", .text)
                 table.column("createdAt", .datetime).notNull()
                 table.column("lastUsedAt", .datetime)
                 table.column("useCount", .integer).notNull()
@@ -53,6 +54,20 @@ public final class ClipboardDatabase {
                 index: "idx_clipboard_last_used",
                 on: "clipboard_items",
                 columns: ["lastUsedAt"]
+            )
+        }
+        migrator.registerMigration("indexClipboardContentHash") { db in
+            let columns = try db.columns(in: "clipboard_items")
+            if !columns.contains(where: { $0.name == "contentHash" }) {
+                try db.alter(table: "clipboard_items") { table in
+                    table.add(column: "contentHash", .text)
+                }
+            }
+            try db.create(
+                index: "idx_clipboard_content_hash",
+                on: "clipboard_items",
+                columns: ["contentHash"],
+                unique: true
             )
         }
         return migrator

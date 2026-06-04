@@ -20,6 +20,7 @@ public struct ClipboardItem: Codable, Equatable, Identifiable {
     public var cachedFilePath: String?
     public var thumbnailPath: String?
     public var sourceApp: String?
+    public var contentHash: String?
     public var createdAt: Date
     public var lastUsedAt: Date?
     public var useCount: Int
@@ -36,6 +37,7 @@ public struct ClipboardItem: Codable, Equatable, Identifiable {
         cachedFilePath: String?,
         thumbnailPath: String?,
         sourceApp: String?,
+        contentHash: String? = nil,
         createdAt: Date,
         lastUsedAt: Date?,
         useCount: Int,
@@ -51,6 +53,7 @@ public struct ClipboardItem: Codable, Equatable, Identifiable {
         self.cachedFilePath = cachedFilePath
         self.thumbnailPath = thumbnailPath
         self.sourceApp = sourceApp
+        self.contentHash = contentHash
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
         self.useCount = useCount
