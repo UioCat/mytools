@@ -84,7 +84,11 @@ public struct MainPanelView: View {
     public var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.74))
+                )
                 .overlay(glassHighlight)
 
             VStack(spacing: 0) {
@@ -136,42 +140,19 @@ public struct MainPanelView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 8) {
-                Image(systemName: "doc.on.clipboard.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.72)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(Color.white.opacity(0.45), lineWidth: 1)
-                    )
-
-                Text("剪贴板")
-                    .font(.system(size: 22, weight: .semibold))
-            }
-
-            Rectangle()
-                .fill(Color.primary.opacity(0.12))
-                .frame(height: 28)
-                .frame(width: 1)
-
+        HStack(spacing: 14) {
             TextField("搜索...", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .regular))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(
+                    Color(nsColor: .windowBackgroundColor).opacity(0.42),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(Color.white.opacity(0.26), lineWidth: 1)
                 )
 
@@ -185,7 +166,8 @@ public struct MainPanelView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(clearButtonColor)
-            .background(.thinMaterial, in: Capsule())
+            .background(.regularMaterial, in: Capsule())
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.36), in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
             .disabled(items.filter { !$0.isFavorite }.isEmpty)
         }
@@ -218,7 +200,11 @@ public struct MainPanelView: View {
             }
         }
         .padding(.bottom, 2)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .background(
+            Color(nsColor: .windowBackgroundColor).opacity(0.36),
+            in: RoundedRectangle(cornerRadius: 17, style: .continuous)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 17, style: .continuous)
                 .stroke(Color.white.opacity(0.24), lineWidth: 1)
@@ -284,7 +270,7 @@ public struct MainPanelView: View {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.28), Color.white.opacity(0.05), Color.clear],
+                            colors: [Color.white.opacity(0.34), Color.white.opacity(0.12), Color.clear],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )

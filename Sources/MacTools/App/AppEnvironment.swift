@@ -115,10 +115,12 @@ final class AppEnvironment {
     func openMainPanel() {
         captureFrontmostApplicationBeforePanel()
         clipboardModel.refresh()
+        settingsPanel.hide()
         mainPanel.show()
     }
 
     func openSettings() {
+        mainPanel.hide()
         settingsPanel.show()
     }
 

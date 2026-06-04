@@ -18,7 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotKey(_ target: HotKeyTarget) {
         switch target {
-        case .mainPanel, .clipboard:
+        case .mainPanel:
+            environment.openSettings()
+        case .clipboard:
             environment.openMainPanel()
         case .reservedTool2, .reservedTool3:
             environment.logger.info("reserved hotkey selected: \(target.rawValue)")

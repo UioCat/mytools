@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 public struct SettingsView: View {
@@ -16,48 +17,63 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("设置")
-                    .font(.system(size: 22, weight: .semibold))
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.76))
+                )
 
-                SettingsSection(title: "快捷键") {
-                    SettingsRow(title: "主面板", value: settings.mainPanelShortcut.displayValue)
-                    SettingsRow(title: "剪贴板", value: settings.clipboardShortcut.displayValue)
-                    SettingsRow(title: "工具 2", value: settings.reservedTool2Shortcut.displayValue)
-                    SettingsRow(title: "工具 3", value: settings.reservedTool3Shortcut.displayValue)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("设置")
+                        .font(.system(size: 22, weight: .semibold))
 
-                SettingsSection(title: "剪贴板") {
-                    StatusRow(title: "记录状态", isEnabled: settings.clipboard.isRecordingEnabled)
-                    SettingsRow(
-                        title: "历史上限",
-                        value: "\(settings.clipboard.maxHistoryCount) 条"
-                    )
-                    SettingsRow(
-                        title: "缓存上限",
-                        value: "\(settings.clipboard.maxCacheMegabytes) MB"
-                    )
-                }
-
-                SettingsSection(title: "权限") {
-                    StatusRow(title: "辅助功能", isEnabled: permissionSummary.hasAccessibility)
-                    StatusRow(title: "输入监控", isEnabled: permissionSummary.hasInputMonitoring)
-                    StatusRow(
-                        title: "超级右键",
-                        isEnabled: permissionSummary.canUseSuperRightClick
-                    )
-
-                    Button(action: openSystemSettings) {
-                        Label("打开系统设置", systemImage: "gearshape")
+                    SettingsSection(title: "快捷键") {
+                        SettingsRow(title: "主面板", value: settings.mainPanelShortcut.displayValue)
+                        SettingsRow(title: "剪贴板", value: settings.clipboardShortcut.displayValue)
+                        SettingsRow(title: "工具 2", value: settings.reservedTool2Shortcut.displayValue)
+                        SettingsRow(title: "工具 3", value: settings.reservedTool3Shortcut.displayValue)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 4)
+
+                    SettingsSection(title: "剪贴板") {
+                        StatusRow(title: "记录状态", isEnabled: settings.clipboard.isRecordingEnabled)
+                        SettingsRow(
+                            title: "历史上限",
+                            value: "\(settings.clipboard.maxHistoryCount) 条"
+                        )
+                        SettingsRow(
+                            title: "缓存上限",
+                            value: "\(settings.clipboard.maxCacheMegabytes) MB"
+                        )
+                    }
+
+                    SettingsSection(title: "权限") {
+                        StatusRow(title: "辅助功能", isEnabled: permissionSummary.hasAccessibility)
+                        StatusRow(title: "输入监控", isEnabled: permissionSummary.hasInputMonitoring)
+                        StatusRow(
+                            title: "超级右键",
+                            isEnabled: permissionSummary.canUseSuperRightClick
+                        )
+
+                        Button(action: openSystemSettings) {
+                            Label("打开系统设置", systemImage: "gearshape")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 4)
+                    }
                 }
+                .padding(20)
+                .frame(maxWidth: 520, alignment: .leading)
             }
-            .padding(20)
-            .frame(maxWidth: 520, alignment: .leading)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.38), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 28, x: 0, y: 18)
         .frame(width: 560, height: 520)
     }
 }
@@ -75,7 +91,15 @@ private struct SettingsSection<Content: View>: View {
             VStack(spacing: 0) {
                 content
             }
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(
+                Color(nsColor: .windowBackgroundColor).opacity(0.38),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
+            )
         }
     }
 }
