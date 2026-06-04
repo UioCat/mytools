@@ -11,6 +11,42 @@ final class FileActionServiceTests: XCTestCase {
         XCTAssertEqual(command, "open -a Terminal /Users/example/Project")
     }
 
+    func testOpenTerminalRunsBuiltInTerminalForFolderPath() throws {
+        let processRunner = FakeProcessRunner()
+        let folderURL = temporaryFolderURL()
+        let service = FileActionService(workspace: FakeWorkspaceOpening(), processRunner: processRunner)
+
+        try service.openTerminal(at: folderURL.path)
+
+        XCTAssertEqual(
+            processRunner.runs,
+            [.init(executableURL: URL(fileURLWithPath: "/usr/bin/open"), arguments: ["-a", "Terminal", folderURL.path])]
+        )
+    }
+
+    func testOpenTerminalRejectsMissingFolderPath() {
+        let processRunner = FakeProcessRunner()
+        let missingPath = temporaryFolderURL().appendingPathComponent("missing").path
+        let service = FileActionService(workspace: FakeWorkspaceOpening(), processRunner: processRunner)
+
+        XCTAssertThrowsError(try service.openTerminal(at: missingPath)) { error in
+            XCTAssertEqual(error as? FileActionError, .invalidFolderPath(missingPath))
+        }
+        XCTAssertTrue(processRunner.runs.isEmpty)
+    }
+
+    func testOpenTerminalRejectsFilePath() throws {
+        let processRunner = FakeProcessRunner()
+        let fileURL = temporaryFolderURL().appendingPathComponent("report.txt")
+        try "content".write(to: fileURL, atomically: true, encoding: .utf8)
+        let service = FileActionService(workspace: FakeWorkspaceOpening(), processRunner: processRunner)
+
+        XCTAssertThrowsError(try service.openTerminal(at: fileURL.path)) { error in
+            XCTAssertEqual(error as? FileActionError, .invalidFolderPath(fileURL.path))
+        }
+        XCTAssertTrue(processRunner.runs.isEmpty)
+    }
+
     func testCopyPathWritesOriginalPathAsText() throws {
         let pasteboard = FakeWritablePasteboard()
         let service = FileActionService(workspace: FakeWorkspaceOpening())
@@ -78,6 +114,27 @@ private final class FakeWritablePasteboard: WritablePasteboard {
     func writeFileURL(_ url: URL) {
         operations.append(.writeFileURL(url))
     }
+}
+
+private final class FakeProcessRunner: ProcessRunning {
+    struct Run: Equatable {
+        let executableURL: URL
+        let arguments: [String]
+    }
+
+    private(set) var runs: [Run] = []
+
+    func run(_ executableURL: URL, arguments: [String]) throws {
+        runs.append(.init(executableURL: executableURL, arguments: arguments))
+    }
+}
+
+private func temporaryFolderURL() -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("MacToolsCoreTests")
+        .appendingPathComponent(UUID().uuidString)
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
 }
 
 private extension ClipboardItem {
