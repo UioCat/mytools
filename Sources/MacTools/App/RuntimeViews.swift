@@ -18,6 +18,7 @@ struct RuntimeMainPanelView: View {
     var body: some View {
         MainPanelView(
             items: model.items,
+            resetToken: model.presentationToken,
             onSelect: { item, action in
                 switch action {
                 case .copy:

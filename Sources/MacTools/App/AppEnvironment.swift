@@ -118,7 +118,7 @@ final class AppEnvironment {
 
     func openMainPanel() {
         captureFrontmostApplicationBeforePanel()
-        clipboardModel.refresh()
+        clipboardModel.prepareForPresentation()
         settingsPanel.hide()
         mainPanel.show()
     }
@@ -173,8 +173,8 @@ final class AppEnvironment {
         }
 
         mainPanel.hide()
-        appBeforePanel?.activate(options: [.activateIgnoringOtherApps])
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+        appBeforePanel?.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
             self?.clipboardModel.paste()
         }
     }

@@ -27,6 +27,9 @@ public final class MainPanelController {
             )
             panel.titleVisibility = .hidden
             panel.titlebarAppearsTransparent = true
+            panel.standardWindowButton(.closeButton)?.isHidden = true
+            panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            panel.standardWindowButton(.zoomButton)?.isHidden = true
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = true

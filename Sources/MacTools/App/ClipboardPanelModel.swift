@@ -4,6 +4,7 @@ import MacToolsCore
 @MainActor
 final class ClipboardPanelModel: ObservableObject {
     @Published private(set) var items: [ClipboardItem] = []
+    @Published private(set) var presentationToken = 0
 
     private let repository: ClipboardRepository
     private let pasteActionService: PasteActionService
@@ -28,6 +29,11 @@ final class ClipboardPanelModel: ObservableObject {
         } catch {
             logger.error("clipboard refresh failed: \(error)")
         }
+    }
+
+    func prepareForPresentation() {
+        presentationToken += 1
+        refresh()
     }
 
     func perform(_ action: ClipboardSelectionAction, on item: ClipboardItem) {

@@ -50,6 +50,7 @@ public struct MainPanelView: View {
     @State private var mode: ClipboardPanelMode = .all
 
     public let items: [ClipboardItem]
+    public let resetToken: Int
     public let onSelect: (ClipboardItem, ClipboardSelectionAction) -> Void
     public let onFavoriteToggle: (ClipboardItem) -> Void
     public let onDelete: (ClipboardItem) -> Void
@@ -58,6 +59,7 @@ public struct MainPanelView: View {
 
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
         self.items = items
+        self.resetToken = 0
         self.onSelect = { item, _ in onSelect(item) }
         self.onFavoriteToggle = { _ in }
         self.onDelete = { _ in }
@@ -67,6 +69,7 @@ public struct MainPanelView: View {
 
     public init(
         items: [ClipboardItem],
+        resetToken: Int = 0,
         onSelect: @escaping (ClipboardItem, ClipboardSelectionAction) -> Void,
         onFavoriteToggle: @escaping (ClipboardItem) -> Void = { _ in },
         onDelete: @escaping (ClipboardItem) -> Void = { _ in },
@@ -74,6 +77,7 @@ public struct MainPanelView: View {
         onDismiss: @escaping () -> Void = {}
     ) {
         self.items = items
+        self.resetToken = resetToken
         self.onSelect = onSelect
         self.onFavoriteToggle = onFavoriteToggle
         self.onDelete = onDelete
@@ -138,6 +142,9 @@ public struct MainPanelView: View {
         .onChange(of: query) { _ in
             normalizeSelection()
         }
+        .onChange(of: resetToken) { _ in
+            resetPanelState()
+        }
     }
 
     private var header: some View {
@@ -156,6 +163,9 @@ public struct MainPanelView: View {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(Color.white.opacity(0.34), lineWidth: 1)
                 )
+                .onSubmit {
+                    performSelectedAction(.copyAndPaste)
+                }
 
             Button {
                 onClear()
@@ -375,6 +385,13 @@ public struct MainPanelView: View {
         }
 
         selectedItemID = filteredItems.first?.id
+    }
+
+    private func resetPanelState() {
+        query = ""
+        mode = .all
+        selectedItemID = nil
+        normalizeSelection()
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
