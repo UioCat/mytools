@@ -83,17 +83,11 @@ public struct MainPanelView: View {
 
     public var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.74))
-                )
-                .overlay(glassHighlight)
+            auroraGlassBackground
 
             VStack(spacing: 0) {
                 header
-                    .padding(.horizontal, 22)
+                    .padding(.horizontal, 24)
                     .padding(.top, 20)
                     .padding(.bottom, 14)
 
@@ -127,7 +121,14 @@ public struct MainPanelView: View {
         )
         .shadow(color: Color.black.opacity(0.18), radius: 28, x: 0, y: 18)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
-        .frame(width: 900, height: 620)
+        .frame(
+            minWidth: 720,
+            idealWidth: 900,
+            maxWidth: .infinity,
+            minHeight: 480,
+            idealHeight: 620,
+            maxHeight: .infinity
+        )
         .onChange(of: items) { _ in
             normalizeSelection()
         }
@@ -146,14 +147,14 @@ public struct MainPanelView: View {
                 .font(.system(size: 22, weight: .regular))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .background(
-                    Color(nsColor: .windowBackgroundColor).opacity(0.42),
+                    Color(nsColor: .windowBackgroundColor).opacity(0.18),
                     in: RoundedRectangle(cornerRadius: 18, style: .continuous)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.26), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.34), lineWidth: 1)
                 )
 
             Button {
@@ -166,9 +167,9 @@ public struct MainPanelView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(clearButtonColor)
-            .background(.regularMaterial, in: Capsule())
-            .background(Color(nsColor: .windowBackgroundColor).opacity(0.36), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
+            .background(.thinMaterial, in: Capsule())
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.16), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.34), lineWidth: 1))
             .disabled(items.filter { !$0.isFavorite }.isEmpty)
         }
     }
@@ -193,21 +194,21 @@ public struct MainPanelView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(mode == itemMode ? Color.primary : Color.secondary)
                 .background(
-                    mode == itemMode ? Color.white.opacity(0.34) : Color.clear,
+                    mode == itemMode ? Color.white.opacity(0.28) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
                 .overlay(tabBorder(isSelected: mode == itemMode))
             }
         }
         .padding(.bottom, 2)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
         .background(
-            Color(nsColor: .windowBackgroundColor).opacity(0.36),
+            Color(nsColor: .windowBackgroundColor).opacity(0.14),
             in: RoundedRectangle(cornerRadius: 17, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(Color.white.opacity(0.24), lineWidth: 1)
+                .stroke(Color.white.opacity(0.30), lineWidth: 1)
         )
     }
 
@@ -263,14 +264,53 @@ public struct MainPanelView: View {
         items.contains(where: { !$0.isFavorite }) ? Color.secondary : Color.secondary.opacity(0.45)
     }
 
+    private var auroraGlassBackground: some View {
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.24))
+            )
+            .overlay(auroraRefraction)
+            .overlay(glassHighlight)
+    }
+
+    private var auroraRefraction: some View {
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.cyan.opacity(0.16),
+                        Color.clear,
+                        Color.indigo.opacity(0.13)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .blendMode(.screen)
+    }
+
     private var glassHighlight: some View {
         RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .strokeBorder(Color.white.opacity(0.32), lineWidth: 1)
+            .strokeBorder(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.58),
+                        Color.cyan.opacity(0.22),
+                        Color.indigo.opacity(0.20),
+                        Color.white.opacity(0.26)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
             .background(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.34), Color.white.opacity(0.12), Color.clear],
+                            colors: [Color.white.opacity(0.24), Color.white.opacity(0.08), Color.clear],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -282,7 +322,7 @@ public struct MainPanelView: View {
     private func tabBorder(isSelected: Bool) -> some View {
         if isSelected {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                .stroke(Color.white.opacity(0.48), lineWidth: 1)
                 .shadow(color: Color.white.opacity(0.22), radius: 5, x: 0, y: 1)
         }
     }

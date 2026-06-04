@@ -129,22 +129,26 @@ public struct ClipboardRowView: View {
     }
 
     private var rowBackground: some ShapeStyle {
-        isSelected ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color.white.opacity(0.001))
+        isSelected ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(Color.white.opacity(0.001))
     }
 
     @ViewBuilder
     private var selectedOverlay: some View {
         if isSelected {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Color.accentColor.opacity(0.85), Color.white.opacity(0.58)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    lineWidth: 2
+                .fill(Color.white.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.cyan.opacity(0.52), Color.indigo.opacity(0.32), Color.white.opacity(0.56)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
                 )
-                .shadow(color: Color.accentColor.opacity(0.22), radius: 9, x: 0, y: 3)
+                .shadow(color: Color.cyan.opacity(0.16), radius: 10, x: 0, y: 4)
         }
     }
 

@@ -24,6 +24,8 @@ final class AppEnvironment {
     )
 
     lazy var mainPanel = MainPanelController(
+        initialSize: NSSize(width: 900, height: 620),
+        minimumSize: NSSize(width: 720, height: 480),
         rootView: RuntimeMainPanelView(
             model: clipboardModel,
             onCopy: { [weak self] item in
@@ -39,6 +41,8 @@ final class AppEnvironment {
     )
 
     lazy var settingsPanel = MainPanelController(
+        initialSize: NSSize(width: 720, height: 620),
+        minimumSize: NSSize(width: 560, height: 460),
         rootView: RuntimeSettingsView(
             settings: settings,
             permissionService: permissionService

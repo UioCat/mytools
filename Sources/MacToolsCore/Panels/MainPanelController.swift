@@ -4,16 +4,24 @@ import SwiftUI
 public final class MainPanelController {
     private var panel: NSPanel?
     private let rootView: AnyView
+    private let initialSize: NSSize
+    private let minimumSize: NSSize
 
-    public init<Content: View>(rootView: Content) {
+    public init<Content: View>(
+        initialSize: NSSize = NSSize(width: 900, height: 620),
+        minimumSize: NSSize = NSSize(width: 720, height: 480),
+        rootView: Content
+    ) {
+        self.initialSize = initialSize
+        self.minimumSize = minimumSize
         self.rootView = AnyView(rootView)
     }
 
     public func show() {
         if panel == nil {
             let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
-                styleMask: [.titled, .fullSizeContentView],
+                contentRect: NSRect(origin: .zero, size: initialSize),
+                styleMask: [.titled, .fullSizeContentView, .resizable],
                 backing: .buffered,
                 defer: false
             )
@@ -22,6 +30,8 @@ public final class MainPanelController {
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = true
+            panel.minSize = minimumSize
+            panel.isMovableByWindowBackground = true
 
             let hostingView = NSHostingView(rootView: rootView)
             hostingView.wantsLayer = true
