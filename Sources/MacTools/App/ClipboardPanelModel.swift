@@ -32,8 +32,8 @@ final class ClipboardPanelModel: ObservableObject {
     }
 
     func prepareForPresentation() {
-        presentationToken += 1
         refresh()
+        presentationToken += 1
     }
 
     func perform(_ action: ClipboardSelectionAction, on item: ClipboardItem) {

@@ -136,7 +136,7 @@ public struct MainPanelView: View {
             TextField("搜索...", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 14)
                 .liquidGlassModule(cornerRadius: 24)
@@ -177,7 +177,7 @@ public struct MainPanelView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(mode == itemMode ? Color.white : Color.white.opacity(0.68))
+                .foregroundStyle(mode == itemMode ? Color.black : Color.black.opacity(0.62))
                 .liquidGlassModule(cornerRadius: 20, isSelected: mode == itemMode)
             }
         }
@@ -232,7 +232,7 @@ public struct MainPanelView: View {
     }
 
     private var clearButtonColor: Color {
-        items.contains(where: { !$0.isFavorite }) ? Color.white.opacity(0.82) : Color.white.opacity(0.36)
+        items.contains(where: { !$0.isFavorite }) ? Color.black.opacity(0.72) : Color.black.opacity(0.32)
     }
 
     private func selectAndPaste(_ item: ClipboardItem) {
@@ -285,11 +285,14 @@ public struct MainPanelView: View {
         selectedItemID = filteredItems.first?.id
     }
 
+    private func selectFirstItem() {
+        selectedItemID = filteredItems.first?.id
+    }
+
     private func resetPanelState() {
         query = ""
         mode = .all
-        selectedItemID = nil
-        normalizeSelection()
+        selectFirstItem()
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {

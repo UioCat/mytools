@@ -75,7 +75,7 @@ public struct SettingsView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.black)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
                     }
@@ -99,17 +99,17 @@ public struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
                 .frame(width: 38, height: 38)
                 .liquidGlassModule(cornerRadius: 14, isSelected: true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("设置")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.black)
                 Text("快捷键、剪贴板和权限")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.66))
+                    .foregroundStyle(Color.black.opacity(0.58))
             }
 
             Spacer()
@@ -129,11 +129,11 @@ private struct SettingsSection<Content: View>: View {
             HStack(spacing: 8) {
                 Image(systemName: iconName)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.70))
+                    .foregroundStyle(Color.black.opacity(0.60))
 
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.70))
+                    .foregroundStyle(Color.black.opacity(0.60))
             }
 
             VStack(spacing: 0) {
@@ -152,13 +152,13 @@ private struct SettingsRow: View {
         HStack(spacing: 12) {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
 
             Spacer()
 
             Text(value)
                 .font(.system(size: 13))
-                .foregroundStyle(Color.white.opacity(0.66))
+                .foregroundStyle(Color.black.opacity(0.58))
                 .lineLimit(1)
         }
         .padding(.horizontal, 14)
@@ -191,7 +191,7 @@ private struct PermissionStatusRow: View {
                 HStack(spacing: 12) {
                     Text(title)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.black)
 
                     Spacer()
 
@@ -201,7 +201,7 @@ private struct PermissionStatusRow: View {
                         Image(systemName: "arrow.up.forward.app")
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundStyle(Color.cyan.opacity(0.86))
+                    .foregroundStyle(Color.black.opacity(0.70))
                     .lineLimit(1)
                 }
                 .padding(.horizontal, 14)

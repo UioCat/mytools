@@ -31,7 +31,7 @@ public struct ClipboardRowView: View {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(item.displayTitle)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.black)
                     .lineLimit(isImage ? 1 : 2)
 
                 Spacer(minLength: 12)
@@ -39,13 +39,13 @@ public struct ClipboardRowView: View {
                 if !isImage {
                     Text(primaryMetric)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.72))
+                        .foregroundStyle(Color.black.opacity(0.64))
                         .lineLimit(1)
                 }
 
                 Text("\(index)")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.68))
+                    .foregroundStyle(Color.black.opacity(0.58))
                     .frame(width: 24, alignment: .trailing)
             }
 
@@ -58,7 +58,7 @@ public struct ClipboardRowView: View {
             HStack(spacing: 8) {
                 Text(relativeCreatedAt)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.66))
+                    .foregroundStyle(Color.black.opacity(0.58))
 
                 if item.isPinned {
                     StatusLabel(title: "置顶")
@@ -73,7 +73,7 @@ public struct ClipboardRowView: View {
                 if isImage {
                     Text(primaryMetric)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.72))
+                        .foregroundStyle(Color.black.opacity(0.64))
                         .lineLimit(1)
                 }
             }
@@ -98,7 +98,7 @@ public struct ClipboardRowView: View {
         } else {
             Image(systemName: iconName)
                 .font(.system(size: 42, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.64))
+                .foregroundStyle(Color.black.opacity(0.52))
         }
     }
 
@@ -206,11 +206,11 @@ private struct StatusLabel: View {
     var body: some View {
         Text(title)
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(Color.white.opacity(0.76))
+            .foregroundStyle(Color.black.opacity(0.68))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(.thinMaterial, in: Capsule())
-            .background(Color.black.opacity(0.24), in: Capsule())
+            .background(Color.white.opacity(0.20), in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.24), lineWidth: 1))
     }
 }

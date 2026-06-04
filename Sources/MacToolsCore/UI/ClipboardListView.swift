@@ -93,11 +93,11 @@ public struct ClipboardListView: View {
         VStack(spacing: 10) {
             Image(systemName: "tray")
                 .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.72))
+                .foregroundStyle(Color.black.opacity(0.58))
 
             Text("没有匹配的剪贴板内容")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.72))
+                .foregroundStyle(Color.black.opacity(0.64))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 72)
