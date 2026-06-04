@@ -1,8 +1,8 @@
 import Foundation
 
 public struct BaiduTranslationConfiguration: Equatable {
-    public let appID: String
-    public let secret: String
+    public var appID: String
+    public var secret: String
 
     public init(appID: String, secret: String) {
         self.appID = appID
