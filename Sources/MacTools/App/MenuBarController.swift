@@ -28,5 +28,6 @@ final class MenuBarController {
 
     @objc func open() {
         environment.logger.info("menu open selected")
+        environment.mainPanel.show()
     }
 }
