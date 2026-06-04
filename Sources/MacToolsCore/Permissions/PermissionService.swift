@@ -4,6 +4,10 @@ import Foundation
 import ApplicationServices
 #endif
 
+#if canImport(IOKit)
+import IOKit.hid
+#endif
+
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -85,6 +89,10 @@ public struct SystemPermissionChecker: PermissionChecking {
     }
 
     public func hasInputMonitoringPermission() -> Bool {
-        true
+        #if canImport(IOKit)
+        return IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        #else
+        return false
+        #endif
     }
 }

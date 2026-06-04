@@ -13,7 +13,7 @@ public final class MainPanelController {
         if panel == nil {
             let panel = NSPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
-                styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
+                styleMask: [.titled, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
@@ -24,7 +24,8 @@ public final class MainPanelController {
         }
 
         panel?.center()
-        panel?.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
+        panel?.makeKeyAndOrderFront(nil)
     }
 
     public func hide() {

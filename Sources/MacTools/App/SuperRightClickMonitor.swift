@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import MacToolsCore
 
@@ -8,9 +9,10 @@ final class SuperRightClickMonitor {
     private let logger: Logger
     private let onItemCaptured: (ClipboardItem) -> Void
     private var stateMachine: RightClickStateMachine
-    private var mouseDownMonitor: Any?
-    private var mouseUpMonitor: Any?
+    private var eventTap: CFMachPort?
+    private var eventTapRunLoopSource: CFRunLoopSource?
     private var longPressTimer: Timer?
+    private var shouldSuppressNextRightMouseUp = false
 
     init(
         thresholdMilliseconds: Int,
@@ -27,32 +29,87 @@ final class SuperRightClickMonitor {
     func start() {
         stop()
 
-        mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseDown) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleRightMouseDown()
-            }
+        let mask = CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
+            | CGEventMask(1 << CGEventType.rightMouseUp.rawValue)
+        let userInfo = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: Self.handleEventTap,
+            userInfo: userInfo
+        ) else {
+            logger.error("super right click event tap could not be installed")
+            return
         }
-        mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseUp) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleRightMouseUp()
-            }
+
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        eventTap = tap
+        eventTapRunLoopSource = source
+    }
+
+    nonisolated private static let handleEventTap: CGEventTapCallBack = { _, type, event, userInfo in
+        guard let userInfo else {
+            return Unmanaged.passUnretained(event)
         }
+
+        let monitor = Unmanaged<SuperRightClickMonitor>
+            .fromOpaque(userInfo)
+            .takeUnretainedValue()
+        return monitor.handleEvent(type: type, event: event)
     }
 
     func stop() {
-        if let mouseDownMonitor {
-            NSEvent.removeMonitor(mouseDownMonitor)
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
         }
-        if let mouseUpMonitor {
-            NSEvent.removeMonitor(mouseUpMonitor)
+        if let eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
         }
-        mouseDownMonitor = nil
-        mouseUpMonitor = nil
+        eventTap = nil
+        eventTapRunLoopSource = nil
         longPressTimer?.invalidate()
         longPressTimer = nil
+        shouldSuppressNextRightMouseUp = false
+    }
+
+    nonisolated private func handleEvent(
+        type: CGEventType,
+        event: CGEvent
+    ) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            MainActor.assumeIsolated {
+                if let eventTap {
+                    CGEvent.tapEnable(tap: eventTap, enable: true)
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        let shouldSuppress = MainActor.assumeIsolated {
+            handleEventOnMainActor(type: type)
+        }
+
+        return shouldSuppress ? nil : Unmanaged.passUnretained(event)
+    }
+
+    private func handleEventOnMainActor(type: CGEventType) -> Bool {
+        switch type {
+        case .rightMouseDown:
+            handleRightMouseDown()
+            return false
+        case .rightMouseUp:
+            return handleRightMouseUp()
+        default:
+            return false
+        }
     }
 
     private func handleRightMouseDown() {
+        shouldSuppressNextRightMouseUp = false
         _ = stateMachine.handle(.pressed(atMilliseconds: currentMilliseconds()))
         longPressTimer?.invalidate()
         longPressTimer = Timer.scheduledTimer(
@@ -65,10 +122,13 @@ final class SuperRightClickMonitor {
         }
     }
 
-    private func handleRightMouseUp() {
+    private func handleRightMouseUp() -> Bool {
         longPressTimer?.invalidate()
         longPressTimer = nil
         _ = stateMachine.handle(.released(atMilliseconds: currentMilliseconds()))
+        let shouldSuppress = shouldSuppressNextRightMouseUp
+        shouldSuppressNextRightMouseUp = false
+        return shouldSuppress
     }
 
     private func handleLongPressTimer() {
@@ -79,6 +139,7 @@ final class SuperRightClickMonitor {
 
         longPressTimer?.invalidate()
         longPressTimer = nil
+        shouldSuppressNextRightMouseUp = true
 
         Task {
             let item = await service.handleDecision(decision, sourceApp: frontmostApplicationName())
