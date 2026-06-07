@@ -5,12 +5,15 @@ public struct ClipboardRowView: View {
     public let item: ClipboardItem
     public let index: Int
     public let isSelected: Bool
+    public let showsBackground: Bool
     public let onFavoriteToggle: () -> Void
+    @State private var isFavoriteButtonHovered = false
 
     public init(item: ClipboardItem) {
         self.item = item
         self.index = 1
         self.isSelected = false
+        self.showsBackground = true
         self.onFavoriteToggle = {}
     }
 
@@ -18,15 +21,27 @@ public struct ClipboardRowView: View {
         item: ClipboardItem,
         index: Int = 1,
         isSelected: Bool,
+        showsBackground: Bool = true,
         onFavoriteToggle: @escaping () -> Void
     ) {
         self.item = item
         self.index = index
         self.isSelected = isSelected
+        self.showsBackground = showsBackground
         self.onFavoriteToggle = onFavoriteToggle
     }
 
+    @ViewBuilder
     public var body: some View {
+        if showsBackground {
+            rowContent
+                .liquidGlassModule(cornerRadius: 24, isSelected: isSelected)
+        } else {
+            rowContent
+        }
+    }
+
+    private var rowContent: some View {
         VStack(spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(item.displayTitle)
@@ -39,14 +54,18 @@ public struct ClipboardRowView: View {
                 if !isImage {
                     Text(primaryMetric)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.black.opacity(0.64))
+                        .foregroundStyle(Color.black.opacity(0.72))
                         .lineLimit(1)
                 }
 
-                Text("\(index)")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.black.opacity(0.58))
-                    .frame(width: 24, alignment: .trailing)
+                HStack(spacing: 8) {
+                    Text("\(index)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.black.opacity(0.68))
+                        .frame(width: 24, alignment: .trailing)
+
+                    favoriteButton
+                }
             }
 
             if isImage {
@@ -58,7 +77,7 @@ public struct ClipboardRowView: View {
             HStack(spacing: 8) {
                 Text(relativeCreatedAt)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.58))
+                    .foregroundStyle(Color.black.opacity(0.68))
 
                 if item.isPinned {
                     StatusLabel(title: "置顶")
@@ -73,14 +92,13 @@ public struct ClipboardRowView: View {
                 if isImage {
                     Text(primaryMetric)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.black.opacity(0.64))
+                        .foregroundStyle(Color.black.opacity(0.72))
                         .lineLimit(1)
                 }
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, isImage ? 16 : 14)
-        .liquidGlassModule(cornerRadius: 24, isSelected: isSelected)
     }
 
     @ViewBuilder
@@ -100,6 +118,40 @@ public struct ClipboardRowView: View {
                 .font(.system(size: 42, weight: .regular))
                 .foregroundStyle(Color.black.opacity(0.52))
         }
+    }
+
+    private var favoriteButton: some View {
+        let presentation = ClipboardFavoriteButtonPresentation(
+            isFavorite: item.isFavorite,
+            isHovered: isFavoriteButtonHovered
+        )
+
+        return Button(action: onFavoriteToggle) {
+            Image(systemName: presentation.iconName)
+                .font(.system(size: 13, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: presentation.hitSize.width, height: presentation.hitSize.height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            item.isFavorite
+                ? Color(nsColor: .controlAccentColor)
+                : Color.black.opacity(presentation.foregroundOpacity)
+        )
+        .background(
+            Circle()
+                .fill(Color.white.opacity(presentation.backgroundOpacity))
+        )
+        .overlay(
+            Circle()
+                .strokeBorder(Color.black.opacity(presentation.strokeOpacity), lineWidth: 1)
+        )
+        .scaleEffect(presentation.scale)
+        .onHover { isFavoriteButtonHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isFavoriteButtonHovered)
+        .help(presentation.helpText)
+        .accessibilityLabel(Text(presentation.accessibilityLabel))
     }
 
     private var previewImage: NSImage? {
@@ -200,17 +252,37 @@ public struct ClipboardRowView: View {
     }
 }
 
+struct ClipboardFavoriteButtonPresentation: Equatable {
+    let iconName: String
+    let helpText: String
+    let accessibilityLabel: String
+    let foregroundOpacity: Double
+    let backgroundOpacity: Double
+    let strokeOpacity: Double
+    let scale: CGFloat
+    let hitSize: CGSize
+
+    init(isFavorite: Bool, isHovered: Bool) {
+        self.iconName = isFavorite ? "star.fill" : "star"
+        self.helpText = isFavorite ? "取消收藏" : "加入收藏"
+        self.accessibilityLabel = helpText
+        self.foregroundOpacity = isFavorite ? 0.86 : (isHovered ? 0.76 : 0.48)
+        self.backgroundOpacity = isHovered ? 0.40 : 0
+        self.strokeOpacity = isHovered ? 0.18 : 0
+        self.scale = isHovered ? 1.06 : 1
+        self.hitSize = CGSize(width: 30, height: 30)
+    }
+}
+
 private struct StatusLabel: View {
     let title: String
 
     var body: some View {
         Text(title)
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(Color.black.opacity(0.68))
+            .foregroundStyle(Color.black.opacity(0.74))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(.thinMaterial, in: Capsule())
-            .background(Color.white.opacity(0.20), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.24), lineWidth: 1))
+            .liquidGlassChip(cornerRadius: 9)
     }
 }

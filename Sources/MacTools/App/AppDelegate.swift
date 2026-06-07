@@ -9,11 +9,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menuBarController.install()
+        environment.onSettingsChanged = { [weak self] settings in
+            self?.configureHotKeys(settings: settings)
+        }
         environment.start()
-        hotKeyService.configure(settings: environment.settings) { [weak self] target in
+        configureHotKeys(settings: environment.settings)
+        environment.logger.info("application did finish launching")
+    }
+
+    private func configureHotKeys(settings: AppSettings) {
+        hotKeyService.configure(settings: settings) { [weak self] target in
             self?.handleHotKey(target)
         }
-        environment.logger.info("application did finish launching")
     }
 
     private func handleHotKey(_ target: HotKeyTarget) {
@@ -22,8 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             environment.openSettings()
         case .clipboard:
             environment.openClipboard()
-        case .reservedTool2, .reservedTool3:
+        case .translation:
+            environment.openTranslation()
+        case .reservedTool3:
             environment.logger.info("reserved hotkey selected: \(target.rawValue)")
+        case .windowLayout(let mode):
+            environment.applyWindowLayout(mode)
         }
     }
 }

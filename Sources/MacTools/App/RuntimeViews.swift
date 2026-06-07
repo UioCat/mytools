@@ -1,3 +1,4 @@
+import AppKit
 import MacToolsCore
 import SwiftUI
 
@@ -21,17 +22,59 @@ final class PanelDismissHandler {
 struct RuntimeMainWorkspaceView: View {
     @ObservedObject var router: MainPanelRouter
     @ObservedObject var model: ClipboardPanelModel
-    let settings: AppSettings
     let permissionService: PermissionService
+    let onSaveClipboardSettings: (ClipboardSettings) throws -> AppSettings
+    let onSaveTranslationSettings: (TranslationSettings) throws -> AppSettings
+    let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> AppSettings
+    let onSaveWindowLayoutSettings: (WindowLayoutSettings) throws -> AppSettings
     let onCopy: (ClipboardItem) -> Void
     let onCopyAndPaste: (ClipboardItem) -> Void
     let onDismiss: () -> Void
+    @State private var currentSettings: AppSettings
+
+    init(
+        router: MainPanelRouter,
+        model: ClipboardPanelModel,
+        settings: AppSettings,
+        permissionService: PermissionService,
+        onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> AppSettings,
+        onSaveTranslationSettings: @escaping (TranslationSettings) throws -> AppSettings,
+        onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> AppSettings,
+        onSaveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> AppSettings,
+        onCopy: @escaping (ClipboardItem) -> Void,
+        onCopyAndPaste: @escaping (ClipboardItem) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.router = router
+        self.model = model
+        self.permissionService = permissionService
+        self.onSaveClipboardSettings = onSaveClipboardSettings
+        self.onSaveTranslationSettings = onSaveTranslationSettings
+        self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
+        self.onSaveWindowLayoutSettings = onSaveWindowLayoutSettings
+        self.onCopy = onCopy
+        self.onCopyAndPaste = onCopyAndPaste
+        self.onDismiss = onDismiss
+        self._currentSettings = State(initialValue: settings)
+    }
 
     var body: some View {
         MainWorkspaceView(selectedModule: $router.selectedModule) {
             RuntimeSettingsView(
-                settings: settings,
+                settings: currentSettings,
                 permissionService: permissionService,
+                onSaveClipboardSettings: { clipboardSettings in
+                    currentSettings = try onSaveClipboardSettings(clipboardSettings)
+                },
+                onSaveTranslationSettings: { translationSettings in
+                    currentSettings = try onSaveTranslationSettings(translationSettings)
+                },
+                onSaveSuperRightClickSettings: { superRightClickSettings in
+                    currentSettings = try onSaveSuperRightClickSettings(superRightClickSettings)
+                },
+                onSaveWindowLayoutSettings: { windowLayoutSettings in
+                    currentSettings = try onSaveWindowLayoutSettings(windowLayoutSettings)
+                },
                 presentation: .embedded
             )
         } clipboard: {
@@ -42,7 +85,7 @@ struct RuntimeMainWorkspaceView: View {
                 onDismiss: onDismiss
             )
         } translation: {
-            RuntimeTranslationModuleView()
+            RuntimeTranslationModuleView(settings: currentSettings)
         }
         .onAppear {
             if router.selectedModule == .clipboard {
@@ -96,16 +139,28 @@ struct RuntimeClipboardModuleView: View {
 struct RuntimeSettingsView: View {
     let settings: AppSettings
     let permissionService: PermissionService
+    let onSaveClipboardSettings: (ClipboardSettings) throws -> Void
+    let onSaveTranslationSettings: (TranslationSettings) throws -> Void
+    let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
+    let onSaveWindowLayoutSettings: (WindowLayoutSettings) throws -> Void
     let presentation: ToolModulePresentation
     @State private var permissionSummary: PermissionSummary
 
     init(
         settings: AppSettings,
         permissionService: PermissionService,
+        onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> Void,
+        onSaveTranslationSettings: @escaping (TranslationSettings) throws -> Void,
+        onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void,
+        onSaveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> Void,
         presentation: ToolModulePresentation = .window
     ) {
         self.settings = settings
         self.permissionService = permissionService
+        self.onSaveClipboardSettings = onSaveClipboardSettings
+        self.onSaveTranslationSettings = onSaveTranslationSettings
+        self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
+        self.onSaveWindowLayoutSettings = onSaveWindowLayoutSettings
         self.presentation = presentation
         self._permissionSummary = State(initialValue: permissionService.summary())
     }
@@ -116,6 +171,10 @@ struct RuntimeSettingsView: View {
             permissionSummary: permissionSummary,
             openSystemSettings: permissionService.openSystemSettings,
             openPermissionSettings: permissionService.openSystemSettings(for:),
+            saveClipboardSettings: onSaveClipboardSettings,
+            saveTranslationSettings: onSaveTranslationSettings,
+            saveSuperRightClickSettings: onSaveSuperRightClickSettings,
+            saveWindowLayoutSettings: onSaveWindowLayoutSettings,
             presentation: presentation
         )
         .onAppear {
@@ -125,36 +184,405 @@ struct RuntimeSettingsView: View {
 }
 
 struct RuntimeTranslationModuleView: View {
+    let settings: AppSettings
+    @State private var inputText = ""
+    @State private var isInputComposingText = false
+    @State private var workspaceState: TranslationWorkspaceState = .idle
+
+    private var content: TranslationWorkspaceContent {
+        TranslationWorkspaceContent(settings: settings.translation, state: workspaceState)
+    }
+
+    private let inputEditorLayout = TranslationInputEditorLayout.standard
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: MainToolModule.translation.iconName)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.black)
-                    .frame(width: 38, height: 38)
-                    .liquidGlassModule(cornerRadius: 14, isSelected: true)
+            MainWorkspaceModuleHeader(
+                module: .translation,
+                subtitle: content.headerSubtitle
+            )
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(MainToolModule.translation.title)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.black)
-                    Text("翻译模块独立加载，等待服务配置")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.58))
-                }
-            }
-            .padding(14)
-            .liquidGlassModule(cornerRadius: 24)
-
-            Text("百度翻译凭证配置完成后，这里会承载翻译模块的独立界面。")
+            Text(content.helperText)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Color.black.opacity(0.62))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(18)
                 .liquidGlassModule(cornerRadius: 22)
 
+            HStack(alignment: .top, spacing: 12) {
+                translationInputSection
+                translationOutputSection
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+
             Spacer()
         }
+        .liquidGlassGroup(spacing: 12)
         .padding(18)
+    }
+
+    private var translationInputSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(content.inputTitle)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.black)
+
+            ZStack(alignment: .topLeading) {
+                if TranslationInputPlaceholderPolicy.isPlaceholderVisible(
+                    inputText: inputText,
+                    isComposingText: isInputComposingText
+                ) {
+                    Text(content.inputPlaceholder)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.black.opacity(0.40))
+                        .padding(.leading, inputEditorLayout.placeholderLeadingPadding)
+                        .padding(.top, inputEditorLayout.placeholderTopPadding)
+                        .allowsHitTesting(false)
+                }
+
+                TranslationTextInputEditor(
+                    text: $inputText,
+                    isComposingText: $isInputComposingText,
+                    layout: inputEditorLayout
+                ) {
+                    translateInputText()
+                }
+            }
+            .frame(minHeight: 180)
+            .padding(10)
+            .liquidGlassModule(cornerRadius: 16)
+
+            HStack(spacing: 10) {
+                Button {
+                    translateInputText()
+                } label: {
+                    Label(content.translateButtonTitle, systemImage: "arrow.right.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(minWidth: 92)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(content.canSubmit(inputText: inputText) ? Color.black : Color.black.opacity(0.35))
+                .disabled(!content.canSubmit(inputText: inputText))
+
+                if workspaceState == .translating {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .liquidGlassModule(cornerRadius: 22)
+    }
+
+    private var translationOutputSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Text(content.outputTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.black)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    copyOutputText()
+                } label: {
+                    Label(content.outputCopyButtonTitle, systemImage: "doc.on.doc")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(content.copyableOutputText == nil ? Color.black.opacity(0.35) : Color.black.opacity(0.78))
+                .disabled(content.copyableOutputText == nil)
+            }
+
+            TranslationOutputTextView(
+                text: content.outputText,
+                isPlaceholder: content.isOutputPlaceholder
+            )
+            .frame(minHeight: 218, maxHeight: .infinity)
+            .padding(14)
+            .liquidGlassModule(cornerRadius: 16)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .liquidGlassModule(cornerRadius: 22)
+    }
+
+    private func copyOutputText() {
+        guard let outputText = content.copyableOutputText else {
+            return
+        }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(outputText, forType: .string)
+    }
+
+    private func translateInputText() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard content.canSubmit(inputText: text) else {
+            return
+        }
+
+        workspaceState = .translating
+        Task {
+            let service = TranslationService(
+                provider: BailianTranslationProvider(configuration: settings.translation.bailianConfiguration)
+            )
+            let result = await service.translateAutomatically(text)
+
+            await MainActor.run {
+                switch result {
+                case .success(let response):
+                    workspaceState = .translated(response.translatedText)
+                case .failure(let error):
+                    workspaceState = .failed(Self.message(for: error))
+                }
+            }
+        }
+    }
+
+    private static func message(for error: TranslationError) -> String {
+        switch error {
+        case .providerNotConfigured:
+            return "请先在设置里填写 DASHSCOPE_API_KEY。"
+        case .networkUnavailable:
+            return "无法连接到百炼服务，请检查网络后重试。"
+        case .providerFailure(let message):
+            return message
+        }
+    }
+}
+
+private struct TranslationTextInputEditor: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isComposingText: Bool
+    let layout: TranslationInputEditorLayout
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, isComposingText: $isComposingText)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = TranslationInputTextView()
+        textView.delegate = context.coordinator
+        textView.onSubmit = onSubmit
+        textView.onMarkedTextStateChange = context.coordinator.setComposingText(_:)
+        textView.font = .systemFont(ofSize: 14, weight: .medium)
+        textView.textColor = .black
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.textContainerInset = NSSize(
+            width: layout.textContainerWidthInset,
+            height: layout.textContainerHeightInset
+        )
+        textView.textContainer?.lineFragmentPadding = layout.lineFragmentPadding
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.autoresizingMask = [.width]
+        textView.string = text
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? TranslationInputTextView else {
+            return
+        }
+
+        textView.onSubmit = onSubmit
+        textView.onMarkedTextStateChange = context.coordinator.setComposingText(_:)
+        textView.textContainerInset = NSSize(
+            width: layout.textContainerWidthInset,
+            height: layout.textContainerHeightInset
+        )
+        textView.textContainer?.lineFragmentPadding = layout.lineFragmentPadding
+        if !textView.hasMarkedText(), textView.string != text {
+            textView.string = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding private var text: String
+        @Binding private var isComposingText: Bool
+
+        init(text: Binding<String>, isComposingText: Binding<Bool>) {
+            self._text = text
+            self._isComposingText = isComposingText
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+
+            text = textView.string
+            setComposingText(textView.hasMarkedText())
+        }
+
+        func setComposingText(_ hasMarkedText: Bool) {
+            guard isComposingText != hasMarkedText else {
+                return
+            }
+
+            isComposingText = hasMarkedText
+        }
+    }
+}
+
+private final class TranslationInputTextView: NSTextView {
+    var onSubmit: () -> Void = {}
+    var onMarkedTextStateChange: (Bool) -> Void = { _ in }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        notifyMarkedTextState()
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        notifyMarkedTextState()
+    }
+
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        super.insertText(insertString, replacementRange: replacementRange)
+        notifyMarkedTextState()
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        notifyMarkedTextState()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if let command = TranslationInputKeyCommandResolver.command(
+            forKeyCode: event.keyCode,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+            isCommandPressed: event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .contains(.command),
+            isShiftPressed: event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .contains(.shift)
+        ) {
+            switch command {
+            case .submit:
+                onSubmit()
+            case .insertNewline:
+                insertNewline(nil)
+            case .selectAll:
+                selectAll(nil)
+            case .copy:
+                copy(nil)
+            case .paste:
+                paste(nil)
+            case .cut:
+                cut(nil)
+            }
+            return
+        }
+
+        super.keyDown(with: event)
+    }
+
+    private func notifyMarkedTextState() {
+        onMarkedTextStateChange(hasMarkedText())
+    }
+}
+
+private struct TranslationOutputTextView: NSViewRepresentable {
+    var text: String
+    var isPlaceholder: Bool
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = TranslationOutputNSTextView()
+        textView.font = .systemFont(ofSize: 14, weight: .medium)
+        textView.drawsBackground = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = false
+        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.autoresizingMask = [.width]
+        configure(textView)
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? TranslationOutputNSTextView else {
+            return
+        }
+
+        configure(textView)
+    }
+
+    private func configure(_ textView: TranslationOutputNSTextView) {
+        textView.textColor = isPlaceholder ? NSColor.black.withAlphaComponent(0.42) : NSColor.black.withAlphaComponent(0.84)
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+}
+
+private final class TranslationOutputNSTextView: NSTextView {
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard let command = TranslationInputKeyCommandResolver.command(
+            forKeyCode: event.keyCode,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+            isCommandPressed: event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .contains(.command),
+            isShiftPressed: event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .contains(.shift)
+        ) else {
+            super.keyDown(with: event)
+            return
+        }
+
+        switch command {
+        case .selectAll:
+            selectAll(nil)
+        case .copy:
+            copy(nil)
+        case .submit, .insertNewline, .paste, .cut:
+            super.keyDown(with: event)
+        }
     }
 }

@@ -20,7 +20,7 @@ public final class SystemPasteboardClient: PasteboardClient {
     public func readPayload() -> ClipboardPayload {
         let text = pasteboard.string(forType: .string)
         let fileURLs = readFileURLs()
-        let imageData = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)
+        let imageData = readImageData()
 
         return ClipboardPayload(text: text, fileURLs: fileURLs, imageData: imageData)
     }
@@ -49,5 +49,18 @@ public final class SystemPasteboardClient: PasteboardClient {
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: options) ?? []
         return Self.fileURLs(from: objects)
+    }
+
+    private func readImageData() -> Data? {
+        if let pngData = pasteboard.data(forType: .png) {
+            return ImageDataNormalizer.pngData(from: pngData)
+        }
+
+        if let tiffData = pasteboard.data(forType: .tiff) {
+            return ImageDataNormalizer.pngData(from: tiffData)
+        }
+
+        let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage] ?? []
+        return images.first.flatMap(ImageDataNormalizer.pngData)
     }
 }

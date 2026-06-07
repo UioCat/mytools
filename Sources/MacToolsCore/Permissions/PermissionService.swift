@@ -34,7 +34,33 @@ public struct PermissionSummary: Equatable {
     }
 
     public var canUseSuperRightClick: Bool {
-        hasAccessibility && hasPostEvent
+        hasAccessibility && hasInputMonitoring
+    }
+
+    public var firstMissingSuperRightClickPermission: AppPermission? {
+        if !hasAccessibility {
+            return .accessibility
+        }
+
+        if !hasInputMonitoring {
+            return .inputMonitoring
+        }
+
+        return nil
+    }
+
+    public var missingSuperRightClickPermissions: [AppPermission] {
+        var permissions: [AppPermission] = []
+
+        if !hasAccessibility {
+            permissions.append(.accessibility)
+        }
+
+        if !hasInputMonitoring {
+            permissions.append(.inputMonitoring)
+        }
+
+        return permissions
     }
 
     public var canPasteAutomatically: Bool {
@@ -64,10 +90,20 @@ public protocol PermissionChecking {
     func hasAccessibilityPermission() -> Bool
     func hasInputMonitoringPermission() -> Bool
     func hasPostEventPermission() -> Bool
+    func requestAccessibilityPermission() -> Bool
+    func requestInputMonitoringPermission() -> Bool
     func requestPostEventPermission() -> Bool
 }
 
 public extension PermissionChecking {
+    func requestAccessibilityPermission() -> Bool {
+        hasAccessibilityPermission()
+    }
+
+    func requestInputMonitoringPermission() -> Bool {
+        hasInputMonitoringPermission()
+    }
+
     func requestPostEventPermission() -> Bool {
         hasPostEventPermission()
     }
@@ -90,6 +126,20 @@ public final class PermissionService {
 
     public func requestPostEventPermission() -> Bool {
         checker.requestPostEventPermission()
+    }
+
+    public func requestSuperRightClickPermissions() -> PermissionSummary {
+        let currentSummary = summary()
+
+        if !currentSummary.hasAccessibility {
+            _ = checker.requestAccessibilityPermission()
+        }
+
+        if !currentSummary.hasInputMonitoring {
+            _ = checker.requestInputMonitoringPermission()
+        }
+
+        return summary()
     }
 
     public func openSystemSettings() {
@@ -135,9 +185,27 @@ public struct SystemPermissionChecker: PermissionChecking {
         #endif
     }
 
+    public func requestAccessibilityPermission() -> Bool {
+        #if canImport(ApplicationServices)
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [promptKey: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+        #else
+        return false
+        #endif
+    }
+
     public func hasInputMonitoringPermission() -> Bool {
         #if canImport(IOKit)
         return IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        #else
+        return false
+        #endif
+    }
+
+    public func requestInputMonitoringPermission() -> Bool {
+        #if canImport(CoreGraphics)
+        return CGRequestListenEventAccess()
         #else
         return false
         #endif

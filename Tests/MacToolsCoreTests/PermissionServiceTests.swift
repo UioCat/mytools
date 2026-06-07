@@ -20,6 +20,36 @@ final class PermissionServiceTests: XCTestCase {
         XCTAssertTrue(summary.canPasteAutomatically)
     }
 
+    func testSummaryDisablesSuperRightClickWithoutInputMonitoringPermission() {
+        let service = PermissionService(
+            checker: FakePermissionChecker(
+                hasAccessibility: true,
+                hasInputMonitoring: false,
+                hasPostEvent: true
+            )
+        )
+
+        let summary = service.summary()
+
+        XCTAssertTrue(summary.hasAccessibility)
+        XCTAssertFalse(summary.hasInputMonitoring)
+        XCTAssertTrue(summary.hasPostEvent)
+        XCTAssertFalse(summary.canUseSuperRightClick)
+        XCTAssertEqual(summary.firstMissingSuperRightClickPermission, .inputMonitoring)
+    }
+
+    func testSummaryAllowsSuperRightClickMonitoringWithoutPostEventPermission() {
+        let summary = PermissionSummary(
+            hasAccessibility: true,
+            hasInputMonitoring: true,
+            hasPostEvent: false
+        )
+
+        XCTAssertTrue(summary.canUseSuperRightClick)
+        XCTAssertNil(summary.firstMissingSuperRightClickPermission)
+        XCTAssertFalse(summary.canPasteAutomatically)
+    }
+
     func testPasteAutomationUsesPostEventPermissionInsteadOfAccessibilityPermission() {
         let service = PermissionService(
             checker: FakePermissionChecker(
@@ -46,6 +76,7 @@ final class PermissionServiceTests: XCTestCase {
         let summary = service.summary()
 
         XCTAssertEqual(summary.missingPermissions, [.accessibility, .inputMonitoring, .postEvent])
+        XCTAssertEqual(summary.missingSuperRightClickPermissions, [.accessibility, .inputMonitoring])
     }
 
     func testAllGrantedSummaryHasNoMissingPermissions() {
@@ -68,6 +99,22 @@ final class PermissionServiceTests: XCTestCase {
         XCTAssertEqual(summary.missingPermissions, [])
     }
 
+    func testRequestSuperRightClickPermissionsPromptsOnlyMissingMonitorPermissions() {
+        let checker = FakePermissionChecker(
+            hasAccessibility: false,
+            hasInputMonitoring: false,
+            hasPostEvent: false
+        )
+        let service = PermissionService(checker: checker)
+
+        let summary = service.requestSuperRightClickPermissions()
+
+        XCTAssertFalse(summary.canUseSuperRightClick)
+        XCTAssertEqual(checker.accessibilityRequestCount, 1)
+        XCTAssertEqual(checker.inputMonitoringRequestCount, 1)
+        XCTAssertEqual(checker.postEventRequestCount, 0)
+    }
+
     func testPermissionSpecificSystemSettingsURLs() throws {
         XCTAssertEqual(
             PermissionService.systemSettingsURL(for: .accessibility),
@@ -84,10 +131,19 @@ final class PermissionServiceTests: XCTestCase {
     }
 }
 
-private struct FakePermissionChecker: PermissionChecking {
+private final class FakePermissionChecker: PermissionChecking {
     var hasAccessibility: Bool
     var hasInputMonitoring: Bool
     var hasPostEvent: Bool
+    private(set) var accessibilityRequestCount = 0
+    private(set) var inputMonitoringRequestCount = 0
+    private(set) var postEventRequestCount = 0
+
+    init(hasAccessibility: Bool, hasInputMonitoring: Bool, hasPostEvent: Bool) {
+        self.hasAccessibility = hasAccessibility
+        self.hasInputMonitoring = hasInputMonitoring
+        self.hasPostEvent = hasPostEvent
+    }
 
     func hasAccessibilityPermission() -> Bool {
         hasAccessibility
@@ -99,5 +155,20 @@ private struct FakePermissionChecker: PermissionChecking {
 
     func hasPostEventPermission() -> Bool {
         hasPostEvent
+    }
+
+    func requestAccessibilityPermission() -> Bool {
+        accessibilityRequestCount += 1
+        return hasAccessibility
+    }
+
+    func requestInputMonitoringPermission() -> Bool {
+        inputMonitoringRequestCount += 1
+        return hasInputMonitoring
+    }
+
+    func requestPostEventPermission() -> Bool {
+        postEventRequestCount += 1
+        return hasPostEvent
     }
 }

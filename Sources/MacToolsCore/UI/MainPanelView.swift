@@ -45,6 +45,7 @@ public enum ClipboardPanelMode: CaseIterable {
 }
 
 public struct MainPanelView: View {
+    @Environment(\.mainWorkspaceSidebarChrome) private var workspaceSidebarChrome
     @State private var query = ""
     @State private var selectedItemID: ClipboardItem.ID?
     @State private var mode: ClipboardPanelMode = .all
@@ -146,13 +147,21 @@ public struct MainPanelView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            TextField("搜索...", text: $query)
+            if let workspaceSidebarChrome {
+                sidebarToggleButton(workspaceSidebarChrome)
+            }
+
+            TextField(
+                "搜索...",
+                text: $query,
+                prompt: Text("搜索...").foregroundColor(Color.black.opacity(0.76))
+            )
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(.black)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 14)
-                .liquidGlassModule(cornerRadius: 24)
+                .liquidGlassInteractiveModule(cornerRadius: 24)
                 .onSubmit {
                     performSelectedAction(.copyAndPaste)
                 }
@@ -162,14 +171,38 @@ public struct MainPanelView: View {
             } label: {
                 Label("清空", systemImage: "trash")
                     .font(.system(size: 13, weight: .medium))
+                    .frame(minWidth: 56)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 13)
+                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
-            .buttonStyle(.plain)
             .foregroundStyle(clearButtonColor)
-            .liquidGlassModule(cornerRadius: 22)
+            .liquidGlassButtonStyle(cornerRadius: 22)
             .disabled(items.filter { !$0.isFavorite }.isEmpty)
+            .opacity(items.filter { !$0.isFavorite }.isEmpty ? 0.64 : 1)
         }
+        .liquidGlassGroup(spacing: 14)
+    }
+
+    private func sidebarToggleButton(_ chrome: MainWorkspaceSidebarChrome) -> some View {
+        Button {
+            chrome.toggleSidebar()
+        } label: {
+            Image(systemName: chrome.isSidebarVisible ? "sidebar.left" : "sidebar.left")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(
+                    width: MainWorkspaceLayout.collapsedSidebarToggleSize.width,
+                    height: MainWorkspaceLayout.collapsedSidebarToggleSize.height
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .foregroundStyle(chrome.isSidebarVisible ? Color.black : Color.black.opacity(0.78))
+        .liquidGlassButtonStyle(
+            cornerRadius: 18,
+            isSelected: chrome.isSidebarVisible,
+            minimumSize: MainWorkspaceLayout.collapsedSidebarToggleSize
+        )
+        .help(chrome.isSidebarVisible ? "隐藏工具栏" : "显示工具栏")
     }
 
     private var modeSwitcher: some View {
@@ -187,13 +220,13 @@ public struct MainPanelView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
-                    .contentShape(Rectangle())
+                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(mode == itemMode ? Color.black : Color.black.opacity(0.62))
-                .liquidGlassModule(cornerRadius: 20, isSelected: mode == itemMode)
+                .foregroundStyle(mode == itemMode ? Color.black : Color.black.opacity(0.78))
+                .liquidGlassButtonStyle(cornerRadius: 20, isSelected: mode == itemMode)
             }
         }
+        .liquidGlassGroup(spacing: 10)
     }
 
     private var keyboardActions: some View {

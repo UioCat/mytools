@@ -2,11 +2,15 @@ import AppKit
 import Foundation
 import MacToolsCore
 
+private enum AppEnvironmentError: Error {
+    case unavailable
+}
+
 @MainActor
 final class AppEnvironment {
     let logger = Logger()
     private let settingsStore: SettingsStore
-    let settings: AppSettings
+    private(set) var settings: AppSettings
     private let repository: ClipboardRepository
     private let clipboardService: ClipboardService
     private let pasteActionService: PasteActionService
@@ -15,13 +19,14 @@ final class AppEnvironment {
     private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
     private var clipboardTimer: Timer?
+    private var superRightClickMonitor: SuperRightClickMonitor?
     private var appBeforePanel: NSRunningApplication?
 
     private lazy var clipboardModel = ClipboardPanelModel(
         repository: repository,
         pasteActionService: pasteActionService,
         logger: logger,
-        limit: { [settings] in settings.clipboard.maxHistoryCount }
+        limit: { [weak self] in self?.settings.clipboard.maxHistoryCount ?? AppSettings.defaults.clipboard.maxHistoryCount }
     )
 
     lazy var mainPanel = MainPanelController(
@@ -32,6 +37,30 @@ final class AppEnvironment {
             model: clipboardModel,
             settings: settings,
             permissionService: permissionService,
+            onSaveClipboardSettings: { [weak self] clipboardSettings in
+                guard let self else {
+                    throw AppEnvironmentError.unavailable
+                }
+                return try self.saveClipboardSettings(clipboardSettings)
+            },
+            onSaveTranslationSettings: { [weak self] translationSettings in
+                guard let self else {
+                    throw AppEnvironmentError.unavailable
+                }
+                return try self.saveTranslationSettings(translationSettings)
+            },
+            onSaveSuperRightClickSettings: { [weak self] superRightClickSettings in
+                guard let self else {
+                    throw AppEnvironmentError.unavailable
+                }
+                return try self.saveSuperRightClickSettings(superRightClickSettings)
+            },
+            onSaveWindowLayoutSettings: { [weak self] windowLayoutSettings in
+                guard let self else {
+                    throw AppEnvironmentError.unavailable
+                }
+                return try self.saveWindowLayoutSettings(windowLayoutSettings)
+            },
             onCopy: { [weak self] item in
                 self?.copyFromPanel(item)
             },
@@ -44,30 +73,18 @@ final class AppEnvironment {
         )
     )
 
+    private lazy var windowLayoutService = SystemWindowLayoutService(logger: logger)
+
     private lazy var contextPanel = ContextPanelController(
         fileActionService: fileActionService,
         pasteboard: SystemWritablePasteboard(),
+        windowLayoutService: windowLayoutService,
+        windowLayoutButtons: { [weak self] in
+            self?.settings.windowLayout.visibleButtons ?? []
+        },
         logger: logger
     )
-
-    private lazy var superRightClickMonitor = SuperRightClickMonitor(
-        thresholdMilliseconds: settings.superRightClick.longPressMilliseconds,
-        service: SuperRightClickService(
-            settings: settings.superRightClick,
-            selectionCapture: SelectionCaptureService(
-                pasteboard: SystemPasteboardClient(),
-                eventSender: SystemPasteEventSender()
-            ),
-            classifier: ClipboardClassifier(),
-            translationService: TranslationService(
-                provider: BaiduTranslationProvider(configuration: nil)
-            )
-        ),
-        logger: logger,
-        onItemCaptured: { [weak self] item in
-            self?.handleSuperRightClickItem(item)
-        }
-    )
+    var onSettingsChanged: (AppSettings) -> Void = { _ in }
 
     init() {
         let supportDirectory = Self.applicationSupportDirectory()
@@ -92,14 +109,22 @@ final class AppEnvironment {
             pasteboard: SystemWritablePasteboard(),
             eventSender: SystemPasteEventSender()
         )
+        let defaultClipboardCacheDirectory = supportDirectory.appendingPathComponent(
+            "ClipboardCache",
+            isDirectory: true
+        )
         self.clipboardService = ClipboardService(
             pasteboard: SystemPasteboardClient(),
             classifier: ClipboardClassifier(),
             repository: repository,
             settings: settings,
-            fileCache: FileCache(
-                rootDirectory: supportDirectory.appendingPathComponent("ClipboardCache")
-            )
+            fileCacheProvider: { settings in
+                FileCache(
+                    rootDirectory: settings.clipboard.cacheDirectory(
+                        defaultDirectory: defaultClipboardCacheDirectory
+                    )
+                )
+            }
         )
     }
 
@@ -108,7 +133,7 @@ final class AppEnvironment {
             self?.mainPanel.hide()
         }
         startClipboardPolling()
-        superRightClickMonitor.start()
+        startSuperRightClickMonitor()
     }
 
     func openMainPanel() {
@@ -124,8 +149,115 @@ final class AppEnvironment {
         mainPanel.show()
     }
 
+    func openTranslation() {
+        captureFrontmostApplicationBeforePanel()
+        mainPanelRouter.open(.translation)
+        mainPanel.show()
+    }
+
     func openSettings() {
         openMainPanel()
+    }
+
+    func applyWindowLayout(_ mode: WindowLayoutMode) {
+        do {
+            try windowLayoutService.apply(button: WindowLayoutButton(mode: mode))
+        } catch {
+            logger.error("window layout hotkey failed: \(error)")
+        }
+    }
+
+    private func saveTranslationSettings(_ translationSettings: TranslationSettings) throws -> AppSettings {
+        var updated = settings
+        var normalizedTranslationSettings = translationSettings
+        normalizedTranslationSettings.providerID = TranslationSettings.defaultProviderID
+        updated.translation = normalizedTranslationSettings
+
+        try settingsStore.save(updated)
+        settings = updated
+        onSettingsChanged(updated)
+        startSuperRightClickMonitor()
+
+        return updated
+    }
+
+    private func saveClipboardSettings(_ clipboardSettings: ClipboardSettings) throws -> AppSettings {
+        var updated = settings
+        updated.clipboard = clipboardSettings
+
+        try settingsStore.save(updated)
+        settings = updated
+        onSettingsChanged(updated)
+        clipboardService.updateSettings(updated)
+        clipboardModel.refresh()
+
+        return updated
+    }
+
+    private func saveSuperRightClickSettings(_ superRightClickSettings: SuperRightClickSettings) throws -> AppSettings {
+        var updated = settings
+        updated.superRightClick = superRightClickSettings
+
+        try settingsStore.save(updated)
+        settings = updated
+        onSettingsChanged(updated)
+        startSuperRightClickMonitor()
+
+        return updated
+    }
+
+    private func saveWindowLayoutSettings(_ windowLayoutSettings: WindowLayoutSettings) throws -> AppSettings {
+        var updated = settings
+        updated.windowLayout = windowLayoutSettings
+
+        try settingsStore.save(updated)
+        settings = updated
+        onSettingsChanged(updated)
+
+        return updated
+    }
+
+    private func startSuperRightClickMonitor() {
+        superRightClickMonitor?.stop()
+        superRightClickMonitor = nil
+
+        guard settings.superRightClick.isEnabled else {
+            logger.info("super right click monitor not started: disabled in settings")
+            return
+        }
+
+        let permissionSummary = permissionService.summary()
+        if !permissionSummary.canUseSuperRightClick {
+            let missingPermissions = permissionSummary.missingSuperRightClickPermissions
+                .map(\.rawValue)
+                .joined(separator: ",")
+            logger.error("super right click permission preflight missing: \(missingPermissions); attempting monitor without prompting")
+        }
+
+        let monitor = SuperRightClickMonitor(
+            thresholdMilliseconds: settings.superRightClick.longPressMilliseconds,
+            service: SuperRightClickService(
+                settings: settings.superRightClick,
+                selectionCapture: SelectionCaptureService(
+                    pasteboard: SystemPasteboardClient(),
+                    eventSender: SystemPasteEventSender(),
+                    logger: logger
+                ),
+                classifier: ClipboardClassifier(),
+                translationService: TranslationService(
+                    provider: BailianTranslationProvider(configuration: settings.translation.bailianConfiguration)
+                )
+            ),
+            logger: logger,
+            onResultCaptured: { [weak self] result in
+                self?.handleSuperRightClickResult(result)
+            }
+        )
+        guard monitor.start() else {
+            return
+        }
+
+        superRightClickMonitor = monitor
     }
 
     private func startClipboardPolling() {
@@ -245,24 +377,15 @@ final class AppEnvironment {
         return permissionService.requestPostEventPermission()
     }
 
-    private func handleSuperRightClickItem(_ item: ClipboardItem) {
-        switch item.kind {
-        case .text:
-            logger.info("translation requested; baidu provider is not configured")
-            showTranslationUnavailableAlert()
+    private func handleSuperRightClickResult(_ result: SuperRightClickResult) {
+        switch result.item.kind {
+        case .text, .url:
+            contextPanel.showText(originalText: result.item.text ?? "", translation: result.translation)
         case .file, .folder, .imageFile:
-            contextPanel.show(item: item)
-        case .url, .imageData, .unknown:
-            logger.info("no context actions for \(item.kind.rawValue)")
+            contextPanel.show(item: result.item)
+        case .imageData, .unknown:
+            logger.info("no context actions for \(result.item.kind.rawValue)")
         }
-    }
-
-    private func showTranslationUnavailableAlert() {
-        let alert = NSAlert()
-        alert.messageText = "翻译未配置"
-        alert.informativeText = "百度翻译凭证还没有配置。"
-        alert.alertStyle = .informational
-        alert.runModal()
     }
 
     private func showPostEventRequiredAlert() {

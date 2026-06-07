@@ -6,6 +6,7 @@ BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/build/MacTools.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
+BUNDLE_ID="local.mactools.mvp"
 
 swift build -c release --product MacTools
 
@@ -32,6 +33,29 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --sign - "$APP_DIR"
+CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
+if [[ -z "$CODESIGN_IDENTITY" ]]; then
+  CODESIGN_IDENTITY="$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | awk -F '"' '/Developer ID Application|Apple Development|Mac Developer/ { print $2; exit }'
+  )"
+fi
+
+if [[ -n "$CODESIGN_IDENTITY" ]]; then
+  echo "Signing with identity: $CODESIGN_IDENTITY" >&2
+  codesign \
+    --force \
+    --sign "$CODESIGN_IDENTITY" \
+    --requirements "=designated => identifier \"$BUNDLE_ID\" and anchor trusted" \
+    "$APP_DIR"
+else
+  echo "warning: no trusted code signing identity found; using ad-hoc signing." >&2
+  echo "warning: macOS TCC may not reliably match Accessibility/Input Monitoring grants for this build." >&2
+  codesign \
+    --force \
+    --sign - \
+    --requirements "=designated => identifier \"$BUNDLE_ID\"" \
+    "$APP_DIR"
+fi
 
 echo "$APP_DIR"

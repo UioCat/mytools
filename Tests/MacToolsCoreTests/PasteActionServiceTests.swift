@@ -36,6 +36,17 @@ final class PasteActionServiceTests: XCTestCase {
         XCTAssertNil(pasteboard.writtenText)
     }
 
+    func testCopyImageDataWritesCachedImageBytesInsteadOfFileURL() throws {
+        let cachedImageURL = try temporaryImageURL(data: Data([0x89, 0x50, 0x4E, 0x47]))
+        defer { try? FileManager.default.removeItem(at: cachedImageURL.deletingLastPathComponent()) }
+        let pasteboard = FakeWritablePasteboard()
+        let service = PasteActionService(pasteboard: pasteboard, eventSender: FakePasteEventSender())
+
+        try service.copy(.testItem(kind: .imageData, cachedFilePath: cachedImageURL.path))
+
+        XCTAssertEqual(pasteboard.operations, [.writeImageData(Data([0x89, 0x50, 0x4E, 0x47]))])
+    }
+
     func testCopyThrowsUnsupportedItemWhenNoRestorableContentExists() {
         let pasteboard = FakeWritablePasteboard()
         let service = PasteActionService(pasteboard: pasteboard, eventSender: FakePasteEventSender())
@@ -64,6 +75,7 @@ private final class FakeWritablePasteboard: WritablePasteboard {
     enum Operation: Equatable {
         case writeText(String)
         case writeFileURL(URL)
+        case writeImageData(Data)
     }
 
     private(set) var operations: [Operation] = []
@@ -88,6 +100,10 @@ private final class FakeWritablePasteboard: WritablePasteboard {
 
     func writeFileURL(_ url: URL) {
         operations.append(.writeFileURL(url))
+    }
+
+    func writeImageData(_ data: Data) {
+        operations.append(.writeImageData(data))
     }
 }
 
@@ -136,4 +152,13 @@ private extension ClipboardItem {
             isFavorite: false
         )
     }
+}
+
+private func temporaryImageURL(data: Data) throws -> URL {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("PasteActionServiceTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let fileURL = root.appendingPathComponent("cached-image.png")
+    try data.write(to: fileURL)
+    return fileURL
 }

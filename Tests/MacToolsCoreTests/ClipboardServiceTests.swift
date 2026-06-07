@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import MacToolsCore
 
@@ -63,7 +64,7 @@ final class ClipboardServiceTests: XCTestCase {
             upsert: { item in
                 try repository.upsert(item)
             },
-            cacheImageData: { data in
+            cacheImageData: { data, _ in
                 XCTAssertEqual(data, imageData)
                 return cachedPath
             }
@@ -76,6 +77,40 @@ final class ClipboardServiceTests: XCTestCase {
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results[0].kind, .imageData)
         XCTAssertEqual(results[0].cachedFilePath, cachedPath)
+    }
+
+    func testImageCacheReceivesUpdatedSettingsWhenPolling() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let imageData = Data([4, 5, 6])
+        let pasteboard = FakePasteboardClient(
+            payload: ClipboardPayload(imageData: imageData),
+            changeCount: 0
+        )
+        var initialSettings = AppSettings.defaults
+        initialSettings.clipboard.cacheStoragePath = "/tmp/initial-cache"
+        var capturedCachePaths: [String] = []
+        let service = ClipboardService(
+            pasteboard: pasteboard,
+            classifier: ClipboardClassifier(),
+            settings: initialSettings,
+            upsert: { item in
+                try repository.upsert(item)
+            },
+            cacheImageData: { data, settings in
+                XCTAssertEqual(data, imageData)
+                capturedCachePaths.append(settings.clipboard.cacheStoragePath)
+                return "/tmp/updated-cache/image.png"
+            }
+        )
+        var updatedSettings = initialSettings
+        updatedSettings.clipboard.cacheStoragePath = "/tmp/updated-cache"
+
+        service.updateSettings(updatedSettings)
+        pasteboard.changeCount = 1
+        try service.pollOnce(sourceApp: "Tests")
+
+        XCTAssertEqual(capturedCachePaths, ["/tmp/updated-cache"])
     }
 
     func testPausedPollAdvancesLastChangeCount() throws {
@@ -187,6 +222,16 @@ final class PasteboardClientTests: XCTestCase {
 
         XCTAssertEqual(fileURLs, [fileURL])
     }
+
+    func testReadPayloadConvertsTIFFImageDataToPNG() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setData(try makeTIFFImageData(), forType: .tiff))
+
+        let payload = SystemPasteboardClient(pasteboard: pasteboard).readPayload()
+
+        XCTAssertEqual(payload.imageData?.prefix(8), Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    }
 }
 
 private enum TestPersistenceError: Error {
@@ -205,4 +250,21 @@ private final class FakePasteboardClient: PasteboardClient {
     func readPayload() -> ClipboardPayload {
         payload
     }
+}
+
+private func makeTIFFImageData() throws -> Data {
+    let image = NSImage(size: NSSize(width: 2, height: 2))
+    image.lockFocus()
+    NSColor.systemBlue.setFill()
+    NSRect(x: 0, y: 0, width: 2, height: 2).fill()
+    image.unlockFocus()
+
+    guard let data = image.tiffRepresentation else {
+        throw TestImageError.tiffEncodingFailed
+    }
+    return data
+}
+
+private enum TestImageError: Error {
+    case tiffEncodingFailed
 }

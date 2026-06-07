@@ -25,5 +25,9 @@ public final class SettingsStore {
 
         let data = try encoder.encode(settings)
         try data.write(to: fileURL, options: [.atomic])
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
     }
 }

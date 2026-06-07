@@ -84,6 +84,42 @@ final class FileActionServiceTests: XCTestCase {
         }
         XCTAssertTrue(workspace.revealedURLs.isEmpty)
     }
+
+    func testCreateNewFileCreatesUntitledFileInsideFolder() throws {
+        let folderURL = temporaryFolderURL()
+        let service = FileActionService(workspace: FakeWorkspaceOpening())
+
+        let fileURL = try service.createNewFile(in: .testItem(kind: .folder, originalPath: folderURL.path))
+
+        XCTAssertEqual(fileURL.lastPathComponent, "Untitled.txt")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testCreateNewFileUsesNextAvailableName() throws {
+        let folderURL = temporaryFolderURL()
+        FileManager.default.createFile(
+            atPath: folderURL.appendingPathComponent("Untitled.txt").path,
+            contents: Data()
+        )
+        let service = FileActionService(workspace: FakeWorkspaceOpening())
+
+        let fileURL = try service.createNewFile(in: .testItem(kind: .folder, originalPath: folderURL.path))
+
+        XCTAssertEqual(fileURL.lastPathComponent, "Untitled 2.txt")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testOpenExternalApplicationRunsOpenWithApplicationNameAndPath() throws {
+        let processRunner = FakeProcessRunner()
+        let service = FileActionService(workspace: FakeWorkspaceOpening(), processRunner: processRunner)
+
+        try service.openExternalApplication(named: "Claude", at: "/Users/example/Project")
+
+        XCTAssertEqual(
+            processRunner.runs,
+            [.init(executableURL: URL(fileURLWithPath: "/usr/bin/open"), arguments: ["-a", "Claude", "/Users/example/Project"])]
+        )
+    }
 }
 
 private final class FakeWorkspaceOpening: WorkspaceOpening {
@@ -103,6 +139,7 @@ private final class FakeWritablePasteboard: WritablePasteboard {
     enum Operation: Equatable {
         case writeText(String)
         case writeFileURL(URL)
+        case writeImageData(Data)
     }
 
     private(set) var operations: [Operation] = []
@@ -113,6 +150,10 @@ private final class FakeWritablePasteboard: WritablePasteboard {
 
     func writeFileURL(_ url: URL) {
         operations.append(.writeFileURL(url))
+    }
+
+    func writeImageData(_ data: Data) {
+        operations.append(.writeImageData(data))
     }
 }
 

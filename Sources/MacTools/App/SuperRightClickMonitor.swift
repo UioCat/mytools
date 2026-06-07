@@ -7,10 +7,12 @@ import MacToolsCore
 final class SuperRightClickMonitor {
     private let service: SuperRightClickService
     private let logger: Logger
-    private let onItemCaptured: (ClipboardItem) -> Void
+    private let onResultCaptured: (SuperRightClickResult) -> Void
     private var stateMachine: RightClickStateMachine
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
+    private var globalRightMouseDownMonitor: Any?
+    private var globalRightMouseUpMonitor: Any?
     private var longPressTimer: Timer?
     private var shouldSuppressNextRightMouseUp = false
 
@@ -18,15 +20,15 @@ final class SuperRightClickMonitor {
         thresholdMilliseconds: Int,
         service: SuperRightClickService,
         logger: Logger,
-        onItemCaptured: @escaping (ClipboardItem) -> Void
+        onResultCaptured: @escaping (SuperRightClickResult) -> Void
     ) {
         self.service = service
         self.logger = logger
-        self.onItemCaptured = onItemCaptured
+        self.onResultCaptured = onResultCaptured
         self.stateMachine = RightClickStateMachine(thresholdMilliseconds: thresholdMilliseconds)
     }
 
-    func start() {
+    func start() -> Bool {
         stop()
 
         let mask = CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
@@ -41,7 +43,7 @@ final class SuperRightClickMonitor {
             userInfo: userInfo
         ) else {
             logger.error("super right click event tap could not be installed")
-            return
+            return startGlobalMonitorFallback()
         }
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -49,6 +51,30 @@ final class SuperRightClickMonitor {
         CGEvent.tapEnable(tap: tap, enable: true)
         eventTap = tap
         eventTapRunLoopSource = source
+        logger.info("super right click event tap installed")
+        return true
+    }
+
+    private func startGlobalMonitorFallback() -> Bool {
+        globalRightMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseDown) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleRightMouseDown()
+            }
+        }
+        globalRightMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseUp) { [weak self] _ in
+            Task { @MainActor in
+                _ = self?.handleRightMouseUp()
+            }
+        }
+
+        guard globalRightMouseDownMonitor != nil, globalRightMouseUpMonitor != nil else {
+            logger.error("super right click global monitor fallback could not be installed")
+            stop()
+            return false
+        }
+
+        logger.info("super right click global monitor fallback installed")
+        return true
     }
 
     nonisolated private static let handleEventTap: CGEventTapCallBack = { _, type, event, userInfo in
@@ -69,8 +95,16 @@ final class SuperRightClickMonitor {
         if let eventTapRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
         }
+        if let globalRightMouseDownMonitor {
+            NSEvent.removeMonitor(globalRightMouseDownMonitor)
+        }
+        if let globalRightMouseUpMonitor {
+            NSEvent.removeMonitor(globalRightMouseUpMonitor)
+        }
         eventTap = nil
         eventTapRunLoopSource = nil
+        globalRightMouseDownMonitor = nil
+        globalRightMouseUpMonitor = nil
         longPressTimer?.invalidate()
         longPressTimer = nil
         shouldSuppressNextRightMouseUp = false
@@ -82,6 +116,7 @@ final class SuperRightClickMonitor {
     ) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             MainActor.assumeIsolated {
+                logger.error("super right click event tap disabled by system; re-enabling")
                 if let eventTap {
                     CGEvent.tapEnable(tap: eventTap, enable: true)
                 }
@@ -109,20 +144,21 @@ final class SuperRightClickMonitor {
     }
 
     private func handleRightMouseDown() {
+        logger.info("super right click right mouse down")
         shouldSuppressNextRightMouseUp = false
         _ = stateMachine.handle(.pressed(atMilliseconds: currentMilliseconds()))
         longPressTimer?.invalidate()
-        longPressTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.05,
-            repeats: true
-        ) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.handleLongPressTimer()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        longPressTimer = timer
     }
 
     private func handleRightMouseUp() -> Bool {
+        logger.info("super right click right mouse up")
         longPressTimer?.invalidate()
         longPressTimer = nil
         _ = stateMachine.handle(.released(atMilliseconds: currentMilliseconds()))
@@ -140,15 +176,16 @@ final class SuperRightClickMonitor {
         longPressTimer?.invalidate()
         longPressTimer = nil
         shouldSuppressNextRightMouseUp = true
+        logger.info("super right click long press triggered")
 
         Task {
-            let item = await service.handleDecision(decision, sourceApp: frontmostApplicationName())
+            let result = await service.handleDecision(decision, sourceApp: frontmostApplicationName())
             await MainActor.run {
-                guard let item else {
+                guard let result else {
                     return
                 }
-                logger.info("super right click captured \(item.kind.rawValue)")
-                onItemCaptured(item)
+                logger.info("super right click captured \(result.item.kind.rawValue)")
+                onResultCaptured(result)
             }
         }
     }

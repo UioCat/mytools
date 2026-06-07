@@ -23,14 +23,10 @@ public final class HotKeyService {
         handler: @escaping (HotKeyTarget) -> Void = { _ in }
     ) {
         registrar.unregisterAll()
-        bindings = [
-            settings.mainPanelShortcut.displayValue: .mainPanel,
-            settings.clipboardShortcut.displayValue: .clipboard,
-            settings.reservedTool2Shortcut.displayValue: .reservedTool2,
-            settings.reservedTool3Shortcut.displayValue: .reservedTool3
-        ]
+        bindings.removeAll()
 
-        for (hotKey, target) in hotKeys(from: settings) {
+        for (hotKey, target) in uniqueHotKeys(from: settings) {
+            bindings[hotKey.displayValue] = target
             try? registrar.register(hotKey) {
                 handler(target)
             }
@@ -42,12 +38,27 @@ public final class HotKeyService {
     }
 
     private func hotKeys(from settings: AppSettings) -> [(HotKey, HotKeyTarget)] {
-        [
+        let toolHotKeys: [(HotKey, HotKeyTarget)] = [
             (settings.mainPanelShortcut.hotKey, .mainPanel),
             (settings.clipboardShortcut.hotKey, .clipboard),
-            (settings.reservedTool2Shortcut.hotKey, .reservedTool2),
+            (settings.reservedTool2Shortcut.hotKey, .translation),
             (settings.reservedTool3Shortcut.hotKey, .reservedTool3)
         ]
+
+        let windowLayoutHotKeys = settings.windowLayout.shortcutBindings.map { shortcutBinding in
+            (shortcutBinding.binding.hotKey, HotKeyTarget.windowLayout(shortcutBinding.mode))
+        }
+
+        return toolHotKeys + windowLayoutHotKeys
+    }
+
+    private func uniqueHotKeys(from settings: AppSettings) -> [(HotKey, HotKeyTarget)] {
+        var seen = Set<String>()
+        return hotKeys(from: settings).filter { hotKey, _ in
+            hotKey.key.isEmpty == false
+                && hotKey.modifiers.isEmpty == false
+                && seen.insert(hotKey.displayValue).inserted
+        }
     }
 }
 
@@ -60,12 +71,70 @@ private extension HotKeyBinding {
 #if canImport(Carbon)
 public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
     private let keyCodes: [String: UInt32] = [
-        "Space": 49,
+        "A": 0,
+        "S": 1,
+        "D": 2,
+        "F": 3,
+        "H": 4,
+        "G": 5,
+        "Z": 6,
+        "X": 7,
+        "C": 8,
+        "V": 9,
+        "B": 11,
+        "Q": 12,
+        "W": 13,
+        "E": 14,
+        "R": 15,
+        "Y": 16,
+        "T": 17,
         "1": 18,
         "2": 19,
-        "3": 20
+        "3": 20,
+        "4": 21,
+        "6": 22,
+        "5": 23,
+        "7": 26,
+        "8": 28,
+        "9": 25,
+        "0": 29,
+        "O": 31,
+        "U": 32,
+        "I": 34,
+        "P": 35,
+        "Return": 36,
+        "L": 37,
+        "J": 38,
+        "K": 40,
+        "N": 45,
+        "M": 46,
+        "Tab": 48,
+        "Space": 49,
+        "Delete": 51,
+        "Escape": 53,
+        "F5": 96,
+        "F6": 97,
+        "F7": 98,
+        "F3": 99,
+        "F8": 100,
+        "F9": 101,
+        "F11": 103,
+        "F10": 109,
+        "F12": 111,
+        "F4": 118,
+        "F2": 120,
+        "F1": 122,
+        "Left": 123,
+        "Right": 124,
+        "Down": 125,
+        "Up": 126
     ]
-    private let optionModifier = UInt32(optionKey)
+    private let modifierValues: [String: UInt32] = [
+        "Control": UInt32(controlKey),
+        "Option": UInt32(optionKey),
+        "Shift": UInt32(shiftKey),
+        "Command": UInt32(cmdKey)
+    ]
     private let signature = OSType.from(string: "MTHK")
 
     private var eventHandler: EventHandlerRef?
@@ -121,10 +190,18 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
     }
 
     private func carbonModifiers(for modifiers: [String]) throws -> UInt32 {
-        guard modifiers == ["Option"] else {
+        guard !modifiers.isEmpty else {
             throw HotKeyRegistrationError.unsupportedModifiers(modifiers)
         }
-        return optionModifier
+
+        var carbonModifiers: UInt32 = 0
+        for modifier in modifiers {
+            guard let modifierValue = modifierValues[modifier] else {
+                throw HotKeyRegistrationError.unsupportedModifiers(modifiers)
+            }
+            carbonModifiers |= modifierValue
+        }
+        return carbonModifiers
     }
 
     private func installEventHandler() {

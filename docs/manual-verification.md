@@ -5,15 +5,30 @@
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
+- Use `Option + 2` to open the translation tool.
 - Copy text and confirm it appears in clipboard search.
 - Copy a file and confirm filename/path appears.
 - Copy a folder and confirm folder actions show Copy Path and Open in Terminal.
 - Copy image data and confirm it is stored in the app cache.
+- In clipboard history, click the star button at the right edge of a row and confirm the item appears in Favorites; click again and confirm it is removed from Favorites.
 - Select a clipboard item and press Enter; confirm it copies and attempts paste.
 - Use Cmd+Enter; confirm it copies without sending paste.
 - Short right-click in Finder; confirm the system menu appears.
 - Long right-click a selected folder; confirm the context action window appears.
-- Long right-click selected text before Baidu credentials are configured; confirm the translation service reports unconfigured state.
+- Open settings and confirm the window layout section shows compact rows with preview icons; hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row.
+- Open settings and confirm the clipboard section can choose a custom cache storage folder, restore the default folder, and switch cache size between `200M`, `500M`, `1024M`, and `2048M`.
+- Long right-click selected text or a Finder item, click a window layout button, and confirm the frontmost app window moves to the selected visible-screen region.
+- Press a configured window layout shortcut while another app is frontmost and confirm its focused window moves to the matching visible-screen region.
+- 打开设置，在超级右键中拖动长按响应滑块到 `250 毫秒`、`300 毫秒` 和 `350 毫秒`；确认按钮可随拖动移动，松手后保存，并改变长按右键触发速度。
+- Open settings and confirm the translation section shows Aliyun Bailian, model `qwen-mt-turbo`, and a masked API Key after saving.
+- Click the API Key eye button; confirm the saved key can be revealed and hidden again.
+- Long right-click selected text before Bailian credentials are configured; confirm the translation service reports unconfigured state.
+- Start composing Chinese text with IME in the translation tool; confirm the input placeholder disappears before candidate selection is committed.
+- Configure a Bailian API Key, enter Chinese in the translation tool, and confirm it translates to English.
+- Enter English or another non-Chinese language in the translation tool, and confirm it translates to Chinese.
+- Click the translation output copy button and confirm the translated text is copied.
+- Click the translation output text, press Cmd+A then Cmd+C, and confirm the translated text is copied.
+- Long right-click selected text and confirm the context translation follows the same language direction.
 - Open settings and confirm permission status is visible.
 - Build app bundle with `scripts/package_app.sh`.
 - Launch `build/MacTools.app`.

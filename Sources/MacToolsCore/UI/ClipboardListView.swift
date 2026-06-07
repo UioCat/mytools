@@ -41,19 +41,23 @@ public struct ClipboardListView: View {
                         emptyState
                     } else {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            let isSelected = item.id == selectedItemID
+
                             ClipboardRowView(
                                 item: item,
                                 index: index + 1,
-                                isSelected: item.id == selectedItemID,
+                                isSelected: isSelected,
+                                showsBackground: isSelected,
                                 onFavoriteToggle: {
                                     onFavoriteToggle(item)
                                 }
                             )
-                            .id(item.id)
-                            .contentShape(Rectangle())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .onTapGesture {
                                 onSelect(item)
                             }
+                            .id(item.id)
                             .contextMenu {
                                 if mode == .favorites {
                                     Button("取消收藏") {
@@ -75,6 +79,7 @@ public struct ClipboardListView: View {
                     }
                 }
                 .padding(.vertical, 2)
+                .liquidGlassGroup(spacing: 10)
             }
             .background(Color.clear)
             .onChange(of: selectedItemID) { id in
@@ -83,7 +88,10 @@ public struct ClipboardListView: View {
                 }
 
                 withAnimation(.easeOut(duration: 0.12)) {
-                    proxy.scrollTo(id, anchor: .center)
+                    proxy.scrollTo(
+                        id,
+                        anchor: ClipboardListScrollAnchorPolicy.anchor(for: id, in: items).unitPoint
+                    )
                 }
             }
         }
@@ -102,5 +110,40 @@ public struct ClipboardListView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 72)
         .liquidGlassModule(cornerRadius: 24)
+    }
+}
+
+enum ClipboardListScrollAnchor: Equatable {
+    case top
+    case center
+    case bottom
+
+    var unitPoint: UnitPoint {
+        switch self {
+        case .top:
+            return .top
+        case .center:
+            return .center
+        case .bottom:
+            return .bottom
+        }
+    }
+}
+
+enum ClipboardListScrollAnchorPolicy {
+    static func anchor(for selectedItemID: ClipboardItem.ID, in items: [ClipboardItem]) -> ClipboardListScrollAnchor {
+        guard let selectedIndex = items.firstIndex(where: { $0.id == selectedItemID }) else {
+            return .center
+        }
+
+        if selectedIndex == items.startIndex {
+            return .top
+        }
+
+        if selectedIndex == items.index(before: items.endIndex) {
+            return .bottom
+        }
+
+        return .center
     }
 }

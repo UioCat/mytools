@@ -22,6 +22,17 @@ public enum MainToolModule: String, CaseIterable, Identifiable {
         }
     }
 
+    public var subtitle: String {
+        switch self {
+        case .settings:
+            return "快捷键、剪贴板、翻译和权限"
+        case .clipboard:
+            return "历史记录、搜索和快速粘贴"
+        case .translation:
+            return "百炼翻译与超级右键"
+        }
+    }
+
     public var iconName: String {
         switch self {
         case .settings:

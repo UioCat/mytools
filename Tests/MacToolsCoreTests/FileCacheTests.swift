@@ -26,6 +26,30 @@ final class FileCacheTests: XCTestCase {
         XCTAssertEqual(result.fileURL.pathExtension, "tiff")
     }
 
+    func testStorePrunesOlderFilesToStayUnderMaximumBytes() throws {
+        let root = makeTemporaryRoot()
+        defer { removeTemporaryRoot(root) }
+        let cache = FileCache(rootDirectory: root)
+        let oldFile = try cache.store(
+            data: Data(repeating: 1, count: 6),
+            preferredExtension: "png"
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 0)],
+            ofItemAtPath: oldFile.fileURL.path
+        )
+
+        let newFile = try cache.store(
+            data: Data(repeating: 2, count: 6),
+            preferredExtension: "png",
+            maxBytes: 8
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldFile.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newFile.fileURL.path))
+        XCTAssertEqual(try cache.totalBytes(), 6)
+    }
+
     func testReportsStorageUsage() throws {
         let root = makeTemporaryRoot()
         defer { removeTemporaryRoot(root) }

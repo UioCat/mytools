@@ -1,27 +1,328 @@
 import Foundation
 
-public struct HotKeyBinding: Codable, Equatable {
+public struct HotKeyBinding: Codable, Equatable, Hashable {
     public var key: String
     public var modifiers: [String]
+
+    public init(key: String, modifiers: [String]) {
+        self.key = Self.normalizedKey(key)
+        self.modifiers = Self.normalizedModifiers(modifiers)
+    }
 
     public var displayValue: String {
         (modifiers + [key]).joined(separator: "+")
     }
+
+    public var isUsableGlobalShortcut: Bool {
+        !key.isEmpty && !modifiers.isEmpty
+    }
+
+    public static func parse(displayValue: String) -> HotKeyBinding? {
+        let parts = displayValue
+            .split(separator: "+")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard parts.count >= 2, let key = parts.last else {
+            return nil
+        }
+
+        let modifiers = Array(parts.prefix(parts.count - 1))
+        guard modifiers.allSatisfy({ canonicalModifier($0) != nil }) else {
+            return nil
+        }
+
+        let binding = HotKeyBinding(key: key, modifiers: modifiers)
+        return binding.isUsableGlobalShortcut ? binding : nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case modifiers
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            key: try container.decodeIfPresent(String.self, forKey: .key) ?? "",
+            modifiers: try container.decodeIfPresent([String].self, forKey: .modifiers) ?? []
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(key, forKey: .key)
+        try container.encode(modifiers, forKey: .modifiers)
+    }
+
+    private static func normalizedModifiers(_ modifiers: [String]) -> [String] {
+        let canonicalModifiers = modifiers.compactMap(canonicalModifier(_:))
+        var seen = Set<String>()
+        return modifierDisplayOrder.filter { modifier in
+            canonicalModifiers.contains(modifier) && seen.insert(modifier).inserted
+        }
+    }
+
+    private static func canonicalModifier(_ modifier: String) -> String? {
+        let normalized = modifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "control", "ctrl", "⌃":
+            return "Control"
+        case "option", "alt", "opt", "⌥":
+            return "Option"
+        case "shift", "⇧":
+            return "Shift"
+        case "command", "cmd", "⌘":
+            return "Command"
+        default:
+            return nil
+        }
+    }
+
+    private static func normalizedKey(_ key: String) -> String {
+        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        let collapsedKey = trimmedKey.replacingOccurrences(of: " ", with: "").lowercased()
+
+        switch collapsedKey {
+        case "space", "spacebar", "空格":
+            return "Space"
+        case "left", "leftarrow", "arrowleft", "←":
+            return "Left"
+        case "right", "rightarrow", "arrowright", "→":
+            return "Right"
+        case "up", "uparrow", "arrowup", "↑":
+            return "Up"
+        case "down", "downarrow", "arrowdown", "↓":
+            return "Down"
+        case "return", "enter", "回车":
+            return "Return"
+        case "esc", "escape":
+            return "Escape"
+        case "del", "delete", "backspace":
+            return "Delete"
+        default:
+            break
+        }
+
+        if trimmedKey.count == 1 {
+            return trimmedKey.uppercased()
+        }
+
+        let uppercasedKey = trimmedKey.uppercased()
+        if uppercasedKey.range(of: #"^F([1-9]|1[0-9]|20)$"#, options: .regularExpression) != nil {
+            return uppercasedKey
+        }
+
+        return trimmedKey
+    }
+
+    private static let modifierDisplayOrder = ["Control", "Option", "Shift", "Command"]
 }
 
 public struct ClipboardSettings: Codable, Equatable {
     public var isRecordingEnabled: Bool
     public var maxHistoryCount: Int
     public var maxCacheMegabytes: Int
+    public var cacheStoragePath: String
+
+    public init(
+        isRecordingEnabled: Bool,
+        maxHistoryCount: Int,
+        maxCacheMegabytes: Int,
+        cacheStoragePath: String = ""
+    ) {
+        self.isRecordingEnabled = isRecordingEnabled
+        self.maxHistoryCount = maxHistoryCount
+        self.maxCacheMegabytes = ClipboardCacheLimit.normalizedMegabytes(maxCacheMegabytes)
+        self.cacheStoragePath = cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public func cacheDirectory(defaultDirectory: URL) -> URL {
+        let trimmedPath = cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            return defaultDirectory
+        }
+
+        return URL(
+            fileURLWithPath: NSString(string: trimmedPath).expandingTildeInPath,
+            isDirectory: true
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isRecordingEnabled
+        case maxHistoryCount
+        case maxCacheMegabytes
+        case cacheStoragePath
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            isRecordingEnabled: try container.decodeIfPresent(Bool.self, forKey: .isRecordingEnabled) ?? true,
+            maxHistoryCount: try container.decodeIfPresent(Int.self, forKey: .maxHistoryCount) ?? 500,
+            maxCacheMegabytes: try container.decodeIfPresent(Int.self, forKey: .maxCacheMegabytes)
+                ?? ClipboardCacheLimit.defaultMegabytes,
+            cacheStoragePath: try container.decodeIfPresent(String.self, forKey: .cacheStoragePath) ?? ""
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isRecordingEnabled, forKey: .isRecordingEnabled)
+        try container.encode(maxHistoryCount, forKey: .maxHistoryCount)
+        try container.encode(maxCacheMegabytes, forKey: .maxCacheMegabytes)
+        try container.encode(cacheStoragePath, forKey: .cacheStoragePath)
+    }
+}
+
+public enum ClipboardCacheLimit {
+    public static let allowedMegabytes = [200, 500, 1024, 2048]
+    public static let defaultMegabytes = 1024
+
+    public static func normalizedMegabytes(_ megabytes: Int) -> Int {
+        allowedMegabytes.min { lhs, rhs in
+            let lhsDistance = abs(lhs - megabytes)
+            let rhsDistance = abs(rhs - megabytes)
+            if lhsDistance == rhsDistance {
+                return lhs < rhs
+            }
+            return lhsDistance < rhsDistance
+        } ?? defaultMegabytes
+    }
+
+    public static func bytes(forMegabytes megabytes: Int) -> Int {
+        normalizedMegabytes(megabytes) * 1024 * 1024
+    }
+
+    public static func displayValue(for megabytes: Int) -> String {
+        "\(normalizedMegabytes(megabytes)) MB"
+    }
 }
 
 public struct SuperRightClickSettings: Codable, Equatable {
     public var isEnabled: Bool
     public var longPressMilliseconds: Int
+
+    public init(isEnabled: Bool, longPressMilliseconds: Int) {
+        self.isEnabled = isEnabled
+        self.longPressMilliseconds = SuperRightClickResponseSpeed.normalizedMilliseconds(longPressMilliseconds)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled
+        case longPressMilliseconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        self.longPressMilliseconds = SuperRightClickResponseSpeed.normalizedMilliseconds(
+            try container.decodeIfPresent(Int.self, forKey: .longPressMilliseconds)
+                ?? SuperRightClickResponseSpeed.minimumMilliseconds
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(longPressMilliseconds, forKey: .longPressMilliseconds)
+    }
+}
+
+public enum SuperRightClickResponseSpeed {
+    public static let minimumMilliseconds = 250
+    public static let maximumMilliseconds = 350
+    public static let stepMilliseconds = 50
+    public static let markerMilliseconds = [250, 300, 350]
+
+    public static func normalizedMilliseconds(_ milliseconds: Int) -> Int {
+        let clampedMilliseconds = min(
+            max(milliseconds, minimumMilliseconds),
+            maximumMilliseconds
+        )
+        let offset = clampedMilliseconds - minimumMilliseconds
+        let roundedStepCount = Int(
+            (Double(offset) / Double(stepMilliseconds)).rounded()
+        )
+        return minimumMilliseconds + roundedStepCount * stepMilliseconds
+    }
+
+    public static func clampedSliderValue(_ milliseconds: Double) -> Double {
+        min(
+            max(milliseconds, Double(minimumMilliseconds)),
+            Double(maximumMilliseconds)
+        )
+    }
+
+    public static func committedMilliseconds(forSliderValue milliseconds: Double) -> Int {
+        normalizedMilliseconds(Int(clampedSliderValue(milliseconds).rounded()))
+    }
+
+    public static func displayValue(for milliseconds: Int) -> String {
+        "\(normalizedMilliseconds(milliseconds)) 毫秒"
+    }
 }
 
 public struct TranslationSettings: Codable, Equatable {
+    public static let defaultProviderID = "bailian"
+    public static let defaultModel = "qwen-mt-turbo"
+    public static let defaultEndpointURLString = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+
     public var providerID: String
+    public var apiKey: String
+    public var model: String
+    public var endpointURLString: String
+
+    public init(
+        providerID: String = Self.defaultProviderID,
+        apiKey: String = "",
+        model: String = Self.defaultModel,
+        endpointURLString: String = Self.defaultEndpointURLString
+    ) {
+        self.providerID = providerID
+        self.apiKey = apiKey
+        self.model = model
+        self.endpointURLString = endpointURLString
+    }
+
+    public var isConfigured: Bool {
+        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public func displayAPIKey(isRevealed: Bool) -> String {
+        guard !apiKey.isEmpty else {
+            return ""
+        }
+
+        return isRevealed ? apiKey : String(repeating: "*", count: apiKey.count)
+    }
+
+    public var bailianConfiguration: BailianTranslationConfiguration? {
+        guard isConfigured, let endpointURL = URL(string: endpointURLString) else {
+            return nil
+        }
+
+        return BailianTranslationConfiguration(
+            apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            model: model.trimmingCharacters(in: .whitespacesAndNewlines),
+            endpointURL: endpointURL
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case providerID
+        case apiKey
+        case model
+        case endpointURLString
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.providerID = try container.decodeIfPresent(String.self, forKey: .providerID) ?? Self.defaultProviderID
+        self.apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? Self.defaultModel
+        self.endpointURLString = try container.decodeIfPresent(String.self, forKey: .endpointURLString) ?? Self.defaultEndpointURLString
+    }
 }
 
 public struct AppSettings: Codable, Equatable {
@@ -32,6 +333,7 @@ public struct AppSettings: Codable, Equatable {
     public var clipboard: ClipboardSettings
     public var superRightClick: SuperRightClickSettings
     public var translation: TranslationSettings
+    public var windowLayout: WindowLayoutSettings
 
     public static let defaults = AppSettings(
         mainPanelShortcut: HotKeyBinding(key: "Space", modifiers: ["Option"]),
@@ -45,8 +347,72 @@ public struct AppSettings: Codable, Equatable {
         ),
         superRightClick: SuperRightClickSettings(
             isEnabled: true,
-            longPressMilliseconds: 600
+            longPressMilliseconds: SuperRightClickResponseSpeed.minimumMilliseconds
         ),
-        translation: TranslationSettings(providerID: "baidu")
+        translation: TranslationSettings(),
+        windowLayout: .defaults
     )
+
+    public init(
+        mainPanelShortcut: HotKeyBinding,
+        clipboardShortcut: HotKeyBinding,
+        reservedTool2Shortcut: HotKeyBinding,
+        reservedTool3Shortcut: HotKeyBinding,
+        clipboard: ClipboardSettings,
+        superRightClick: SuperRightClickSettings,
+        translation: TranslationSettings,
+        windowLayout: WindowLayoutSettings
+    ) {
+        self.mainPanelShortcut = mainPanelShortcut
+        self.clipboardShortcut = clipboardShortcut
+        self.reservedTool2Shortcut = reservedTool2Shortcut
+        self.reservedTool3Shortcut = reservedTool3Shortcut
+        self.clipboard = clipboard
+        self.superRightClick = superRightClick
+        self.translation = translation
+        self.windowLayout = windowLayout
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mainPanelShortcut
+        case clipboardShortcut
+        case reservedTool2Shortcut
+        case reservedTool3Shortcut
+        case clipboard
+        case superRightClick
+        case translation
+        case windowLayout
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.mainPanelShortcut = try container.decodeIfPresent(HotKeyBinding.self, forKey: .mainPanelShortcut)
+            ?? Self.defaults.mainPanelShortcut
+        self.clipboardShortcut = try container.decodeIfPresent(HotKeyBinding.self, forKey: .clipboardShortcut)
+            ?? Self.defaults.clipboardShortcut
+        self.reservedTool2Shortcut = try container.decodeIfPresent(HotKeyBinding.self, forKey: .reservedTool2Shortcut)
+            ?? Self.defaults.reservedTool2Shortcut
+        self.reservedTool3Shortcut = try container.decodeIfPresent(HotKeyBinding.self, forKey: .reservedTool3Shortcut)
+            ?? Self.defaults.reservedTool3Shortcut
+        self.clipboard = try container.decodeIfPresent(ClipboardSettings.self, forKey: .clipboard)
+            ?? Self.defaults.clipboard
+        self.superRightClick = try container.decodeIfPresent(SuperRightClickSettings.self, forKey: .superRightClick)
+            ?? Self.defaults.superRightClick
+        self.translation = try container.decodeIfPresent(TranslationSettings.self, forKey: .translation)
+            ?? Self.defaults.translation
+        self.windowLayout = try container.decodeIfPresent(WindowLayoutSettings.self, forKey: .windowLayout)
+            ?? Self.defaults.windowLayout
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(mainPanelShortcut, forKey: .mainPanelShortcut)
+        try container.encode(clipboardShortcut, forKey: .clipboardShortcut)
+        try container.encode(reservedTool2Shortcut, forKey: .reservedTool2Shortcut)
+        try container.encode(reservedTool3Shortcut, forKey: .reservedTool3Shortcut)
+        try container.encode(clipboard, forKey: .clipboard)
+        try container.encode(superRightClick, forKey: .superRightClick)
+        try container.encode(translation, forKey: .translation)
+        try container.encode(windowLayout, forKey: .windowLayout)
+    }
 }

@@ -5,6 +5,7 @@ import Foundation
 public protocol WritablePasteboard {
     func writeText(_ text: String)
     func writeFileURL(_ url: URL)
+    func writeImageData(_ data: Data) throws
 }
 
 public protocol PasteEventSender {
@@ -24,6 +25,12 @@ public final class PasteActionService {
     public func copy(_ item: ClipboardItem) throws {
         if let text = item.text {
             pasteboard.writeText(text)
+            return
+        }
+
+        if item.kind == .imageData, let path = item.cachedFilePath ?? item.originalPath {
+            let imageData = try Data(contentsOf: URL(fileURLWithPath: path))
+            try pasteboard.writeImageData(imageData)
             return
         }
 
@@ -47,6 +54,7 @@ public final class PasteActionService {
 
 public enum PasteActionError: Error, Equatable {
     case unsupportedItem
+    case invalidImageData
 }
 
 public final class SystemWritablePasteboard: WritablePasteboard {
@@ -64,6 +72,15 @@ public final class SystemWritablePasteboard: WritablePasteboard {
     public func writeFileURL(_ url: URL) {
         pasteboard.clearContents()
         pasteboard.writeObjects([url as NSURL])
+    }
+
+    public func writeImageData(_ data: Data) throws {
+        guard let pngData = ImageDataNormalizer.pngData(from: data) else {
+            throw PasteActionError.invalidImageData
+        }
+
+        pasteboard.clearContents()
+        pasteboard.setData(pngData, forType: .png)
     }
 }
 

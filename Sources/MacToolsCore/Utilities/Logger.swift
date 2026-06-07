@@ -1,13 +1,59 @@
+import Foundation
+
 public final class Logger {
+    private static let fileLock = NSLock()
     public private(set) var messages: [String] = []
 
     public init() {}
 
     public func info(_ message: String) {
-        messages.append("INFO \(message)")
+        record(level: "INFO", message: message)
     }
 
     public func error(_ message: String) {
-        messages.append("ERROR \(message)")
+        record(level: "ERROR", message: message)
+    }
+
+    private func record(level: String, message: String) {
+        let line = "\(level) \(message)"
+        messages.append(line)
+        NSLog("%@", line)
+        writeToDebugLog(line)
+    }
+
+    private func writeToDebugLog(_ line: String) {
+        guard let data = "\(Date()) \(line)\n".data(using: .utf8) else {
+            return
+        }
+
+        Self.fileLock.lock()
+        defer { Self.fileLock.unlock() }
+
+        do {
+            let directory = try Self.debugLogDirectory()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let fileURL = directory.appendingPathComponent("debug.log")
+
+            if !FileManager.default.fileExists(atPath: fileURL.path) {
+                FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+            }
+
+            let handle = try FileHandle(forWritingTo: fileURL)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            try handle.close()
+        } catch {
+            NSLog("ERROR debug log write failed %@", String(describing: error))
+        }
+    }
+
+    private static func debugLogDirectory() throws -> URL {
+        try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        .appendingPathComponent("MacTools", isDirectory: true)
     }
 }

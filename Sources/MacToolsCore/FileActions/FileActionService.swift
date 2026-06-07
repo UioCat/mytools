@@ -50,6 +50,43 @@ public final class FileActionService {
         workspace.reveal(URL(fileURLWithPath: path))
     }
 
+    public func createNewFile(in item: ClipboardItem) throws -> URL {
+        let path = try originalPath(for: item)
+        let folderURL: URL
+
+        if isDirectory(at: path) {
+            folderURL = URL(fileURLWithPath: path, isDirectory: true)
+        } else {
+            folderURL = URL(fileURLWithPath: path).deletingLastPathComponent()
+            guard isDirectory(at: folderURL.path) else {
+                throw FileActionError.invalidFolderPath(folderURL.path)
+            }
+        }
+
+        for index in 1...1_000 {
+            let fileName = index == 1 ? "Untitled.txt" : "Untitled \(index).txt"
+            let fileURL = folderURL.appendingPathComponent(fileName, isDirectory: false)
+            guard !fileManager.fileExists(atPath: fileURL.path) else {
+                continue
+            }
+
+            guard fileManager.createFile(atPath: fileURL.path, contents: Data()) else {
+                throw FileActionError.fileCreationFailed(fileURL.path)
+            }
+
+            return fileURL
+        }
+
+        throw FileActionError.fileCreationFailed(folderURL.appendingPathComponent("Untitled.txt").path)
+    }
+
+    public func openExternalApplication(named applicationName: String, at path: String) throws {
+        try processRunner.run(
+            URL(fileURLWithPath: "/usr/bin/open"),
+            arguments: ["-a", applicationName, path]
+        )
+    }
+
     private func originalPath(for item: ClipboardItem) throws -> String {
         guard let path = item.originalPath else {
             throw FileActionError.missingPath
@@ -67,6 +104,7 @@ public final class FileActionService {
 public enum FileActionError: Error, Equatable {
     case missingPath
     case invalidFolderPath(String)
+    case fileCreationFailed(String)
 }
 
 public final class SystemWorkspaceOpening: WorkspaceOpening {

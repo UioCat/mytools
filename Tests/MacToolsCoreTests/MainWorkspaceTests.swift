@@ -7,6 +7,32 @@ final class MainWorkspaceTests: XCTestCase {
         XCTAssertEqual(MainToolModule.allCases.first, .settings)
     }
 
+    func testWorkspaceSidebarIsHiddenByDefault() {
+        XCTAssertFalse(MainWorkspaceLayout.isSidebarVisibleByDefault)
+    }
+
+    func testWorkspaceModuleContentIsPinnedToTop() {
+        XCTAssertEqual(MainWorkspaceLayout.moduleContentHorizontalAlignment, .leading)
+        XCTAssertEqual(MainWorkspaceLayout.moduleContentVerticalAlignment, .top)
+    }
+
+    func testCollapsedSidebarToggleKeepsFullHitTarget() {
+        XCTAssertGreaterThanOrEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.width, 44)
+        XCTAssertGreaterThanOrEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.height, 44)
+    }
+
+    func testEveryMainModuleProvidesHeaderMetadata() {
+        for module in MainToolModule.allCases {
+            XCTAssertFalse(module.title.isEmpty)
+            XCTAssertFalse(module.subtitle.isEmpty)
+            XCTAssertFalse(module.iconName.isEmpty)
+        }
+    }
+
+    func testTranslationModuleHasDedicatedHeaderSubtitle() {
+        XCTAssertEqual(MainToolModule.translation.subtitle, "百炼翻译与超级右键")
+    }
+
     func testEscapeKeyMapsToDismissForEveryMainModule() {
         let resolver = PanelKeyCommandResolver()
 

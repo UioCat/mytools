@@ -40,17 +40,75 @@ final class RightClickStateMachineTests: XCTestCase {
 }
 
 final class SelectionCaptureServiceTests: XCTestCase {
-    func testCaptureSelectionSendsCopyShortcutThenReadsPayload() {
-        let pasteboard = FakePasteboardClient(payload: ClipboardPayload(text: "selected text"))
+    func testCaptureSelectionUsesAccessibleSelectedTextWithoutCopyShortcut() {
+        let pasteboard = FakePasteboardClient(payload: ClipboardPayload(text: "clipboard text"))
         let sender = FakePasteEventSender()
-        let service = SelectionCaptureService(pasteboard: pasteboard, eventSender: sender)
+        let reader = FakeSelectedTextReader(selectedText: "selected text")
+        let service = SelectionCaptureService(
+            pasteboard: pasteboard,
+            eventSender: sender,
+            selectedTextReader: reader
+        )
 
         let payload = service.captureSelection()
 
         XCTAssertEqual(payload, ClipboardPayload(text: "selected text"))
+        XCTAssertEqual(reader.readCount, 1)
+        XCTAssertEqual(sender.sendCopyCount, 0)
+        XCTAssertEqual(pasteboard.readCount, 0)
+    }
+
+    func testCaptureSelectionSendsCopyShortcutThenReadsPayload() {
+        let pasteboard = FakePasteboardClient(payload: ClipboardPayload(text: "selected text"))
+        let sender = FakePasteEventSender {
+            pasteboard.changeCount += 1
+        }
+        let reader = FakeSelectedTextReader(selectedText: nil)
+        let service = SelectionCaptureService(
+            pasteboard: pasteboard,
+            eventSender: sender,
+            selectedTextReader: reader
+        )
+
+        let payload = service.captureSelection()
+
+        XCTAssertEqual(payload, ClipboardPayload(text: "selected text"))
+        XCTAssertEqual(reader.readCount, 1)
         XCTAssertEqual(sender.sendCopyCount, 1)
         XCTAssertEqual(sender.sendPasteCount, 0)
         XCTAssertEqual(pasteboard.readCount, 1)
+    }
+
+    func testCaptureSelectionReturnsEmptyPayloadWhenCopyFallbackDoesNotChangePasteboard() {
+        let pasteboard = FakePasteboardClient(payload: ClipboardPayload(imageData: Data([1, 2, 3])))
+        let sender = FakePasteEventSender()
+        let reader = FakeSelectedTextReader(selectedText: nil)
+        let service = SelectionCaptureService(
+            pasteboard: pasteboard,
+            eventSender: sender,
+            selectedTextReader: reader
+        )
+
+        let payload = service.captureSelection()
+
+        XCTAssertEqual(payload, ClipboardPayload())
+        XCTAssertEqual(reader.readCount, 1)
+        XCTAssertEqual(sender.sendCopyCount, 1)
+        XCTAssertEqual(pasteboard.readCount, 0)
+    }
+}
+
+private final class FakeSelectedTextReader: SelectedTextReading {
+    private(set) var readCount = 0
+    private let selectedText: String?
+
+    init(selectedText: String?) {
+        self.selectedText = selectedText
+    }
+
+    func readSelectedText() -> String? {
+        readCount += 1
+        return selectedText
     }
 }
 
@@ -65,9 +123,9 @@ final class SuperRightClickServiceTests: XCTestCase {
             translationService: TranslationService(provider: translationProvider)
         )
 
-        let item = await service.handleDecision(.allowSystemMenu, sourceApp: "Notes")
+        let result = await service.handleDecision(.allowSystemMenu, sourceApp: "Notes")
 
-        XCTAssertNil(item)
+        XCTAssertNil(result)
         XCTAssertEqual(selectionCapture.captureCount, 0)
         XCTAssertTrue(translationProvider.requests.isEmpty)
     }
@@ -82,15 +140,37 @@ final class SuperRightClickServiceTests: XCTestCase {
             translationService: TranslationService(provider: translationProvider)
         )
 
-        let item = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
+        let result = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
 
-        XCTAssertEqual(item?.kind, .text)
-        XCTAssertEqual(item?.text, "hello")
-        XCTAssertEqual(item?.sourceApp, "Notes")
+        XCTAssertEqual(result?.item.kind, .text)
+        XCTAssertEqual(result?.item.text, "hello")
+        XCTAssertEqual(result?.item.sourceApp, "Notes")
+        XCTAssertEqual(
+            result?.translation,
+            .success(TranslationResponse(translatedText: "translated", providerID: "test"))
+        )
         XCTAssertEqual(selectionCapture.captureCount, 1)
         XCTAssertEqual(
             translationProvider.requests,
             [TranslationRequest(text: "hello", sourceLanguage: nil, targetLanguage: "zh")]
+        )
+    }
+
+    func testHandleDecisionRoutesChineseTextSelectionToEnglishTranslation() async {
+        let selectionCapture = FakeSelectionCapture(payload: ClipboardPayload(text: "你好"))
+        let translationProvider = RecordingTranslationProvider()
+        let service = SuperRightClickService(
+            settings: SuperRightClickSettings(isEnabled: true, longPressMilliseconds: 600),
+            selectionCapture: selectionCapture,
+            classifier: ClipboardClassifier(),
+            translationService: TranslationService(provider: translationProvider)
+        )
+
+        _ = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
+
+        XCTAssertEqual(
+            translationProvider.requests,
+            [TranslationRequest(text: "你好", sourceLanguage: nil, targetLanguage: "en")]
         )
     }
 
@@ -104,9 +184,9 @@ final class SuperRightClickServiceTests: XCTestCase {
             translationService: TranslationService(provider: translationProvider)
         )
 
-        let item = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
+        let result = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
 
-        XCTAssertNil(item)
+        XCTAssertNil(result)
         XCTAssertEqual(selectionCapture.captureCount, 0)
         XCTAssertTrue(translationProvider.requests.isEmpty)
     }
@@ -130,9 +210,15 @@ private final class FakePasteboardClient: PasteboardClient {
 private final class FakePasteEventSender: PasteEventSender {
     private(set) var sendCopyCount = 0
     private(set) var sendPasteCount = 0
+    private let onCopy: () -> Void
+
+    init(onCopy: @escaping () -> Void = {}) {
+        self.onCopy = onCopy
+    }
 
     func sendCopyShortcut() {
         sendCopyCount += 1
+        onCopy()
     }
 
     func sendPasteShortcut() {
