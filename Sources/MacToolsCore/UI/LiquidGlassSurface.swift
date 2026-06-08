@@ -116,6 +116,98 @@ struct LiquidGlassPanelModifier: ViewModifier {
     }
 }
 
+public enum LiquidGlassWindowPanelSurfacePlacement: Equatable {
+    case afterSizing
+}
+
+public enum LiquidGlassWindowPanelAlignment: Equatable {
+    case topLeading
+
+    var swiftUIAlignment: Alignment {
+        switch self {
+        case .topLeading:
+            return .topLeading
+        }
+    }
+}
+
+public struct LiquidGlassWindowPanelFrame: Equatable {
+    public let minWidth: CGFloat
+    public let idealWidth: CGFloat
+    public let maxWidth: CGFloat
+    public let minHeight: CGFloat
+    public let idealHeight: CGFloat
+    public let maxHeight: CGFloat
+    public let alignment: LiquidGlassWindowPanelAlignment
+    public var surfacePlacement: LiquidGlassWindowPanelSurfacePlacement { .afterSizing }
+
+    public init(
+        minWidth: CGFloat,
+        idealWidth: CGFloat,
+        maxWidth: CGFloat,
+        minHeight: CGFloat,
+        idealHeight: CGFloat,
+        maxHeight: CGFloat,
+        alignment: LiquidGlassWindowPanelAlignment = .topLeading
+    ) {
+        self.minWidth = minWidth
+        self.idealWidth = idealWidth
+        self.maxWidth = maxWidth
+        self.minHeight = minHeight
+        self.idealHeight = idealHeight
+        self.maxHeight = maxHeight
+        self.alignment = alignment
+    }
+
+    public static let mainWorkspace = LiquidGlassWindowPanelFrame(
+        minWidth: 900,
+        idealWidth: 1080,
+        maxWidth: .infinity,
+        minHeight: 620,
+        idealHeight: 720,
+        maxHeight: .infinity
+    )
+
+    public static let mainPanel = LiquidGlassWindowPanelFrame(
+        minWidth: 720,
+        idealWidth: 900,
+        maxWidth: .infinity,
+        minHeight: 480,
+        idealHeight: 620,
+        maxHeight: .infinity
+    )
+
+    public static let settings = LiquidGlassWindowPanelFrame(
+        minWidth: 640,
+        idealWidth: 820,
+        maxWidth: 900,
+        minHeight: 520,
+        idealHeight: 680,
+        maxHeight: 900
+    )
+}
+
+private struct LiquidGlassWindowPanelModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let clipCornerRadius: CGFloat
+    let frame: LiquidGlassWindowPanelFrame
+
+    func body(content: Content) -> some View {
+        content
+            .frame(
+                minWidth: frame.minWidth,
+                idealWidth: frame.idealWidth,
+                maxWidth: frame.maxWidth,
+                minHeight: frame.minHeight,
+                idealHeight: frame.idealHeight,
+                maxHeight: frame.maxHeight,
+                alignment: frame.alignment.swiftUIAlignment
+            )
+            .liquidGlassPanel(cornerRadius: cornerRadius)
+            .clipShape(RoundedRectangle(cornerRadius: clipCornerRadius, style: .continuous))
+    }
+}
+
 struct LiquidGlassModuleModifier: ViewModifier {
     let cornerRadius: CGFloat
     let isSelected: Bool
@@ -372,6 +464,20 @@ private struct VisualEffectBackground: NSViewRepresentable {
 public extension View {
     func liquidGlassPanel(cornerRadius: CGFloat = 28) -> some View {
         modifier(LiquidGlassPanelModifier(cornerRadius: cornerRadius))
+    }
+
+    func liquidGlassWindowPanel(
+        cornerRadius: CGFloat = 30,
+        clipCornerRadius: CGFloat = 28,
+        frame: LiquidGlassWindowPanelFrame
+    ) -> some View {
+        modifier(
+            LiquidGlassWindowPanelModifier(
+                cornerRadius: cornerRadius,
+                clipCornerRadius: clipCornerRadius,
+                frame: frame
+            )
+        )
     }
 
     func liquidGlassModule(cornerRadius: CGFloat = 22, isSelected: Bool = false) -> some View {

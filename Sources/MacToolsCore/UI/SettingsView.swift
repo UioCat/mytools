@@ -10,6 +10,7 @@ public struct SettingsView: View {
     public let saveTranslationSettings: (TranslationSettings) throws -> Void
     public let saveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
     public let saveWindowLayoutSettings: (WindowLayoutSettings) throws -> Void
+    private let defaultClipboardCacheDirectory: URL
     private let presentation: ToolModulePresentation
     @State private var clipboardCacheStoragePath: String
     @State private var clipboardMaxCacheMegabytes: Int
@@ -35,6 +36,7 @@ public struct SettingsView: View {
         saveTranslationSettings: @escaping (TranslationSettings) throws -> Void = { _ in },
         saveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void = { _ in },
         saveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> Void = { _ in },
+        defaultClipboardCacheDirectory: URL = ClipboardCacheStorageDisplay.defaultDirectory,
         presentation: ToolModulePresentation = .window
     ) {
         self.settings = settings
@@ -45,6 +47,7 @@ public struct SettingsView: View {
         self.saveTranslationSettings = saveTranslationSettings
         self.saveSuperRightClickSettings = saveSuperRightClickSettings
         self.saveWindowLayoutSettings = saveWindowLayoutSettings
+        self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.presentation = presentation
         self._clipboardCacheStoragePath = State(initialValue: settings.clipboard.cacheStoragePath)
         self._clipboardMaxCacheMegabytes = State(initialValue: settings.clipboard.maxCacheMegabytes)
@@ -68,16 +71,7 @@ public struct SettingsView: View {
     public var body: some View {
         if presentation == .window {
             content
-                .liquidGlassPanel(cornerRadius: 30)
-                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .frame(
-                    minWidth: 640,
-                    idealWidth: 820,
-                    maxWidth: 900,
-                    minHeight: 520,
-                    idealHeight: 680,
-                    maxHeight: 900
-                )
+                .liquidGlassWindowPanel(frame: .settings)
         } else {
             content
         }
@@ -156,6 +150,7 @@ public struct SettingsView: View {
                 cacheStoragePath: $clipboardCacheStoragePath,
                 maxCacheMegabytes: $clipboardMaxCacheMegabytes,
                 saveMessage: $clipboardSaveMessage,
+                defaultCacheDirectory: defaultClipboardCacheDirectory,
                 saveClipboardSettings: saveClipboardSettings
             )
         }
@@ -297,6 +292,7 @@ private struct ClipboardSettingsEditor: View {
     @Binding var cacheStoragePath: String
     @Binding var maxCacheMegabytes: Int
     @Binding var saveMessage: String?
+    let defaultCacheDirectory: URL
     let saveClipboardSettings: (ClipboardSettings) throws -> Void
 
     var body: some View {
@@ -318,6 +314,7 @@ private struct ClipboardSettingsEditor: View {
                         .foregroundStyle(Color.black.opacity(0.52))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .help(cacheStorageDisplay)
                 }
 
                 Spacer(minLength: 10)
@@ -388,12 +385,10 @@ private struct ClipboardSettingsEditor: View {
     }
 
     private var cacheStorageDisplay: String {
-        let trimmedPath = cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPath.isEmpty else {
-            return "默认位置"
-        }
-
-        return NSString(string: trimmedPath).abbreviatingWithTildeInPath
+        ClipboardCacheStorageDisplay.displayPath(
+            configuredPath: cacheStoragePath,
+            defaultDirectory: defaultCacheDirectory
+        )
     }
 
     private func iconButton(

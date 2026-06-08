@@ -175,6 +175,28 @@ public struct ClipboardSettings: Codable, Equatable {
     }
 }
 
+public enum ClipboardCacheStorageDisplay {
+    public static var defaultDirectory: URL {
+        let baseURL = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? FileManager.default.temporaryDirectory
+
+        return baseURL
+            .appendingPathComponent("MacTools", isDirectory: true)
+            .appendingPathComponent("ClipboardCache", isDirectory: true)
+    }
+
+    public static func displayPath(configuredPath: String, defaultDirectory: URL) -> String {
+        let trimmedPath = configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedPath = trimmedPath.isEmpty
+            ? defaultDirectory.path
+            : NSString(string: trimmedPath).expandingTildeInPath
+
+        return NSString(string: resolvedPath).abbreviatingWithTildeInPath
+    }
+}
+
 public enum ClipboardCacheLimit {
     public static let allowedMegabytes = [200, 500, 1024, 2048]
     public static let defaultMegabytes = 1024

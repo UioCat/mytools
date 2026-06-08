@@ -16,6 +16,21 @@ final class MainWorkspaceTests: XCTestCase {
         XCTAssertEqual(MainWorkspaceLayout.moduleContentVerticalAlignment, .top)
     }
 
+    func testClipboardSearchFocusTokenAdvancesOnlyWhenOpeningClipboard() {
+        XCTAssertEqual(
+            ClipboardSearchFocusPolicy.focusToken(afterOpening: .settings, currentToken: 7),
+            7
+        )
+        XCTAssertEqual(
+            ClipboardSearchFocusPolicy.focusToken(afterOpening: .translation, currentToken: 7),
+            7
+        )
+        XCTAssertEqual(
+            ClipboardSearchFocusPolicy.focusToken(afterOpening: .clipboard, currentToken: 7),
+            8
+        )
+    }
+
     func testCollapsedSidebarToggleKeepsFullHitTarget() {
         XCTAssertGreaterThanOrEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.width, 44)
         XCTAssertGreaterThanOrEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.height, 44)

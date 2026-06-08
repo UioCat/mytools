@@ -26,6 +26,15 @@ final class LiquidGlassSurfaceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(style.shadowY, 10)
     }
 
+    func testWindowPanelSurfaceIsAppliedAfterSizingToAvoidTransparentOuterAppArea() {
+        let frame = LiquidGlassWindowPanelFrame.mainWorkspace
+
+        XCTAssertEqual(frame.surfacePlacement, .afterSizing)
+        XCTAssertEqual(frame.alignment, .topLeading)
+        XCTAssertEqual(frame.maxWidth, .infinity)
+        XCTAssertEqual(frame.maxHeight, .infinity)
+    }
+
     func testStaticModuleUsesStrongerGlassWhenSelectedWithoutBecomingInteractive() {
         let unselected = LiquidGlassSurfaceStyle.module(cornerRadius: 20, isSelected: false)
         let selected = LiquidGlassSurfaceStyle.module(cornerRadius: 20, isSelected: true)

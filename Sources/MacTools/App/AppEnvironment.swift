@@ -13,6 +13,7 @@ final class AppEnvironment {
     private(set) var settings: AppSettings
     private let repository: ClipboardRepository
     private let clipboardService: ClipboardService
+    private let defaultClipboardCacheDirectory: URL
     private let pasteActionService: PasteActionService
     private let permissionService = PermissionService()
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
@@ -37,6 +38,7 @@ final class AppEnvironment {
             model: clipboardModel,
             settings: settings,
             permissionService: permissionService,
+            defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
             onSaveClipboardSettings: { [weak self] clipboardSettings in
                 guard let self else {
                     throw AppEnvironmentError.unavailable
@@ -113,6 +115,7 @@ final class AppEnvironment {
             "ClipboardCache",
             isDirectory: true
         )
+        self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.clipboardService = ClipboardService(
             pasteboard: SystemPasteboardClient(),
             classifier: ClipboardClassifier(),

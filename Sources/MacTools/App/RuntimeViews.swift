@@ -23,6 +23,7 @@ struct RuntimeMainWorkspaceView: View {
     @ObservedObject var router: MainPanelRouter
     @ObservedObject var model: ClipboardPanelModel
     let permissionService: PermissionService
+    let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> AppSettings
     let onSaveTranslationSettings: (TranslationSettings) throws -> AppSettings
     let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> AppSettings
@@ -31,12 +32,14 @@ struct RuntimeMainWorkspaceView: View {
     let onCopyAndPaste: (ClipboardItem) -> Void
     let onDismiss: () -> Void
     @State private var currentSettings: AppSettings
+    @State private var clipboardSearchFocusToken = 0
 
     init(
         router: MainPanelRouter,
         model: ClipboardPanelModel,
         settings: AppSettings,
         permissionService: PermissionService,
+        defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> AppSettings,
         onSaveTranslationSettings: @escaping (TranslationSettings) throws -> AppSettings,
         onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> AppSettings,
@@ -48,6 +51,7 @@ struct RuntimeMainWorkspaceView: View {
         self.router = router
         self.model = model
         self.permissionService = permissionService
+        self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
         self.onSaveTranslationSettings = onSaveTranslationSettings
         self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
@@ -63,6 +67,7 @@ struct RuntimeMainWorkspaceView: View {
             RuntimeSettingsView(
                 settings: currentSettings,
                 permissionService: permissionService,
+                defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
                 onSaveClipboardSettings: { clipboardSettings in
                     currentSettings = try onSaveClipboardSettings(clipboardSettings)
                 },
@@ -80,6 +85,7 @@ struct RuntimeMainWorkspaceView: View {
         } clipboard: {
             RuntimeClipboardModuleView(
                 model: model,
+                searchFocusToken: clipboardSearchFocusToken,
                 onCopy: onCopy,
                 onCopyAndPaste: onCopyAndPaste,
                 onDismiss: onDismiss
@@ -90,18 +96,28 @@ struct RuntimeMainWorkspaceView: View {
         .onAppear {
             if router.selectedModule == .clipboard {
                 model.prepareForPresentation()
+                advanceClipboardSearchFocus()
             }
         }
         .onChange(of: router.selectedModule) { module in
             if module == .clipboard {
                 model.prepareForPresentation()
+                advanceClipboardSearchFocus()
             }
         }
+    }
+
+    private func advanceClipboardSearchFocus() {
+        clipboardSearchFocusToken = ClipboardSearchFocusPolicy.focusToken(
+            afterOpening: .clipboard,
+            currentToken: clipboardSearchFocusToken
+        )
     }
 }
 
 struct RuntimeClipboardModuleView: View {
     @ObservedObject var model: ClipboardPanelModel
+    let searchFocusToken: Int
     let onCopy: (ClipboardItem) -> Void
     let onCopyAndPaste: (ClipboardItem) -> Void
     let onDismiss: () -> Void
@@ -110,6 +126,7 @@ struct RuntimeClipboardModuleView: View {
         MainPanelView(
             items: model.items,
             resetToken: model.presentationToken,
+            searchFocusToken: searchFocusToken,
             onSelect: { item, action in
                 switch action {
                 case .copy:
@@ -139,6 +156,7 @@ struct RuntimeClipboardModuleView: View {
 struct RuntimeSettingsView: View {
     let settings: AppSettings
     let permissionService: PermissionService
+    let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> Void
     let onSaveTranslationSettings: (TranslationSettings) throws -> Void
     let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
@@ -149,6 +167,7 @@ struct RuntimeSettingsView: View {
     init(
         settings: AppSettings,
         permissionService: PermissionService,
+        defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> Void,
         onSaveTranslationSettings: @escaping (TranslationSettings) throws -> Void,
         onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void,
@@ -157,6 +176,7 @@ struct RuntimeSettingsView: View {
     ) {
         self.settings = settings
         self.permissionService = permissionService
+        self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
         self.onSaveTranslationSettings = onSaveTranslationSettings
         self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
@@ -175,6 +195,7 @@ struct RuntimeSettingsView: View {
             saveTranslationSettings: onSaveTranslationSettings,
             saveSuperRightClickSettings: onSaveSuperRightClickSettings,
             saveWindowLayoutSettings: onSaveWindowLayoutSettings,
+            defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
             presentation: presentation
         )
         .onAppear {

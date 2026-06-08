@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 public final class MainPanelController {
+    public static let windowStyleMask: NSWindow.StyleMask = [.borderless, .resizable]
+
     private var panel: NSPanel?
     private let rootView: AnyView
     private let initialSize: NSSize
@@ -21,7 +23,7 @@ public final class MainPanelController {
         if panel == nil {
             let panel = EscapeDismissPanel(
                 contentRect: NSRect(origin: .zero, size: initialSize),
-                styleMask: [.titled, .fullSizeContentView, .resizable],
+                styleMask: Self.windowStyleMask,
                 backing: .buffered,
                 defer: false
             )
@@ -59,6 +61,14 @@ public final class MainPanelController {
 private final class EscapeDismissPanel: NSPanel {
     var onDismiss: (() -> Void)?
     private let resolver = PanelKeyCommandResolver()
+
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        true
+    }
 
     override func keyDown(with event: NSEvent) {
         if resolver.command(forKeyCode: event.keyCode) == .dismiss {

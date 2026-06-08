@@ -49,9 +49,11 @@ public struct MainPanelView: View {
     @State private var query = ""
     @State private var selectedItemID: ClipboardItem.ID?
     @State private var mode: ClipboardPanelMode = .all
+    @FocusState private var isSearchFocused: Bool
 
     public let items: [ClipboardItem]
     public let resetToken: Int
+    public let searchFocusToken: Int
     public let onSelect: (ClipboardItem, ClipboardSelectionAction) -> Void
     public let onFavoriteToggle: (ClipboardItem) -> Void
     public let onDelete: (ClipboardItem) -> Void
@@ -62,6 +64,7 @@ public struct MainPanelView: View {
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
         self.items = items
         self.resetToken = 0
+        self.searchFocusToken = 0
         self.onSelect = { item, _ in onSelect(item) }
         self.onFavoriteToggle = { _ in }
         self.onDelete = { _ in }
@@ -73,6 +76,7 @@ public struct MainPanelView: View {
     public init(
         items: [ClipboardItem],
         resetToken: Int = 0,
+        searchFocusToken: Int = 0,
         onSelect: @escaping (ClipboardItem, ClipboardSelectionAction) -> Void,
         onFavoriteToggle: @escaping (ClipboardItem) -> Void = { _ in },
         onDelete: @escaping (ClipboardItem) -> Void = { _ in },
@@ -82,6 +86,7 @@ public struct MainPanelView: View {
     ) {
         self.items = items
         self.resetToken = resetToken
+        self.searchFocusToken = searchFocusToken
         self.onSelect = onSelect
         self.onFavoriteToggle = onFavoriteToggle
         self.onDelete = onDelete
@@ -94,16 +99,7 @@ public struct MainPanelView: View {
     public var body: some View {
         if presentation == .window {
             content
-                .liquidGlassPanel(cornerRadius: 30)
-                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .frame(
-                    minWidth: 720,
-                    idealWidth: 900,
-                    maxWidth: .infinity,
-                    minHeight: 480,
-                    idealHeight: 620,
-                    maxHeight: .infinity
-                )
+                .liquidGlassWindowPanel(frame: .mainPanel)
         } else {
             content
         }
@@ -131,6 +127,9 @@ public struct MainPanelView: View {
         }
         .padding(18)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
+        .onAppear {
+            focusSearchField()
+        }
         .onChange(of: items) { _ in
             normalizeSelection()
         }
@@ -142,6 +141,10 @@ public struct MainPanelView: View {
         }
         .onChange(of: resetToken) { _ in
             resetPanelState()
+            focusSearchField()
+        }
+        .onChange(of: searchFocusToken) { _ in
+            focusSearchField()
         }
     }
 
@@ -159,6 +162,7 @@ public struct MainPanelView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(.black)
+                .focused($isSearchFocused)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 14)
                 .liquidGlassInteractiveModule(cornerRadius: 24)
@@ -339,6 +343,12 @@ public struct MainPanelView: View {
         query = ""
         mode = .all
         selectFirstItem()
+    }
+
+    private func focusSearchField() {
+        Task { @MainActor in
+            isSearchFocused = true
+        }
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {

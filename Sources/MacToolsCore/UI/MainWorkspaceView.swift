@@ -15,6 +15,12 @@ public struct MainWorkspaceLayout {
     private init() {}
 }
 
+public enum ClipboardSearchFocusPolicy {
+    public static func focusToken(afterOpening module: MainToolModule, currentToken: Int) -> Int {
+        module == .clipboard ? currentToken + 1 : currentToken
+    }
+}
+
 public struct MainWorkspaceSidebarChrome {
     public let isSidebarVisible: Bool
     public let toggleSidebar: () -> Void
@@ -144,17 +150,8 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
         }
         .liquidGlassGroup(spacing: 18)
         .padding(18)
-        .liquidGlassPanel(cornerRadius: 30)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .liquidGlassWindowPanel(frame: .mainWorkspace)
         .animation(.easeInOut(duration: MainWorkspaceLayout.animationDuration), value: isSidebarVisible)
-        .frame(
-            minWidth: 900,
-            idealWidth: 1080,
-            maxWidth: .infinity,
-            minHeight: 620,
-            idealHeight: 720,
-            maxHeight: .infinity
-        )
     }
 
     private var sidebar: some View {
