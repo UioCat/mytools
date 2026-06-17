@@ -53,6 +53,23 @@ final class SuperPanelContentTests: XCTestCase {
         )
     }
 
+    func testTextPanelShowsLoadingStateBeforeTranslationCompletes() {
+        let content = SuperPanelContent.text(
+            originalText: "hello",
+            translation: nil,
+            isTranslationLoading: true
+        )
+
+        XCTAssertEqual(content.headerTitle, "选中的文本 5 个")
+        XCTAssertEqual(content.headerSubtitle, "翻译中...")
+        XCTAssertTrue(content.showsLoadingIndicator)
+        XCTAssertEqual(content.previewRows, [
+            .init(label: "原文", value: "hello"),
+            .init(label: "译文", value: "翻译中...")
+        ])
+        XCTAssertEqual(content.actions.map(\.id), [.textTransit])
+    }
+
     func testTextTransitPanelShowsSelectedTextAndCopyAction() {
         let content = SuperPanelContent.textTransit(text: " replacing existing signature ")
 
@@ -133,6 +150,27 @@ final class SuperPanelContentTests: XCTestCase {
             content.actions.suffix(2).map(\.title),
             ["左半屏", "专注布局"]
         )
+    }
+
+    func testWindowLayoutOnlyPanelContainsNoSelectedContentActions() {
+        let content = SuperPanelContent.windowLayoutOnly(
+            windowLayoutButtons: [
+                WindowLayoutButton(id: "mode.leftHalf", title: "左半屏", modes: [.leftHalf]),
+                WindowLayoutButton(id: "mode.centered", title: "居中", modes: [.centered])
+            ]
+        )
+
+        XCTAssertEqual(content.kind, .windowLayout)
+        XCTAssertEqual(content.headerTitle, "窗口布局")
+        XCTAssertEqual(content.headerSubtitle, "选择布局动作")
+        XCTAssertEqual(content.headerSystemImage, "rectangle.3.group")
+        XCTAssertEqual(content.previewRows, [])
+        XCTAssertEqual(
+            content.actions.map(\.id),
+            [.windowLayoutButton("mode.leftHalf"), .windowLayoutButton("mode.centered")]
+        )
+        XCTAssertTrue(content.actions.allSatisfy(\.id.isWindowLayoutButton))
+        XCTAssertFalse(content.showsLoadingIndicator)
     }
 }
 

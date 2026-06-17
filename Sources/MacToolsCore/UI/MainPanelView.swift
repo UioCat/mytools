@@ -44,6 +44,86 @@ public enum ClipboardPanelMode: CaseIterable {
     }
 }
 
+struct ClipboardPanelItemSummary: Equatable {
+    let favoriteCount: Int
+    let hasClearableItems: Bool
+
+    init(items: [ClipboardItem]) {
+        var favoriteCount = 0
+        var hasClearableItems = false
+
+        for item in items {
+            if item.isFavorite {
+                favoriteCount += 1
+            } else {
+                hasClearableItems = true
+            }
+        }
+
+        self.favoriteCount = favoriteCount
+        self.hasClearableItems = hasClearableItems
+    }
+}
+
+struct ClipboardPanelRenderState {
+    let itemSummary: ClipboardPanelItemSummary
+    let filteredItems: [ClipboardItem]
+    let selectedItem: ClipboardItem?
+
+    init(
+        items: [ClipboardItem],
+        mode: ClipboardPanelMode,
+        query: String,
+        selectedItemID: ClipboardItem.ID?
+    ) {
+        self.itemSummary = ClipboardPanelItemSummary(items: items)
+        self.filteredItems = Self.filteredItems(items: items, mode: mode, query: query)
+        self.selectedItem = Self.selectedItem(in: filteredItems, selectedItemID: selectedItemID)
+    }
+
+    static func filteredItems(
+        items: [ClipboardItem],
+        mode: ClipboardPanelMode,
+        query: String
+    ) -> [ClipboardItem] {
+        let modeItems: [ClipboardItem]
+        switch mode {
+        case .all:
+            modeItems = items
+        case .text:
+            modeItems = items.filter { $0.kind == .text || $0.kind == .url }
+        case .images:
+            modeItems = items.filter { $0.kind == .imageData || $0.kind == .imageFile }
+        case .folders:
+            modeItems = items.filter { $0.kind == .folder }
+        case .favorites:
+            modeItems = items.filter(\.isFavorite)
+        }
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return modeItems
+        }
+
+        return modeItems.filter { item in
+            item.displayTitle.localizedCaseInsensitiveContains(trimmedQuery)
+                || item.searchableText.localizedCaseInsensitiveContains(trimmedQuery)
+        }
+    }
+
+    private static func selectedItem(
+        in filteredItems: [ClipboardItem],
+        selectedItemID: ClipboardItem.ID?
+    ) -> ClipboardItem? {
+        if let selectedItemID,
+           let item = filteredItems.first(where: { $0.id == selectedItemID }) {
+            return item
+        }
+
+        return filteredItems.first
+    }
+}
+
 public struct MainPanelView: View {
     @Environment(\.mainWorkspaceSidebarChrome) private var workspaceSidebarChrome
     @State private var query = ""
@@ -105,25 +185,16 @@ public struct MainPanelView: View {
         }
     }
 
+    @ViewBuilder
     private var content: some View {
+        let renderState = currentRenderState
+
         VStack(spacing: 12) {
-            header
+            header(itemSummary: renderState.itemSummary)
 
-            modeSwitcher
+            modeSwitcher(itemSummary: renderState.itemSummary)
 
-            ClipboardListView(
-                items: filteredItems,
-                selectedItemID: selectedItem?.id,
-                mode: mode,
-                onSelect: selectAndPaste,
-                onFavoriteToggle: onFavoriteToggle,
-                onDelete: onDelete
-            )
-                .overlay(alignment: .bottomTrailing) {
-                    keyboardActions
-                        .frame(width: 1, height: 1)
-                        .opacity(0.01)
-                }
+            clipboardContentArea(renderState: renderState)
         }
         .padding(18)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
@@ -148,7 +219,144 @@ public struct MainPanelView: View {
         }
     }
 
-    private var header: some View {
+    private func clipboardContentArea(renderState: ClipboardPanelRenderState) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                clipboardList(renderState: renderState)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+
+                clipboardDetailPane(selectedItem: renderState.selectedItem)
+                    .frame(width: 292)
+            }
+
+            clipboardList(renderState: renderState)
+        }
+    }
+
+    private func clipboardList(renderState: ClipboardPanelRenderState) -> some View {
+        ClipboardListView(
+            items: renderState.filteredItems,
+            selectedItemID: renderState.selectedItem?.id,
+            mode: mode,
+            onSelect: selectAndPaste,
+            onFavoriteToggle: onFavoriteToggle,
+            onDelete: onDelete
+        )
+        .overlay(alignment: .bottomTrailing) {
+            keyboardActions
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+        }
+    }
+
+    @ViewBuilder
+    private func clipboardDetailPane(selectedItem: ClipboardItem?) -> some View {
+        if let selectedItem {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    GlassIconBadge(systemName: iconName(for: selectedItem), size: 46, iconSize: 20)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(selectedItem.displayTitle)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(MacToolsGlassTheme.textPrimary)
+                            .lineLimit(2)
+
+                        Text(detailMetric(for: selectedItem))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                Text(detailPreview(for: selectedItem))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
+                    .lineSpacing(4)
+                    .lineLimit(6)
+                    .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(MacToolsGlassTheme.fieldFill)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(MacToolsGlassTheme.border, lineWidth: 1)
+                    )
+
+                VStack(spacing: 10) {
+                    Button {
+                        onSelect(selectedItem, .copyAndPaste)
+                    } label: {
+                        Label("粘贴", systemImage: "clipboard")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GlassPrimaryButtonStyle(cornerRadius: 14))
+
+                    detailSecondaryButton(title: "复制", systemImage: "doc.on.doc") {
+                        onSelect(selectedItem, .copy)
+                    }
+
+                    detailSecondaryButton(
+                        title: selectedItem.isFavorite ? "取消收藏" : "收藏",
+                        systemImage: selectedItem.isFavorite ? "star.slash" : "star"
+                    ) {
+                        onFavoriteToggle(selectedItem)
+                    }
+
+                    detailSecondaryButton(
+                        title: "删除",
+                        systemImage: "trash",
+                        foreground: MacToolsGlassTheme.destructive
+                    ) {
+                        onDelete(selectedItem)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(18)
+            .liquidGlassModule(cornerRadius: 24)
+        } else {
+            VStack(spacing: 10) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+
+                Text("选择一条记录查看详情")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 240)
+            .padding(18)
+            .liquidGlassModule(cornerRadius: 24)
+        }
+    }
+
+    private func detailSecondaryButton(
+        title: String,
+        systemImage: String,
+        foreground: Color = MacToolsGlassTheme.textPrimary,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .foregroundStyle(foreground)
+        .liquidGlassButtonStyle(cornerRadius: 14)
+    }
+
+    @ViewBuilder
+    private func header(itemSummary: ClipboardPanelItemSummary) -> some View {
         HStack(spacing: 14) {
             if let workspaceSidebarChrome {
                 sidebarToggleButton(workspaceSidebarChrome)
@@ -157,11 +365,11 @@ public struct MainPanelView: View {
             TextField(
                 "搜索...",
                 text: $query,
-                prompt: Text("搜索...").foregroundColor(Color.black.opacity(0.76))
+                prompt: Text("搜索剪贴板").foregroundColor(MacToolsGlassTheme.textTertiary)
             )
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.black)
+                .foregroundStyle(MacToolsGlassTheme.textPrimary)
                 .focused($isSearchFocused)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 14)
@@ -180,10 +388,10 @@ public struct MainPanelView: View {
                     .padding(.vertical, 13)
                     .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
-            .foregroundStyle(clearButtonColor)
+            .foregroundStyle(clearButtonColor(for: itemSummary))
             .liquidGlassButtonStyle(cornerRadius: 22)
-            .disabled(items.filter { !$0.isFavorite }.isEmpty)
-            .opacity(items.filter { !$0.isFavorite }.isEmpty ? 0.64 : 1)
+            .disabled(!itemSummary.hasClearableItems)
+            .opacity(itemSummary.hasClearableItems ? 1 : 0.64)
         }
         .liquidGlassGroup(spacing: 14)
     }
@@ -200,7 +408,7 @@ public struct MainPanelView: View {
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .foregroundStyle(chrome.isSidebarVisible ? Color.black : Color.black.opacity(0.78))
+        .foregroundStyle(chrome.isSidebarVisible ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
         .liquidGlassButtonStyle(
             cornerRadius: 18,
             isSelected: chrome.isSidebarVisible,
@@ -209,7 +417,8 @@ public struct MainPanelView: View {
         .help(chrome.isSidebarVisible ? "隐藏工具栏" : "显示工具栏")
     }
 
-    private var modeSwitcher: some View {
+    @ViewBuilder
+    private func modeSwitcher(itemSummary: ClipboardPanelItemSummary) -> some View {
         HStack(spacing: 10) {
             ForEach(ClipboardPanelMode.allCases, id: \.self) { itemMode in
                 Button {
@@ -219,14 +428,14 @@ public struct MainPanelView: View {
                         Image(systemName: itemMode.iconName)
                             .font(.system(size: 15, weight: .semibold))
 
-                        Text(tabTitle(for: itemMode))
+                        Text(tabTitle(for: itemMode, itemSummary: itemSummary))
                             .font(.system(size: 15, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
                     .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
-                .foregroundStyle(mode == itemMode ? Color.black : Color.black.opacity(0.78))
+                .foregroundStyle(mode == itemMode ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
                 .liquidGlassButtonStyle(cornerRadius: 20, isSelected: mode == itemMode)
             }
         }
@@ -248,41 +457,95 @@ public struct MainPanelView: View {
     }
 
     private var filteredItems: [ClipboardItem] {
-        let modeItems: [ClipboardItem]
-        switch mode {
-        case .all:
-            modeItems = items
-        case .text:
-            modeItems = items.filter { $0.kind == .text || $0.kind == .url }
-        case .images:
-            modeItems = items.filter { $0.kind == .imageData || $0.kind == .imageFile }
-        case .folders:
-            modeItems = items.filter { $0.kind == .folder }
-        case .favorites:
-            modeItems = items.filter(\.isFavorite)
-        }
-
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else {
-            return modeItems
-        }
-
-        return modeItems.filter { item in
-            item.displayTitle.localizedCaseInsensitiveContains(trimmedQuery)
-                || item.searchableText.localizedCaseInsensitiveContains(trimmedQuery)
-        }
+        currentRenderState.filteredItems
     }
 
-    private func tabTitle(for mode: ClipboardPanelMode) -> String {
+    private var currentRenderState: ClipboardPanelRenderState {
+        ClipboardPanelRenderState(
+            items: items,
+            mode: mode,
+            query: query,
+            selectedItemID: selectedItemID
+        )
+    }
+
+    private func tabTitle(for mode: ClipboardPanelMode, itemSummary: ClipboardPanelItemSummary) -> String {
         if mode == .favorites {
-            return "\(mode.title) (\(items.filter(\.isFavorite).count))"
+            return "\(mode.title) (\(itemSummary.favoriteCount))"
         }
 
         return mode.title
     }
 
-    private var clearButtonColor: Color {
-        items.contains(where: { !$0.isFavorite }) ? Color.black.opacity(0.72) : Color.black.opacity(0.32)
+    private func iconName(for item: ClipboardItem) -> String {
+        switch item.kind {
+        case .text:
+            return "text.alignleft"
+        case .url:
+            return "link"
+        case .file:
+            return "doc"
+        case .folder:
+            return "folder"
+        case .imageFile, .imageData:
+            return "photo"
+        case .unknown:
+            return "questionmark.circle"
+        }
+    }
+
+    private func detailMetric(for item: ClipboardItem) -> String {
+        let relativeTime = relativeCreatedAt(for: item)
+        let metric: String
+        switch item.kind {
+        case .text, .url:
+            metric = "\(item.searchableText.count) 字符"
+        case .file:
+            metric = "文件"
+        case .folder:
+            metric = "文件夹"
+        case .imageFile, .imageData:
+            metric = "图片"
+        case .unknown:
+            metric = "未知类型"
+        }
+
+        return "\(relativeTime) · \(metric)"
+    }
+
+    private func detailPreview(for item: ClipboardItem) -> String {
+        let candidates = [
+            item.text,
+            item.originalPath,
+            item.searchableText.isEmpty ? nil : item.searchableText,
+            item.displayTitle
+        ]
+
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? "暂无可预览内容"
+    }
+
+    private func relativeCreatedAt(for item: ClipboardItem) -> String {
+        let elapsed = max(0, Date().timeIntervalSince(item.createdAt))
+
+        if elapsed < 60 {
+            return "刚刚"
+        }
+
+        if elapsed < 3600 {
+            return "\(Int(elapsed / 60)) 分钟前"
+        }
+
+        if elapsed < 86400 {
+            return "\(Int(elapsed / 3600)) 小时前"
+        }
+
+        return "\(Int(elapsed / 86400)) 天前"
+    }
+
+    private func clearButtonColor(for itemSummary: ClipboardPanelItemSummary) -> Color {
+        itemSummary.hasClearableItems ? MacToolsGlassTheme.textSecondary : MacToolsGlassTheme.textDisabled
     }
 
     private func selectAndPaste(_ item: ClipboardItem) {
@@ -299,16 +562,17 @@ public struct MainPanelView: View {
     }
 
     private func moveSelection(by offset: Int) {
-        guard !filteredItems.isEmpty else {
+        let visibleItems = filteredItems
+        guard !visibleItems.isEmpty else {
             selectedItemID = nil
             return
         }
 
-        let currentIndex = selectedItem.flatMap { selected in
-            filteredItems.firstIndex(where: { $0.id == selected.id })
+        let currentIndex = selectedItemID.flatMap { selectedItemID in
+            visibleItems.firstIndex(where: { $0.id == selectedItemID })
         } ?? 0
-        let nextIndex = min(max(currentIndex + offset, 0), filteredItems.count - 1)
-        selectedItemID = filteredItems[nextIndex].id
+        let nextIndex = min(max(currentIndex + offset, 0), visibleItems.count - 1)
+        selectedItemID = visibleItems[nextIndex].id
     }
 
     private func switchMode(by offset: Int) {
@@ -322,17 +586,18 @@ public struct MainPanelView: View {
     }
 
     private func normalizeSelection() {
-        guard !filteredItems.isEmpty else {
+        let visibleItems = filteredItems
+        guard !visibleItems.isEmpty else {
             selectedItemID = nil
             return
         }
 
         if let selectedItemID,
-           filteredItems.contains(where: { $0.id == selectedItemID }) {
+           visibleItems.contains(where: { $0.id == selectedItemID }) {
             return
         }
 
-        selectedItemID = filteredItems.first?.id
+        selectedItemID = visibleItems.first?.id
     }
 
     private func selectFirstItem() {
@@ -379,12 +644,7 @@ public struct MainPanelView: View {
     }
 
     private var selectedItem: ClipboardItem? {
-        if let selectedItemID,
-           let item = filteredItems.first(where: { $0.id == selectedItemID }) {
-            return item
-        }
-
-        return filteredItems.first
+        currentRenderState.selectedItem
     }
 }
 

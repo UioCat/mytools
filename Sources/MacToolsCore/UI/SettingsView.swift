@@ -232,7 +232,7 @@ public struct SettingsView: View {
                     .padding(.vertical, 12)
                     .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .foregroundStyle(.black)
+            .foregroundStyle(MacToolsGlassTheme.textPrimary)
             .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: false)
         }
     }
@@ -248,11 +248,11 @@ private struct SettingsSection<Content: View>: View {
             HStack(spacing: 8) {
                 Image(systemName: iconName)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.black.opacity(0.60))
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
 
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.black.opacity(0.60))
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
             }
 
             VStack(spacing: 0) {
@@ -273,13 +273,13 @@ private struct SettingsRow: View {
         HStack(spacing: 12) {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.black)
+                .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
             Spacer()
 
             Text(value)
                 .font(.system(size: 13))
-                .foregroundStyle(Color.black.opacity(0.58))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 14)
@@ -297,21 +297,22 @@ private struct ClipboardSettingsEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StatusRow(title: "记录状态", isEnabled: currentSettings.isRecordingEnabled)
+            StatusRow(title: "记录状态", isEnabled: currentSettings.isRecordingEnabled, enabledTitle: "已启用", disabledTitle: "未启用")
             SettingsRow(title: "历史上限", value: "\(currentSettings.maxHistoryCount) 条")
 
             Divider()
-                .opacity(0.18)
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
 
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("存储位置")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                     Text(cacheStorageDisplay)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.52))
+                        .foregroundStyle(MacToolsGlassTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(cacheStorageDisplay)
@@ -335,19 +336,20 @@ private struct ClipboardSettingsEditor: View {
             .padding(.vertical, 11)
 
             Divider()
-                .opacity(0.18)
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
 
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 10) {
                     Text("缓存上限")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                     Spacer(minLength: 10)
 
                     Text(ClipboardCacheLimit.displayValue(for: maxCacheMegabytes))
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.black.opacity(0.58))
+                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
                 }
 
                 Picker("缓存上限", selection: cacheLimitBinding) {
@@ -361,7 +363,7 @@ private struct ClipboardSettingsEditor: View {
                 if let saveMessage {
                     Text(saveMessage)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.58))
+                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -403,7 +405,7 @@ private struct ClipboardSettingsEditor: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Color.black.opacity(0.62))
+        .foregroundStyle(MacToolsGlassTheme.textSecondary)
         .help(help)
         .accessibilityLabel(Text(help))
     }
@@ -474,19 +476,19 @@ private struct SuperRightClickSettingsEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SettingsRow(title: "状态", value: currentSettings.isEnabled ? "已启用" : "未启用")
+            StatusRow(title: "状态", isEnabled: currentSettings.isEnabled, enabledTitle: "已启用", disabledTitle: "未启用")
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("长按毫秒响应")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                         if let saveMessage {
                             Text(saveMessage)
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.black.opacity(0.56))
+                                .foregroundStyle(MacToolsGlassTheme.textSecondary)
                                 .lineLimit(1)
                         }
                     }
@@ -499,7 +501,7 @@ private struct SuperRightClickSettingsEditor: View {
                             in: sliderRange,
                             onEditingChanged: handleSliderEditingChanged(_:)
                         )
-                        .tint(Color(red: 0.29, green: 0.35, blue: 0.70))
+                        .tint(MacToolsGlassTheme.activeBlue)
                         .frame(maxWidth: 260)
                         .accessibilityLabel(Text("长按毫秒响应"))
                         .accessibilityValue(Text(SuperRightClickResponseSpeed.displayValue(for: normalizedMilliseconds)))
@@ -508,7 +510,7 @@ private struct SuperRightClickSettingsEditor: View {
                             ForEach(SuperRightClickResponseSpeed.markerMilliseconds, id: \.self) { milliseconds in
                                 Text(SuperRightClickResponseSpeed.displayValue(for: milliseconds))
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.black.opacity(0.60))
+                                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
 
                                 if milliseconds != SuperRightClickResponseSpeed.maximumMilliseconds {
                                     Spacer(minLength: 0)
@@ -576,13 +578,13 @@ private struct WindowLayoutSettingsEditor: View {
             HStack(spacing: 12) {
                 Text("状态")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                 Spacer()
 
                 Text(saveMessage ?? "已保存")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.58))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
                     .lineLimit(1)
                     .frame(width: 50, alignment: .trailing)
                     .opacity(saveMessage == nil ? 0 : 1)
@@ -595,7 +597,8 @@ private struct WindowLayoutSettingsEditor: View {
             .padding(.vertical, 11)
 
             Divider()
-                .opacity(0.18)
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
@@ -611,7 +614,8 @@ private struct WindowLayoutSettingsEditor: View {
 
                     if index != WindowLayoutSettingsLayout.modeGroups.count - 1 {
                         Divider()
-                            .opacity(0.12)
+                            .overlay(MacToolsGlassTheme.divider)
+                            .opacity(0.7)
                             .padding(.leading, 86)
                     }
                 }
@@ -639,7 +643,7 @@ private struct WindowLayoutSettingsEditor: View {
         HStack(alignment: .top, spacing: 10) {
             Text(group.title)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.52))
+                .foregroundStyle(MacToolsGlassTheme.textTertiary)
                 .frame(width: 62, alignment: .leading)
                 .padding(.top, 14)
 
@@ -677,7 +681,7 @@ private struct WindowLayoutSettingsEditor: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color.black.opacity(0.56))
+            .foregroundStyle(MacToolsGlassTheme.textTertiary)
     }
 
     private func shortcuts(for mode: WindowLayoutMode) -> [HotKeyBinding] {
@@ -750,7 +754,7 @@ private struct WindowLayoutModeActionCell: View {
 
                 Text(mode.title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
@@ -776,11 +780,11 @@ private struct WindowLayoutModeActionCell: View {
         .opacity(isSettingsEnabled ? (isPresentedInPanel ? 1 : 0.62) : 0.45)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(isHovered ? 0.32 : 0.12))
+                .fill(isHovered ? MacToolsGlassTheme.activeBlue.opacity(0.12) : Color.white.opacity(0.050))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.black.opacity(isHovered ? 0.16 : 0.08), lineWidth: 1)
+                .strokeBorder(isHovered ? MacToolsGlassTheme.activeBlue.opacity(0.34) : MacToolsGlassTheme.border, lineWidth: 1)
         )
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
@@ -798,11 +802,11 @@ private struct WindowLayoutModeActionCell: View {
             .padding(.horizontal, 9)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.46))
+                    .fill(MacToolsGlassTheme.fieldFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
+                    .strokeBorder(MacToolsGlassTheme.border, lineWidth: 1)
             )
 
             Button {
@@ -814,7 +818,7 @@ private struct WindowLayoutModeActionCell: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.black.opacity(shortcut == nil ? 0.18 : 0.46))
+            .foregroundStyle(shortcut == nil ? MacToolsGlassTheme.textDisabled : MacToolsGlassTheme.textTertiary)
             .disabled(shortcut == nil || !isSettingsEnabled)
             .help("删除快捷键")
             .accessibilityLabel(Text("删除快捷键"))
@@ -863,7 +867,7 @@ private final class WindowLayoutShortcutCaptureTextField: NSTextField {
         alignment = .center
         lineBreakMode = .byTruncatingTail
         font = .systemFont(ofSize: 12, weight: .medium)
-        textColor = NSColor.black.withAlphaComponent(0.68)
+        textColor = NSColor.white.withAlphaComponent(0.78)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         setContentHuggingPriority(.defaultLow, for: .horizontal)
     }
@@ -1026,13 +1030,13 @@ private struct WindowLayoutPreviewIcon: View {
             let size = proxy.size
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color.black.opacity(0.12))
+                    .fill(Color.white.opacity(0.09))
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.22), lineWidth: 0.8)
+                    .strokeBorder(Color.white.opacity(0.26), lineWidth: 0.8)
 
                 ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
                     RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(Color.black.opacity(segmentOpacity(at: index)))
+                        .fill(MacToolsGlassTheme.activeBlue.opacity(segmentOpacity(at: index)))
                         .frame(
                             width: max(2, size.width * segment.width),
                             height: max(2, size.height * segment.height)
@@ -1077,7 +1081,7 @@ private struct TranslationSettingsEditor: View {
                 HStack(spacing: 10) {
                     Text("API Key")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                     Spacer(minLength: 12)
 
@@ -1086,12 +1090,14 @@ private struct TranslationSettingsEditor: View {
                 }
 
                 Divider()
-                    .opacity(0.18)
+                    .overlay(MacToolsGlassTheme.divider)
+                    .opacity(0.9)
 
                 labeledTextField(title: "模型", text: $model)
 
                 Divider()
-                    .opacity(0.18)
+                    .overlay(MacToolsGlassTheme.divider)
+                    .opacity(0.9)
 
                 labeledTextField(title: "Endpoint", text: $endpointURLString)
 
@@ -1101,12 +1107,12 @@ private struct TranslationSettingsEditor: View {
                             .font(.system(size: 13, weight: .medium))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                     if let saveMessage {
                         Text(saveMessage)
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.black.opacity(0.58))
+                            .foregroundStyle(MacToolsGlassTheme.textSecondary)
                             .lineLimit(2)
                     }
                 }
@@ -1153,13 +1159,14 @@ private struct TranslationSettingsEditor: View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.black)
+                .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
             Spacer(minLength: 12)
 
             TextField("", text: text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(1)
                 .frame(maxWidth: 190)
@@ -1178,7 +1185,7 @@ private struct TranslationSettingsEditor: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Color.black.opacity(0.62))
+        .foregroundStyle(MacToolsGlassTheme.textSecondary)
         .help(help)
         .accessibilityLabel(Text(help))
     }
@@ -1328,7 +1335,12 @@ private final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegat
             replaceField(isSecure: isSecure)
         }
 
-        field?.placeholderString = placeholder
+        field?.placeholderAttributedString = NSAttributedString(
+            string: placeholder,
+            attributes: [
+                .foregroundColor: NSColor.white.withAlphaComponent(0.32)
+            ]
+        )
         if field?.stringValue != text {
             field?.stringValue = text
         }
@@ -1385,6 +1397,7 @@ private final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegat
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 12)
+        field.textColor = NSColor.white.withAlphaComponent(0.78)
         field.alignment = .right
         field.lineBreakMode = .byTruncatingMiddle
         field.cell?.lineBreakMode = .byTruncatingMiddle
@@ -1531,9 +1544,25 @@ private final class TranslationAPIKeySecureTextField: NSSecureTextField, Transla
 private struct StatusRow: View {
     let title: String
     let isEnabled: Bool
+    var enabledTitle = "已允许"
+    var disabledTitle = "未授权"
 
     var body: some View {
-        SettingsRow(title: title, value: isEnabled ? "已允许" : "未授权")
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+            Spacer()
+
+            GlassStatusPill(
+                isEnabled ? enabledTitle : disabledTitle,
+                systemImage: isEnabled ? "checkmark" : "exclamationmark",
+                color: MacToolsGlassTheme.statusColor(isEnabled: isEnabled)
+            )
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 }
 
@@ -1545,7 +1574,7 @@ private struct PermissionStatusRow: View {
 
     var body: some View {
         if isEnabled {
-            SettingsRow(title: title, value: "已允许")
+            StatusRow(title: title, isEnabled: true)
         } else {
             Button {
                 openPermissionSettings(permission)
@@ -1553,7 +1582,7 @@ private struct PermissionStatusRow: View {
                 HStack(spacing: 12) {
                     Text(title)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                     Spacer()
 
@@ -1563,14 +1592,14 @@ private struct PermissionStatusRow: View {
                         Image(systemName: "arrow.up.forward.app")
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundStyle(Color.black.opacity(0.70))
+                    .foregroundStyle(MacToolsGlassTheme.warning)
                     .lineLimit(1)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .foregroundStyle(Color.black.opacity(0.72))
+            .foregroundStyle(MacToolsGlassTheme.textPrimary)
             .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: false)
         }
     }

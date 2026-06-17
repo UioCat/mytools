@@ -4,6 +4,7 @@ public enum SuperPanelKind: Equatable {
     case text
     case textTransit
     case fileSystem
+    case windowLayout
 }
 
 public enum SuperPanelActionID: Equatable, Hashable {
@@ -80,6 +81,7 @@ public struct SuperPanelContent: Equatable {
     public var headerSystemImage: String
     public var previewRows: [SuperPanelPreviewRow]
     public var actions: [SuperPanelActionDescriptor]
+    public var showsLoadingIndicator: Bool
 
     public init(
         kind: SuperPanelKind,
@@ -87,7 +89,8 @@ public struct SuperPanelContent: Equatable {
         headerSubtitle: String,
         headerSystemImage: String,
         previewRows: [SuperPanelPreviewRow],
-        actions: [SuperPanelActionDescriptor]
+        actions: [SuperPanelActionDescriptor],
+        showsLoadingIndicator: Bool = false
     ) {
         self.kind = kind
         self.headerTitle = headerTitle
@@ -95,11 +98,13 @@ public struct SuperPanelContent: Equatable {
         self.headerSystemImage = headerSystemImage
         self.previewRows = previewRows
         self.actions = actions
+        self.showsLoadingIndicator = showsLoadingIndicator
     }
 
     public static func text(
         originalText: String,
         translation: Result<TranslationResponse, TranslationError>?,
+        isTranslationLoading: Bool = false,
         windowLayoutButtons: [WindowLayoutButton] = []
     ) -> SuperPanelContent {
         let normalizedText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -108,26 +113,29 @@ public struct SuperPanelContent: Equatable {
         var actions: [SuperPanelActionDescriptor] = []
         let subtitle: String
 
-        switch translation {
-        case .success(let response):
+        switch (isTranslationLoading, translation) {
+        case (true, _):
+            subtitle = "翻译中..."
+            previewRows.append(.init(label: "译文", value: "翻译中..."))
+        case (_, .success(let response)):
             let translatedText = response.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
             subtitle = translatedText.isEmpty ? "翻译结果为空" : translatedText
             previewRows.append(.init(label: "译文", value: subtitle))
             actions.append(
                 .init(id: .copyTranslatedText, title: "复制译文", systemImage: "doc.on.doc")
             )
-        case .failure(.providerNotConfigured):
+        case (_, .failure(.providerNotConfigured)):
             subtitle = "翻译未配置"
             previewRows.append(
                 .init(label: "提示", value: "在设置里填写 DASHSCOPE_API_KEY 后可显示翻译结果")
             )
-        case .failure(.networkUnavailable):
+        case (_, .failure(.networkUnavailable)):
             subtitle = "翻译失败"
             previewRows.append(.init(label: "提示", value: "无法连接到百炼服务，请检查网络后重试"))
-        case .failure(.providerFailure(let message)):
+        case (_, .failure(.providerFailure(let message))):
             subtitle = "翻译失败"
             previewRows.append(.init(label: "提示", value: message))
-        case nil:
+        case (_, nil):
             subtitle = displayText
         }
 
@@ -142,7 +150,8 @@ public struct SuperPanelContent: Equatable {
             headerSubtitle: subtitle,
             headerSystemImage: "circle.grid.3x3.fill",
             previewRows: previewRows,
-            actions: actions
+            actions: actions,
+            showsLoadingIndicator: isTranslationLoading
         )
     }
 
@@ -198,6 +207,19 @@ public struct SuperPanelContent: Equatable {
             headerSystemImage: item.kind == .folder ? "folder.fill" : "doc.fill",
             previewRows: [.init(label: itemType, value: path)],
             actions: actions
+        )
+    }
+
+    public static func windowLayoutOnly(
+        windowLayoutButtons: [WindowLayoutButton]
+    ) -> SuperPanelContent {
+        SuperPanelContent(
+            kind: .windowLayout,
+            headerTitle: "窗口布局",
+            headerSubtitle: "选择布局动作",
+            headerSystemImage: "rectangle.3.group",
+            previewRows: [],
+            actions: windowLayoutActionDescriptors(from: windowLayoutButtons)
         )
     }
 

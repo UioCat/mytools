@@ -8,7 +8,7 @@ public enum SuperPanelPreviewLineLimitPolicy {
         switch kind {
         case .text, .textTransit:
             return nil
-        case .fileSystem:
+        case .fileSystem, .windowLayout:
             return 2
         }
     }

@@ -8,13 +8,12 @@ final class SuperRightClickMonitor {
     private let service: SuperRightClickService
     private let logger: Logger
     private let onResultCaptured: (SuperRightClickResult) -> Void
-    private var stateMachine: RightClickStateMachine
+    private var gestureRouter: RightClickGestureRouter
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
-    private var globalRightMouseDownMonitor: Any?
-    private var globalRightMouseUpMonitor: Any?
     private var longPressTimer: Timer?
-    private var shouldSuppressNextRightMouseUp = false
+    private var pendingSuppressedRightMouseDown: CGEvent?
+    private static let replayedRightClickUserData: Int64 = 0x4D_54_52_43
 
     init(
         thresholdMilliseconds: Int,
@@ -25,7 +24,7 @@ final class SuperRightClickMonitor {
         self.service = service
         self.logger = logger
         self.onResultCaptured = onResultCaptured
-        self.stateMachine = RightClickStateMachine(thresholdMilliseconds: thresholdMilliseconds)
+        self.gestureRouter = RightClickGestureRouter(thresholdMilliseconds: thresholdMilliseconds)
     }
 
     func start() -> Bool {
@@ -42,8 +41,8 @@ final class SuperRightClickMonitor {
             callback: Self.handleEventTap,
             userInfo: userInfo
         ) else {
-            logger.error("super right click event tap could not be installed")
-            return startGlobalMonitorFallback()
+            logger.error("super right click event tap could not be installed; event tap is required to suppress the system menu on long press")
+            return false
         }
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -52,28 +51,6 @@ final class SuperRightClickMonitor {
         eventTap = tap
         eventTapRunLoopSource = source
         logger.info("super right click event tap installed")
-        return true
-    }
-
-    private func startGlobalMonitorFallback() -> Bool {
-        globalRightMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseDown) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleRightMouseDown()
-            }
-        }
-        globalRightMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseUp) { [weak self] _ in
-            Task { @MainActor in
-                _ = self?.handleRightMouseUp()
-            }
-        }
-
-        guard globalRightMouseDownMonitor != nil, globalRightMouseUpMonitor != nil else {
-            logger.error("super right click global monitor fallback could not be installed")
-            stop()
-            return false
-        }
-
-        logger.info("super right click global monitor fallback installed")
         return true
     }
 
@@ -95,19 +72,11 @@ final class SuperRightClickMonitor {
         if let eventTapRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
         }
-        if let globalRightMouseDownMonitor {
-            NSEvent.removeMonitor(globalRightMouseDownMonitor)
-        }
-        if let globalRightMouseUpMonitor {
-            NSEvent.removeMonitor(globalRightMouseUpMonitor)
-        }
         eventTap = nil
         eventTapRunLoopSource = nil
-        globalRightMouseDownMonitor = nil
-        globalRightMouseUpMonitor = nil
         longPressTimer?.invalidate()
         longPressTimer = nil
-        shouldSuppressNextRightMouseUp = false
+        pendingSuppressedRightMouseDown = nil
     }
 
     nonisolated private func handleEvent(
@@ -125,28 +94,33 @@ final class SuperRightClickMonitor {
         }
 
         let shouldSuppress = MainActor.assumeIsolated {
-            handleEventOnMainActor(type: type)
+            handleEventOnMainActor(type: type, event: event)
         }
 
         return shouldSuppress ? nil : Unmanaged.passUnretained(event)
     }
 
-    private func handleEventOnMainActor(type: CGEventType) -> Bool {
+    private func handleEventOnMainActor(type: CGEventType, event: CGEvent) -> Bool {
+        if isReplayedSystemRightClick(event) {
+            return false
+        }
+
         switch type {
         case .rightMouseDown:
-            handleRightMouseDown()
-            return false
+            return handleRightMouseDown(event: event)
         case .rightMouseUp:
-            return handleRightMouseUp()
+            return handleRightMouseUp(event: event)
         default:
             return false
         }
     }
 
-    private func handleRightMouseDown() {
+    private func handleRightMouseDown(event: CGEvent? = nil) -> Bool {
         logger.info("super right click right mouse down")
-        shouldSuppressNextRightMouseUp = false
-        _ = stateMachine.handle(.pressed(atMilliseconds: currentMilliseconds()))
+        if let event {
+            pendingSuppressedRightMouseDown = event.copy()
+        }
+        let route = gestureRouter.handle(.pressed(atMilliseconds: currentMilliseconds()))
         longPressTimer?.invalidate()
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -155,31 +129,34 @@ final class SuperRightClickMonitor {
         }
         RunLoop.main.add(timer, forMode: .common)
         longPressTimer = timer
+        return route.shouldSuppressOriginalEvent
     }
 
-    private func handleRightMouseUp() -> Bool {
+    private func handleRightMouseUp(event: CGEvent? = nil) -> Bool {
         logger.info("super right click right mouse up")
         longPressTimer?.invalidate()
         longPressTimer = nil
-        _ = stateMachine.handle(.released(atMilliseconds: currentMilliseconds()))
-        let shouldSuppress = shouldSuppressNextRightMouseUp
-        shouldSuppressNextRightMouseUp = false
-        return shouldSuppress
+        let route = gestureRouter.handle(.released(atMilliseconds: currentMilliseconds()))
+        if route == .suppressAndReplaySystemRightClick, let event {
+            replaySystemRightClick(mouseUpEvent: event)
+        }
+        pendingSuppressedRightMouseDown = nil
+        return route.shouldSuppressOriginalEvent
     }
 
     private func handleLongPressTimer() {
-        let decision = stateMachine.handle(.timerFired(atMilliseconds: currentMilliseconds()))
-        guard decision == .triggerSuperRightClick else {
+        let route = gestureRouter.handle(.timerFired(atMilliseconds: currentMilliseconds()))
+        guard route == .suppressAndTriggerSuperRightClick else {
             return
         }
 
         longPressTimer?.invalidate()
         longPressTimer = nil
-        shouldSuppressNextRightMouseUp = true
         logger.info("super right click long press triggered")
+        let sourceApp = frontmostApplicationName()
 
         Task {
-            let result = await service.handleDecision(decision, sourceApp: frontmostApplicationName())
+            let result = await service.handleDecision(.triggerSuperRightClick, sourceApp: sourceApp)
             await MainActor.run {
                 guard let result else {
                     return
@@ -187,7 +164,43 @@ final class SuperRightClickMonitor {
                 logger.info("super right click captured \(result.item.kind.rawValue)")
                 onResultCaptured(result)
             }
+
+            guard let result,
+                  result.isTranslationPending,
+                  let text = result.item.text else {
+                return
+            }
+
+            let translation = await service.translateText(text)
+            var translatedResult = result
+            translatedResult.translation = translation
+            translatedResult.isTranslationPending = false
+            await MainActor.run {
+                logger.info("super right click translation completed")
+                onResultCaptured(translatedResult)
+            }
         }
+    }
+
+    private func replaySystemRightClick(mouseUpEvent: CGEvent) {
+        guard let mouseDownEvent = pendingSuppressedRightMouseDown?.copy(),
+              let mouseUpEvent = mouseUpEvent.copy() else {
+            logger.error("super right click could not replay short system right click")
+            return
+        }
+
+        markAsReplayedSystemRightClick(mouseDownEvent)
+        markAsReplayedSystemRightClick(mouseUpEvent)
+        mouseDownEvent.post(tap: .cghidEventTap)
+        mouseUpEvent.post(tap: .cghidEventTap)
+    }
+
+    private func markAsReplayedSystemRightClick(_ event: CGEvent) {
+        event.setIntegerValueField(.eventSourceUserData, value: Self.replayedRightClickUserData)
+    }
+
+    private func isReplayedSystemRightClick(_ event: CGEvent) -> Bool {
+        event.getIntegerValueField(.eventSourceUserData) == Self.replayedRightClickUserData
     }
 
     private func currentMilliseconds() -> Int {

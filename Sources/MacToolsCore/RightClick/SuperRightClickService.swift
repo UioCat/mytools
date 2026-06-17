@@ -3,13 +3,16 @@ import Foundation
 public struct SuperRightClickResult: Equatable {
     public var item: ClipboardItem
     public var translation: Result<TranslationResponse, TranslationError>?
+    public var isTranslationPending: Bool
 
     public init(
         item: ClipboardItem,
-        translation: Result<TranslationResponse, TranslationError>?
+        translation: Result<TranslationResponse, TranslationError>?,
+        isTranslationPending: Bool = false
     ) {
         self.item = item
         self.translation = translation
+        self.isTranslationPending = isTranslationPending
     }
 }
 
@@ -38,12 +41,16 @@ public final class SuperRightClickService {
 
         let payload = selectionCapture.captureSelection()
         let item = classifier.classify(payload: payload, sourceApp: sourceApp)
-        var translation: Result<TranslationResponse, TranslationError>?
+        let shouldTranslate = item.kind == .text
+            && item.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        return SuperRightClickResult(
+            item: item,
+            translation: nil,
+            isTranslationPending: shouldTranslate
+        )
+    }
 
-        if item.kind == .text, let text = item.text {
-            translation = await translationService.translateAutomatically(text)
-        }
-
-        return SuperRightClickResult(item: item, translation: translation)
+    public func translateText(_ text: String) async -> Result<TranslationResponse, TranslationError> {
+        await translationService.translateAutomatically(text)
     }
 }

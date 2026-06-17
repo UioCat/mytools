@@ -47,7 +47,7 @@ public struct ClipboardListView: View {
                                 item: item,
                                 index: index + 1,
                                 isSelected: isSelected,
-                                showsBackground: isSelected,
+                                showsBackground: true,
                                 onFavoriteToggle: {
                                     onFavoriteToggle(item)
                                 }
@@ -101,11 +101,11 @@ public struct ClipboardListView: View {
         VStack(spacing: 10) {
             Image(systemName: "tray")
                 .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(Color.black.opacity(0.58))
+                .foregroundStyle(MacToolsGlassTheme.textTertiary)
 
             Text("没有匹配的剪贴板内容")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.64))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 72)

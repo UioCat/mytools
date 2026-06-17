@@ -225,7 +225,7 @@ struct RuntimeTranslationModuleView: View {
 
             Text(content.helperText)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.62))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(18)
                 .liquidGlassModule(cornerRadius: 22)
@@ -246,7 +246,7 @@ struct RuntimeTranslationModuleView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(content.inputTitle)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.black)
+                .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
             ZStack(alignment: .topLeading) {
                 if TranslationInputPlaceholderPolicy.isPlaceholderVisible(
@@ -255,7 +255,7 @@ struct RuntimeTranslationModuleView: View {
                 ) {
                     Text(content.inputPlaceholder)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.40))
+                        .foregroundStyle(MacToolsGlassTheme.textTertiary)
                         .padding(.leading, inputEditorLayout.placeholderLeadingPadding)
                         .padding(.top, inputEditorLayout.placeholderTopPadding)
                         .allowsHitTesting(false)
@@ -281,8 +281,8 @@ struct RuntimeTranslationModuleView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .frame(minWidth: 92)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(content.canSubmit(inputText: inputText) ? Color.black : Color.black.opacity(0.35))
+                .buttonStyle(GlassPrimaryButtonStyle(cornerRadius: 14))
+                .opacity(content.canSubmit(inputText: inputText) ? 1 : 0.45)
                 .disabled(!content.canSubmit(inputText: inputText))
 
                 if workspaceState == .translating {
@@ -303,7 +303,7 @@ struct RuntimeTranslationModuleView: View {
             HStack(spacing: 10) {
                 Text(content.outputTitle)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
                 Spacer(minLength: 0)
 
@@ -314,7 +314,10 @@ struct RuntimeTranslationModuleView: View {
                         .font(.system(size: 13, weight: .semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(content.copyableOutputText == nil ? Color.black.opacity(0.35) : Color.black.opacity(0.78))
+                .foregroundStyle(content.copyableOutputText == nil ? MacToolsGlassTheme.textDisabled : MacToolsGlassTheme.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .liquidGlassButtonStyle(cornerRadius: 12, showsIdleSurface: content.copyableOutputText != nil)
                 .disabled(content.copyableOutputText == nil)
             }
 
@@ -392,7 +395,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onMarkedTextStateChange = context.coordinator.setComposingText(_:)
         textView.font = .systemFont(ofSize: 14, weight: .medium)
-        textView.textColor = .black
+        textView.textColor = NSColor.white.withAlphaComponent(0.90)
         textView.drawsBackground = false
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -429,6 +432,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
 
         textView.onSubmit = onSubmit
         textView.onMarkedTextStateChange = context.coordinator.setComposingText(_:)
+        textView.textColor = NSColor.white.withAlphaComponent(0.90)
         textView.textContainerInset = NSSize(
             width: layout.textContainerWidthInset,
             height: layout.textContainerHeightInset
@@ -570,7 +574,7 @@ private struct TranslationOutputTextView: NSViewRepresentable {
     }
 
     private func configure(_ textView: TranslationOutputNSTextView) {
-        textView.textColor = isPlaceholder ? NSColor.black.withAlphaComponent(0.42) : NSColor.black.withAlphaComponent(0.84)
+        textView.textColor = isPlaceholder ? NSColor.white.withAlphaComponent(0.42) : NSColor.white.withAlphaComponent(0.88)
         if textView.string != text {
             textView.string = text
         }

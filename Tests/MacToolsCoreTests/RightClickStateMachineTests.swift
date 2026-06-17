@@ -2,6 +2,21 @@ import XCTest
 @testable import MacToolsCore
 
 final class RightClickStateMachineTests: XCTestCase {
+    func testGestureRouterSuppressesPressAndReplaysSystemClickForShortPress() {
+        var router = RightClickGestureRouter(thresholdMilliseconds: 600)
+
+        XCTAssertEqual(router.handle(.pressed(atMilliseconds: 1_000)), .suppressOriginalEvent)
+        XCTAssertEqual(router.handle(.released(atMilliseconds: 1_120)), .suppressAndReplaySystemRightClick)
+    }
+
+    func testGestureRouterSuppressesReleaseAfterLongPressWithoutReplayingSystemClick() {
+        var router = RightClickGestureRouter(thresholdMilliseconds: 600)
+
+        XCTAssertEqual(router.handle(.pressed(atMilliseconds: 1_000)), .suppressOriginalEvent)
+        XCTAssertEqual(router.handle(.timerFired(atMilliseconds: 1_600)), .suppressAndTriggerSuperRightClick)
+        XCTAssertEqual(router.handle(.released(atMilliseconds: 1_700)), .suppressOriginalEvent)
+    }
+
     func testShortPressAllowsSystemMenuAndClearsPressState() {
         var machine = RightClickStateMachine(thresholdMilliseconds: 600)
 
@@ -130,7 +145,7 @@ final class SuperRightClickServiceTests: XCTestCase {
         XCTAssertTrue(translationProvider.requests.isEmpty)
     }
 
-    func testHandleDecisionCapturesAndTranslatesTextSelection() async {
+    func testHandleDecisionCapturesTextSelectionAndDefersTranslation() async {
         let selectionCapture = FakeSelectionCapture(payload: ClipboardPayload(text: "hello"))
         let translationProvider = RecordingTranslationProvider()
         let service = SuperRightClickService(
@@ -145,18 +160,24 @@ final class SuperRightClickServiceTests: XCTestCase {
         XCTAssertEqual(result?.item.kind, .text)
         XCTAssertEqual(result?.item.text, "hello")
         XCTAssertEqual(result?.item.sourceApp, "Notes")
-        XCTAssertEqual(
-            result?.translation,
-            .success(TranslationResponse(translatedText: "translated", providerID: "test"))
-        )
+        XCTAssertNil(result?.translation)
+        XCTAssertEqual(result?.isTranslationPending, true)
         XCTAssertEqual(selectionCapture.captureCount, 1)
+        XCTAssertTrue(translationProvider.requests.isEmpty)
+
+        let translation = await service.translateText("hello")
+
         XCTAssertEqual(
             translationProvider.requests,
             [TranslationRequest(text: "hello", sourceLanguage: nil, targetLanguage: "zh")]
         )
+        XCTAssertEqual(
+            translation,
+            .success(TranslationResponse(translatedText: "translated", providerID: "test"))
+        )
     }
 
-    func testHandleDecisionRoutesChineseTextSelectionToEnglishTranslation() async {
+    func testTranslateTextRoutesChineseTextSelectionToEnglishTranslation() async {
         let selectionCapture = FakeSelectionCapture(payload: ClipboardPayload(text: "你好"))
         let translationProvider = RecordingTranslationProvider()
         let service = SuperRightClickService(
@@ -167,6 +188,9 @@ final class SuperRightClickServiceTests: XCTestCase {
         )
 
         _ = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
+        XCTAssertTrue(translationProvider.requests.isEmpty)
+
+        _ = await service.translateText("你好")
 
         XCTAssertEqual(
             translationProvider.requests,

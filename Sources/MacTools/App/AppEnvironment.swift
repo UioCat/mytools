@@ -383,7 +383,12 @@ final class AppEnvironment {
     private func handleSuperRightClickResult(_ result: SuperRightClickResult) {
         switch result.item.kind {
         case .text, .url:
-            contextPanel.showText(originalText: result.item.text ?? "", translation: result.translation)
+            contextPanel.showText(
+                originalText: result.item.text ?? "",
+                translation: result.translation,
+                isTranslationLoading: result.isTranslationPending,
+                reposition: result.translation == nil
+            )
         case .file, .folder, .imageFile:
             contextPanel.show(item: result.item)
         case .imageData, .unknown:

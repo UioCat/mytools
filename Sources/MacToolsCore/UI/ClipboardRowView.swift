@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 public struct ClipboardRowView: View {
@@ -8,6 +9,7 @@ public struct ClipboardRowView: View {
     public let showsBackground: Bool
     public let onFavoriteToggle: () -> Void
     @State private var isFavoriteButtonHovered = false
+    @State private var loadedImagePreview: ClipboardLoadedImagePreview?
 
     public init(item: ClipboardItem) {
         self.item = item
@@ -46,7 +48,7 @@ public struct ClipboardRowView: View {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(item.displayTitle)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
                     .lineLimit(isImage ? 1 : 2)
 
                 Spacer(minLength: 12)
@@ -54,14 +56,14 @@ public struct ClipboardRowView: View {
                 if !isImage {
                     Text(primaryMetric)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.black.opacity(0.72))
+                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
                         .lineLimit(1)
                 }
 
                 HStack(spacing: 8) {
                     Text("\(index)")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.black.opacity(0.68))
+                        .foregroundStyle(MacToolsGlassTheme.textTertiary)
                         .frame(width: 24, alignment: .trailing)
 
                     favoriteButton
@@ -77,7 +79,7 @@ public struct ClipboardRowView: View {
             HStack(spacing: 8) {
                 Text(relativeCreatedAt)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.68))
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
 
                 if item.isPinned {
                     StatusLabel(title: "置顶")
@@ -92,19 +94,22 @@ public struct ClipboardRowView: View {
                 if isImage {
                     Text(primaryMetric)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.black.opacity(0.72))
+                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
                         .lineLimit(1)
                 }
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, isImage ? 16 : 14)
+        .task(id: imagePreviewSource) {
+            await loadImagePreview()
+        }
     }
 
     @ViewBuilder
     private var imagePreview: some View {
-        if let image = previewImage {
-            Image(nsImage: image)
+        if let preview = currentImagePreview {
+            Image(decorative: preview.cgImage, scale: 1, orientation: .up)
                 .resizable()
                 .scaledToFit()
                 .clipShape(RoundedRectangle(cornerRadius: 3))
@@ -116,7 +121,7 @@ public struct ClipboardRowView: View {
         } else {
             Image(systemName: iconName)
                 .font(.system(size: 42, weight: .regular))
-                .foregroundStyle(Color.black.opacity(0.52))
+                .foregroundStyle(MacToolsGlassTheme.textTertiary)
         }
     }
 
@@ -136,16 +141,16 @@ public struct ClipboardRowView: View {
         .buttonStyle(.plain)
         .foregroundStyle(
             item.isFavorite
-                ? Color(nsColor: .controlAccentColor)
-                : Color.black.opacity(presentation.foregroundOpacity)
+                ? Color.yellow.opacity(0.95)
+                : Color.white.opacity(presentation.foregroundOpacity)
         )
         .background(
             Circle()
-                .fill(Color.white.opacity(presentation.backgroundOpacity))
+                .fill(Color.white.opacity(presentation.backgroundOpacity * 0.70))
         )
         .overlay(
             Circle()
-                .strokeBorder(Color.black.opacity(presentation.strokeOpacity), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(presentation.strokeOpacity), lineWidth: 1)
         )
         .scaleEffect(presentation.scale)
         .onHover { isFavoriteButtonHovered = $0 }
@@ -154,16 +159,8 @@ public struct ClipboardRowView: View {
         .accessibilityLabel(Text(presentation.accessibilityLabel))
     }
 
-    private var previewImage: NSImage? {
-        guard item.kind == .imageData || item.kind == .imageFile else {
-            return nil
-        }
-
-        guard let path = item.thumbnailPath ?? item.cachedFilePath ?? item.originalPath else {
-            return nil
-        }
-
-        return NSImage(contentsOfFile: path)
+    private var imagePreviewSource: ClipboardImagePreviewSource? {
+        ClipboardImagePreviewSource.source(for: item)
     }
 
     private var isImage: Bool {
@@ -171,8 +168,8 @@ public struct ClipboardRowView: View {
     }
 
     private var primaryMetric: String {
-        if let image = previewImage {
-            return "\(Int(image.size.width)) x \(Int(image.size.height))"
+        if let preview = currentImagePreview {
+            return preview.metric
         }
 
         switch item.kind {
@@ -187,6 +184,46 @@ public struct ClipboardRowView: View {
         case .unknown:
             return kindTitle
         }
+    }
+
+    private var currentImagePreview: ClipboardLoadedImagePreview? {
+        guard let imagePreviewSource,
+              loadedImagePreview?.source == imagePreviewSource else {
+            return nil
+        }
+
+        return loadedImagePreview
+    }
+
+    private func loadImagePreview() async {
+        guard let imagePreviewSource else {
+            loadedImagePreview = nil
+            return
+        }
+
+        guard loadedImagePreview?.source != imagePreviewSource else {
+            return
+        }
+
+        let decodeTask = Task.detached(priority: .utility) { () -> ClipboardLoadedImagePreview? in
+            guard !Task.isCancelled else {
+                return nil
+            }
+
+            return ClipboardImagePreviewCache.shared.preview(for: imagePreviewSource)
+        }
+        let preview = await withTaskCancellationHandler {
+            await decodeTask.value
+        } onCancel: {
+            decodeTask.cancel()
+        }
+
+        guard !Task.isCancelled,
+              self.imagePreviewSource == imagePreviewSource else {
+            return
+        }
+
+        loadedImagePreview = preview
     }
 
     private var relativeCreatedAt: String {
@@ -252,6 +289,149 @@ public struct ClipboardRowView: View {
     }
 }
 
+struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
+    let path: String
+    let cacheKey: String
+
+    init(path: String, cacheKey: String? = nil) {
+        self.path = path
+        self.cacheKey = cacheKey ?? path
+    }
+
+    static func source(for item: ClipboardItem) -> ClipboardImagePreviewSource? {
+        guard item.kind == .imageData || item.kind == .imageFile else {
+            return nil
+        }
+
+        guard let path = [item.thumbnailPath, item.cachedFilePath, item.originalPath]
+            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty }) else {
+            return nil
+        }
+
+        return ClipboardImagePreviewSource(path: path, cacheKey: cacheKey(forPath: path, contentHash: item.contentHash))
+    }
+
+    static func cacheKey(forPath path: String, contentHash: String? = nil) -> String {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
+            return [path, normalizedContentHash(contentHash)]
+                .compactMap(\.self)
+                .joined(separator: "|")
+        }
+
+        let fileSize = attributes[.size] as? NSNumber
+        let modificationDate = attributes[.modificationDate] as? Date
+        return [
+            path,
+            fileSize.map { "size:\($0.int64Value)" },
+            modificationDate.map { "modified:\($0.timeIntervalSinceReferenceDate)" },
+            normalizedContentHash(contentHash)
+        ]
+        .compactMap(\.self)
+        .joined(separator: "|")
+    }
+
+    private static func normalizedContentHash(_ contentHash: String?) -> String? {
+        guard let hash = contentHash?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !hash.isEmpty else {
+            return nil
+        }
+
+        return "hash:\(hash)"
+    }
+}
+
+struct ClipboardLoadedImagePreview: @unchecked Sendable {
+    let source: ClipboardImagePreviewSource
+    let cgImage: CGImage
+    let pixelWidth: Int
+    let pixelHeight: Int
+
+    var metric: String {
+        "\(pixelWidth) x \(pixelHeight)"
+    }
+
+    var byteCost: Int {
+        cgImage.bytesPerRow * cgImage.height
+    }
+}
+
+final class ClipboardImagePreviewCache: @unchecked Sendable {
+    struct Configuration: Equatable {
+        let countLimit: Int
+        let totalCostLimit: Int
+
+        static let standard = Configuration(
+            countLimit: 120,
+            totalCostLimit: 128 * 1024 * 1024
+        )
+    }
+
+    static let shared = ClipboardImagePreviewCache()
+
+    private let cache = NSCache<NSString, ClipboardLoadedImagePreviewBox>()
+
+    init(configuration: Configuration = .standard) {
+        cache.countLimit = configuration.countLimit
+        cache.totalCostLimit = configuration.totalCostLimit
+    }
+
+    func preview(for source: ClipboardImagePreviewSource) -> ClipboardLoadedImagePreview? {
+        let key = NSString(string: source.cacheKey)
+        if let cached = cache.object(forKey: key)?.preview {
+            return cached
+        }
+
+        guard let preview = Self.loadPreview(for: source) else {
+            return nil
+        }
+
+        cache.setObject(
+            ClipboardLoadedImagePreviewBox(preview),
+            forKey: key,
+            cost: preview.byteCost
+        )
+        return preview
+    }
+
+    private static func loadPreview(for source: ClipboardImagePreviewSource) -> ClipboardLoadedImagePreview? {
+        let url = URL(fileURLWithPath: source.path)
+        let sourceOptions = [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
+            return nil
+        }
+
+        let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: 720
+        ] as CFDictionary
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, thumbnailOptions) else {
+            return nil
+        }
+
+        return ClipboardLoadedImagePreview(
+            source: source,
+            cgImage: cgImage,
+            pixelWidth: properties?[kCGImagePropertyPixelWidth] as? Int ?? cgImage.width,
+            pixelHeight: properties?[kCGImagePropertyPixelHeight] as? Int ?? cgImage.height
+        )
+    }
+}
+
+private final class ClipboardLoadedImagePreviewBox {
+    let preview: ClipboardLoadedImagePreview
+
+    init(_ preview: ClipboardLoadedImagePreview) {
+        self.preview = preview
+    }
+}
+
 struct ClipboardFavoriteButtonPresentation: Equatable {
     let iconName: String
     let helpText: String
@@ -280,7 +460,7 @@ private struct StatusLabel: View {
     var body: some View {
         Text(title)
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(Color.black.opacity(0.74))
+            .foregroundStyle(MacToolsGlassTheme.textSecondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .liquidGlassChip(cornerRadius: 9)

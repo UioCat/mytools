@@ -45,12 +45,15 @@ final class ContextPanelController {
 
     func showText(
         originalText: String,
-        translation: Result<TranslationResponse, TranslationError>?
+        translation: Result<TranslationResponse, TranslationError>?,
+        isTranslationLoading: Bool = false,
+        reposition: Bool = true
     ) {
         let layoutButtons = windowLayoutButtons()
         let content = SuperPanelContent.text(
             originalText: originalText,
             translation: translation,
+            isTranslationLoading: isTranslationLoading,
             windowLayoutButtons: layoutButtons
         )
         let translatedText: String?
@@ -60,7 +63,7 @@ final class ContextPanelController {
             translatedText = nil
         }
 
-        show(content: content) { [weak self] actionID in
+        show(content: content, reposition: reposition) { [weak self] actionID in
             self?.performTextAction(
                 actionID,
                 originalText: originalText,

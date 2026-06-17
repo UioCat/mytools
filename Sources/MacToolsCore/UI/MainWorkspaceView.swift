@@ -58,19 +58,15 @@ public struct MainWorkspaceModuleHeader: View {
                 sidebarToggleButton(workspaceSidebarChrome)
             }
 
-            Image(systemName: module.iconName)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.black)
-                .frame(width: 38, height: 38)
-                .liquidGlassModule(cornerRadius: 14, isSelected: true)
+            GlassIconBadge(systemName: module.iconName, size: 40, iconSize: 17)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(module.title)
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
                 Text(subtitle)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.58))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
                     .lineLimit(1)
             }
 
@@ -93,7 +89,7 @@ public struct MainWorkspaceModuleHeader: View {
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .foregroundStyle(chrome.isSidebarVisible ? Color.black : Color.black.opacity(0.78))
+        .foregroundStyle(chrome.isSidebarVisible ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
         .liquidGlassButtonStyle(
             cornerRadius: 18,
             isSelected: chrome.isSidebarVisible,
@@ -129,7 +125,7 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
                     .transition(.move(edge: .leading).combined(with: .opacity))
 
                 Divider()
-                    .overlay(Color.black.opacity(0.10))
+                    .overlay(MacToolsGlassTheme.divider)
                     .padding(.vertical, 12)
                     .transition(.opacity)
             }
@@ -156,6 +152,22 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 10) {
+                    GlassIconBadge(systemName: "wrench.and.screwdriver.fill", size: 34, iconSize: 14)
+
+                    Text("MacTools")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
+                }
+
+                Text("高效 · 便捷 · 智能")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 14)
+
             ForEach(MainToolModule.allCases) { module in
                 Button {
                     selectedModule = module
@@ -167,7 +179,7 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
                         .padding(.horizontal, 12)
                         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .foregroundStyle(selectedModule == module ? Color.black : Color.black.opacity(0.76))
+                .foregroundStyle(selectedModule == module ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
                 .liquidGlassButtonStyle(cornerRadius: 16, isSelected: selectedModule == module)
             }
 

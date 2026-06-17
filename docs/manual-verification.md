@@ -14,7 +14,7 @@
 - Select a clipboard item and press Enter; confirm it copies and attempts paste.
 - Use Cmd+Enter; confirm it copies without sending paste.
 - Short right-click in Finder; confirm the system menu appears.
-- Long right-click a selected folder; confirm the context action window appears.
+- Long right-click a selected folder; confirm only the MacTools context action window appears and the system menu does not appear.
 - Open settings and confirm the window layout section shows compact rows with preview icons; hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row.
 - Open settings and confirm the clipboard section can choose a custom cache storage folder, restore the default folder, and switch cache size between `200M`, `500M`, `1024M`, and `2048M`.
 - Long right-click selected text or a Finder item, click a window layout button, and confirm the frontmost app window moves to the selected visible-screen region.
@@ -28,7 +28,7 @@
 - Enter English or another non-Chinese language in the translation tool, and confirm it translates to Chinese.
 - Click the translation output copy button and confirm the translated text is copied.
 - Click the translation output text, press Cmd+A then Cmd+C, and confirm the translated text is copied.
-- Long right-click selected text and confirm the context translation follows the same language direction.
+- Long right-click selected text and confirm the context panel appears immediately with a translation loading state, then updates in place with the translated result following the same language direction.
 - Open settings and confirm permission status is visible.
 - Build app bundle with `scripts/package_app.sh`.
 - Launch `build/MacTools.app`.
