@@ -5,7 +5,17 @@
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
+- Confirm the equal-width category row below search contains exactly `全部`, `文本`, `图像`, and `收藏`; files and folders remain available through `全部`.
+- Click each category and use the Left/Right arrow keys to switch between adjacent categories.
+- Click a clipboard item once and confirm it only becomes selected; click the same item again and confirm it performs the Enter action and pastes at the previously focused cursor location.
+- After selecting with the keyboard or changing category/search, click the highlighted item once and confirm it only re-arms mouse selection instead of pasting immediately.
+- Fill clipboard history beyond one screen, then hold the Up/Down arrow keys; confirm every newly selected row is automatically brought into view, including rows before and after a large image preview.
+- Confirm the main panel opens at `720 × 480`, two-thirds of the previous `1080 × 720` default, and can be resized down to approximately `600 × 414`.
 - Confirm clipboard history uses one integrated Spotlight-style search header, flat compact result rows, and native Liquid Glass only on the selected row and interactive controls.
+- Confirm the selected clipboard row uses a visibly deeper adaptive neutral gray while its title, metadata, index, and favorite control remain legible.
+- Confirm each clipboard row shows only paste time at bottom-left; the index and character count or image dimensions form a separate right-aligned column, with the favorite button isolated in the outermost column.
+- Confirm image clipboard rows omit the image name and use a centered large thumbnail as the primary content while retaining paste time, pixel dimensions, index, and favorite control below it.
+- Place Spotlight and the clipboard panel over the same light and dark content; confirm the panel uses the same untinted system glass color and adaptive depth as Spotlight.
 - Confirm the panel has continuous system-style outer corners with no square transparent residue, and the selected row keeps a concentric inner curve.
 - Resize the panel and confirm no rectangular system shadow appears outside its rounded glass edge.
 - Place the panel over both light and dark windows; confirm all four corners outside the glass arc remain fully transparent with no rectangular backdrop tint.

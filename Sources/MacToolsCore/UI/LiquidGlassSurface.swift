@@ -2,13 +2,19 @@ import AppKit
 import SwiftUI
 
 enum LiquidGlassTint: Equatable {
+    case none
     case neutral(Double)
+    case adaptiveGray(Double)
     case accent(Double)
 
-    var color: Color {
+    var color: Color? {
         switch self {
+        case .none:
+            return nil
         case .neutral(let opacity):
             return Color(nsColor: .windowBackgroundColor).opacity(opacity)
+        case .adaptiveGray(let opacity):
+            return Color.primary.opacity(opacity)
         case .accent(let opacity):
             return Color.accentColor.opacity(opacity)
         }
@@ -45,7 +51,7 @@ struct LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .fixed(cornerRadius),
             isInteractive: false,
-            tint: .neutral(0.28)
+            tint: .none
         )
     }
 
@@ -61,7 +67,7 @@ struct LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .concentric(minimum: minimumCornerRadius),
             isInteractive: false,
-            tint: isSelected ? .neutral(0.32) : .neutral(0.10)
+            tint: isSelected ? .adaptiveGray(0.18) : .neutral(0.10)
         )
     }
 
@@ -82,9 +88,8 @@ struct LiquidGlassSurfaceStyle {
     }
 
     var effect: Glass {
-        .regular
-            .tint(tint.color)
-            .interactive(isInteractive)
+        let glass = tint.color.map { Glass.regular.tint($0) } ?? .regular
+        return glass.interactive(isInteractive)
     }
 }
 
@@ -140,11 +145,11 @@ public struct LiquidGlassWindowPanelFrame: Equatable {
     }
 
     public static let mainWorkspace = LiquidGlassWindowPanelFrame(
-        minWidth: 900,
-        idealWidth: 1080,
+        minWidth: 600,
+        idealWidth: 720,
         maxWidth: .infinity,
-        minHeight: 620,
-        idealHeight: 720,
+        minHeight: 414,
+        idealHeight: 480,
         maxHeight: .infinity
     )
 

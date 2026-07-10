@@ -2,16 +2,16 @@ import XCTest
 @testable import MacToolsCore
 
 final class LiquidGlassSurfaceTests: XCTestCase {
-    func testPanelStyleUsesNeutralStaticGlass() {
+    func testPanelStyleUsesUntintedSystemGlassLikeSpotlight() {
         let style = LiquidGlassSurfaceStyle.panel(cornerRadius: 30)
 
         XCTAssertEqual(style.cornerRadius, 30)
         XCTAssertEqual(style.cornerShape, .fixed(30))
         XCTAssertFalse(style.isInteractive)
-        XCTAssertEqual(style.tint, .neutral(0.28))
+        XCTAssertEqual(style.tint, .none)
     }
 
-    func testWindowAndSelectedRowUseSystemConcentricCornerGeometry() {
+    func testSelectedClipboardRowUsesDeeperAdaptiveGrayAndConcentricGeometry() {
         let selectedRow = LiquidGlassSurfaceStyle.concentricModule(
             minimumCornerRadius: LiquidGlassCornerGeometry.selectedRowMinimumRadius,
             isSelected: true
@@ -19,13 +19,17 @@ final class LiquidGlassSurfaceTests: XCTestCase {
 
         XCTAssertEqual(LiquidGlassCornerGeometry.windowRadius, 40)
         XCTAssertEqual(selectedRow.cornerShape, .concentric(minimum: 18))
-        XCTAssertEqual(selectedRow.tint, .neutral(0.32))
+        XCTAssertEqual(selectedRow.tint, .adaptiveGray(0.18))
         XCTAssertFalse(selectedRow.isInteractive)
     }
 
-    func testWindowPanelSurfaceIsAppliedAfterSizingToAvoidTransparentOuterAppArea() {
+    func testMainWorkspaceOpensAtTwoThirdsOfPreviousSize() {
         let frame = LiquidGlassWindowPanelFrame.mainWorkspace
 
+        XCTAssertEqual(frame.idealWidth, 720)
+        XCTAssertEqual(frame.idealHeight, 480)
+        XCTAssertEqual(frame.minWidth, 600)
+        XCTAssertEqual(frame.minHeight, 414)
         XCTAssertEqual(frame.surfacePlacement, .afterSizing)
         XCTAssertEqual(frame.alignment, .topLeading)
         XCTAssertEqual(frame.maxWidth, .infinity)

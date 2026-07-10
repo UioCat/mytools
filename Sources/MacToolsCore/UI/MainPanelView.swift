@@ -10,7 +10,6 @@ public enum ClipboardPanelMode: CaseIterable {
     case all
     case text
     case images
-    case folders
     case favorites
 
     var title: String {
@@ -20,9 +19,7 @@ public enum ClipboardPanelMode: CaseIterable {
         case .text:
             return "文本"
         case .images:
-            return "图片"
-        case .folders:
-            return "文件夹"
+            return "图像"
         case .favorites:
             return "收藏"
         }
@@ -36,11 +33,41 @@ public enum ClipboardPanelMode: CaseIterable {
             return "text.justify.leading"
         case .images:
             return "photo"
-        case .folders:
-            return "folder"
         case .favorites:
             return "star.fill"
         }
+    }
+}
+
+enum ClipboardPanelModeNavigationDirection: Equatable {
+    case previous
+    case next
+}
+
+enum ClipboardPanelModeNavigator {
+    static func direction(forKeyCode keyCode: UInt16) -> ClipboardPanelModeNavigationDirection? {
+        switch keyCode {
+        case 123:
+            return .previous
+        case 124:
+            return .next
+        default:
+            return nil
+        }
+    }
+
+    static func mode(
+        adjacentTo currentMode: ClipboardPanelMode,
+        direction: ClipboardPanelModeNavigationDirection
+    ) -> ClipboardPanelMode {
+        let modes = ClipboardPanelMode.allCases
+        guard let currentIndex = modes.firstIndex(of: currentMode) else {
+            return currentMode
+        }
+
+        let offset = direction == .previous ? -1 : 1
+        let nextIndex = min(max(currentIndex + offset, modes.startIndex), modes.index(before: modes.endIndex))
+        return modes[nextIndex]
     }
 }
 
@@ -94,8 +121,6 @@ struct ClipboardPanelRenderState {
             modeItems = items.filter { $0.kind == .text || $0.kind == .url }
         case .images:
             modeItems = items.filter { $0.kind == .imageData || $0.kind == .imageFile }
-        case .folders:
-            modeItems = items.filter { $0.kind == .folder }
         case .favorites:
             modeItems = items.filter(\.isFavorite)
         }
@@ -124,10 +149,31 @@ struct ClipboardPanelRenderState {
     }
 }
 
+enum ClipboardItemClickAction: Equatable {
+    case select
+    case paste
+}
+
+enum ClipboardItemClickResolver {
+    static func action(
+        clickedItemID: ClipboardItem.ID,
+        selectedItemID: ClipboardItem.ID?,
+        armedItemID: ClipboardItem.ID?
+    ) -> ClipboardItemClickAction {
+        if clickedItemID == selectedItemID,
+           clickedItemID == armedItemID {
+            return .paste
+        }
+
+        return .select
+    }
+}
+
 public struct MainPanelView: View {
     @Environment(\.mainWorkspaceSidebarChrome) private var workspaceSidebarChrome
     @State private var query = ""
     @State private var selectedItemID: ClipboardItem.ID?
+    @State private var armedMouseItemID: ClipboardItem.ID?
     @State private var mode: ClipboardPanelMode = .all
     @FocusState private var isSearchFocused: Bool
 
@@ -192,6 +238,8 @@ public struct MainPanelView: View {
         VStack(spacing: 0) {
             header(itemSummary: renderState.itemSummary)
 
+            categoryBar(itemSummary: renderState.itemSummary)
+
             Divider()
                 .overlay(MacToolsGlassTheme.divider)
                 .padding(.horizontal, 4)
@@ -205,12 +253,15 @@ public struct MainPanelView: View {
             focusSearchField()
         }
         .onChange(of: items) {
+            resetMouseClickConfirmation()
             normalizeSelection()
         }
         .onChange(of: mode) {
+            resetMouseClickConfirmation()
             normalizeSelection()
         }
         .onChange(of: query) {
+            resetMouseClickConfirmation()
             normalizeSelection()
         }
         .onChange(of: resetToken) {
@@ -227,7 +278,7 @@ public struct MainPanelView: View {
             items: renderState.filteredItems,
             selectedItemID: renderState.selectedItem?.id,
             mode: mode,
-            onSelect: selectAndPaste,
+            onSelect: handleItemClick,
             onFavoriteToggle: onFavoriteToggle,
             onDelete: onDelete
         )
@@ -273,8 +324,6 @@ public struct MainPanelView: View {
                 .accessibilityLabel("清除搜索")
             }
 
-            scopeMenu(itemSummary: itemSummary)
-
             if let workspaceSidebarChrome {
                 sidebarToggleButton(workspaceSidebarChrome)
             }
@@ -299,6 +348,37 @@ public struct MainPanelView: View {
         .liquidGlassGroup(spacing: 12)
     }
 
+    private func categoryBar(itemSummary: ClipboardPanelItemSummary) -> some View {
+        HStack(spacing: 8) {
+            ForEach(ClipboardPanelMode.allCases, id: \.self) { itemMode in
+                let isSelected = mode == itemMode
+
+                Button {
+                    mode = itemMode
+                } label: {
+                    Label(
+                        tabTitle(for: itemMode, itemSummary: itemSummary),
+                        systemImage: itemMode.iconName
+                    )
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(
+                        isSelected ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 36)
+                    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(ClipboardCategoryButtonStyle(isSelected: isSelected))
+                .help("切换到\(itemMode.title)")
+                .accessibilityLabel("\(itemMode.title)分类")
+                .accessibilityValue(isSelected ? "已选择" : "")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+        .liquidGlassGroup(spacing: 8)
+    }
+
     private func sidebarToggleButton(_ chrome: MainWorkspaceSidebarChrome) -> some View {
         Button {
             chrome.toggleSidebar()
@@ -315,34 +395,6 @@ public struct MainPanelView: View {
             minimumSize: CGSize(width: 38, height: 38)
         )
         .help(chrome.isSidebarVisible ? "隐藏工具栏" : "显示工具栏")
-    }
-
-    @ViewBuilder
-    private func scopeMenu(itemSummary: ClipboardPanelItemSummary) -> some View {
-        Menu {
-            ForEach(ClipboardPanelMode.allCases, id: \.self) { itemMode in
-                Button {
-                    mode = itemMode
-                } label: {
-                    Label(
-                        tabTitle(for: itemMode, itemSummary: itemSummary),
-                        systemImage: mode == itemMode ? "checkmark" : itemMode.iconName
-                    )
-                }
-            }
-        } label: {
-            Label(tabTitle(for: mode, itemSummary: itemSummary), systemImage: mode.iconName)
-                .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 10)
-                .frame(height: 36)
-                .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .foregroundStyle(MacToolsGlassTheme.textSecondary)
-        .liquidGlassButtonStyle(cornerRadius: 13, minimumSize: CGSize(width: 72, height: 36))
-        .help("筛选范围：\(tabTitle(for: mode, itemSummary: itemSummary))")
     }
 
     private var keyboardActions: some View {
@@ -384,9 +436,22 @@ public struct MainPanelView: View {
         itemSummary.hasClearableItems ? MacToolsGlassTheme.textSecondary : MacToolsGlassTheme.textDisabled
     }
 
-    private func selectAndPaste(_ item: ClipboardItem) {
+    private func handleItemClick(_ item: ClipboardItem) {
+        let clickAction = ClipboardItemClickResolver.action(
+            clickedItemID: item.id,
+            selectedItemID: selectedItemID,
+            armedItemID: armedMouseItemID
+        )
+
         selectedItemID = item.id
-        onSelect(item, .copyAndPaste)
+
+        switch clickAction {
+        case .select:
+            armedMouseItemID = item.id
+        case .paste:
+            resetMouseClickConfirmation()
+            onSelect(item, .copyAndPaste)
+        }
     }
 
     private func performSelectedAction(_ action: ClipboardSelectionAction) {
@@ -394,10 +459,12 @@ public struct MainPanelView: View {
             return
         }
 
+        resetMouseClickConfirmation()
         onSelect(item, action)
     }
 
     private func moveSelection(by offset: Int) {
+        resetMouseClickConfirmation()
         let visibleItems = filteredItems
         guard !visibleItems.isEmpty else {
             selectedItemID = nil
@@ -409,6 +476,10 @@ public struct MainPanelView: View {
         } ?? 0
         let nextIndex = min(max(currentIndex + offset, 0), visibleItems.count - 1)
         selectedItemID = visibleItems[nextIndex].id
+    }
+
+    private func moveMode(_ direction: ClipboardPanelModeNavigationDirection) {
+        mode = ClipboardPanelModeNavigator.mode(adjacentTo: mode, direction: direction)
     }
 
     private func normalizeSelection() {
@@ -433,7 +504,12 @@ public struct MainPanelView: View {
     private func resetPanelState() {
         query = ""
         mode = .all
+        resetMouseClickConfirmation()
         selectFirstItem()
+    }
+
+    private func resetMouseClickConfirmation() {
+        armedMouseItemID = nil
     }
 
     private func focusSearchField() {
@@ -445,6 +521,11 @@ public struct MainPanelView: View {
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         if PanelKeyCommandResolver().command(forKeyCode: event.keyCode) == .dismiss {
             onDismiss()
+            return true
+        }
+
+        if let direction = ClipboardPanelModeNavigator.direction(forKeyCode: event.keyCode) {
+            moveMode(direction)
             return true
         }
 
@@ -465,6 +546,35 @@ public struct MainPanelView: View {
 
     private var selectedItem: ClipboardItem? {
         currentRenderState.selectedItem
+    }
+}
+
+private struct ClipboardCategoryButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(minWidth: 96, minHeight: 36)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .modifier(
+                ClipboardCategoryButtonSurfaceModifier(
+                    isVisible: isSelected || configuration.isPressed
+                )
+            )
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+private struct ClipboardCategoryButtonSurfaceModifier: ViewModifier {
+    let isVisible: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isVisible {
+            content.liquidGlassModule(cornerRadius: 12, isSelected: true)
+        } else {
+            content
+        }
     }
 }
 

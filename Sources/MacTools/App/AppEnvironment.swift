@@ -31,8 +31,14 @@ final class AppEnvironment {
     )
 
     lazy var mainPanel = MainPanelController(
-        initialSize: NSSize(width: 1080, height: 720),
-        minimumSize: NSSize(width: 900, height: 620),
+        initialSize: NSSize(
+            width: LiquidGlassWindowPanelFrame.mainWorkspace.idealWidth,
+            height: LiquidGlassWindowPanelFrame.mainWorkspace.idealHeight
+        ),
+        minimumSize: NSSize(
+            width: LiquidGlassWindowPanelFrame.mainWorkspace.minWidth,
+            height: LiquidGlassWindowPanelFrame.mainWorkspace.minHeight
+        ),
         rootView: RuntimeMainWorkspaceView(
             router: mainPanelRouter,
             model: clipboardModel,

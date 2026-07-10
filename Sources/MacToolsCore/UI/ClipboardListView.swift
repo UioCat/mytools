@@ -82,7 +82,18 @@ public struct ClipboardListView: View {
                 .liquidGlassGroup(spacing: 2)
             }
             .background(Color.clear)
-            .onChange(of: selectedItemID) { _, id in
+            .task(id: selectedItemID) { @MainActor in
+                // Keyboard selection changes during the same update that can cause a
+                // LazyVStack to create a newly visible row. Wait for that layout pass
+                // before asking the proxy to reveal the row. task(id:) also cancels a
+                // stale request when the user presses an arrow key repeatedly.
+                await Task.yield()
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                let id = selectedItemID
                 guard let id else {
                     return
                 }

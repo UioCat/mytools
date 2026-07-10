@@ -43,7 +43,24 @@ public struct ClipboardRowView: View {
         }
     }
 
+    @ViewBuilder
     private var rowContent: some View {
+        let metadata = ClipboardRowMetadataPresentation(
+            item: item,
+            imageMetric: currentImagePreview?.metric
+        )
+
+        if ClipboardRowContentStyle.style(for: item.kind) == .expandedImagePreview {
+            imageRowContent(metadata: metadata)
+                .task(id: imagePreviewSource) {
+                    await loadImagePreview()
+                }
+        } else {
+            standardRowContent(metadata: metadata)
+        }
+    }
+
+    private func standardRowContent(metadata: ClipboardRowMetadataPresentation) -> some View {
         HStack(spacing: 14) {
             leadingVisual
 
@@ -53,27 +70,83 @@ public struct ClipboardRowView: View {
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
                     .lineLimit(1)
 
-                Text(metadataLine)
+                Text(metadata.pasteTime)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(MacToolsGlassTheme.textTertiary)
                     .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 12)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("\(index)")
+                    .font(.system(size: 12, weight: .semibold))
 
-            Text("\(index)")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(MacToolsGlassTheme.textTertiary)
-                .frame(minWidth: 22, alignment: .trailing)
+                Text(metadata.contentSummary)
+                    .font(.system(size: 13, weight: .medium))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(MacToolsGlassTheme.textTertiary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
 
             favoriteButton
         }
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .task(id: imagePreviewSource) {
-            await loadImagePreview()
+    }
+
+    private func imageRowContent(metadata: ClipboardRowMetadataPresentation) -> some View {
+        VStack(spacing: 10) {
+            Group {
+                if let preview = currentImagePreview {
+                    Image(decorative: preview.cgImage, scale: 1, orientation: .up)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 440, maxHeight: 210)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(MacToolsGlassTheme.border, lineWidth: 0.5)
+                        )
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 36, weight: .regular))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 210)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("剪贴板图片"))
+            .accessibilityValue(Text(metadata.contentSummary))
+
+            HStack(spacing: 14) {
+                Text(metadata.pasteTime)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("\(index)")
+                        .font(.system(size: 12, weight: .semibold))
+
+                    Text(metadata.contentSummary)
+                        .font(.system(size: 13, weight: .medium))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+
+                favoriteButton
+            }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -135,68 +208,6 @@ public struct ClipboardRowView: View {
         ClipboardImagePreviewSource.source(for: item)
     }
 
-    private var isImage: Bool {
-        item.kind == .imageData || item.kind == .imageFile
-    }
-
-    private var primaryMetric: String {
-        if let preview = currentImagePreview {
-            return preview.metric
-        }
-
-        switch item.kind {
-        case .text, .url:
-            return "\(item.searchableText.count) 字符"
-        case .file:
-            return "文件"
-        case .folder:
-            return "文件夹"
-        case .imageFile, .imageData:
-            return "图片"
-        case .unknown:
-            return kindTitle
-        }
-    }
-
-    private var metadataLine: String {
-        var components = [kindTitle]
-
-        if primaryMetric != kindTitle {
-            components.append(primaryMetric)
-        }
-
-        if item.isPinned {
-            components.append("置顶")
-        }
-
-        components.append(relativeCreatedAt)
-
-        if let locationLabel {
-            components.append(locationLabel)
-        }
-
-        return components.joined(separator: " · ")
-    }
-
-    private var locationLabel: String? {
-        if let originalPath = item.originalPath?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !originalPath.isEmpty {
-            let parentName = URL(fileURLWithPath: originalPath)
-                .deletingLastPathComponent()
-                .lastPathComponent
-            if !parentName.isEmpty {
-                return parentName
-            }
-        }
-
-        guard let sourceApp = item.sourceApp?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !sourceApp.isEmpty else {
-            return nil
-        }
-
-        return sourceApp
-    }
-
     private var currentImagePreview: ClipboardLoadedImagePreview? {
         guard let imagePreviewSource,
               loadedImagePreview?.source == imagePreviewSource else {
@@ -237,24 +248,6 @@ public struct ClipboardRowView: View {
         loadedImagePreview = preview
     }
 
-    private var relativeCreatedAt: String {
-        let elapsed = max(0, Date().timeIntervalSince(item.createdAt))
-
-        if elapsed < 60 {
-            return "刚刚"
-        }
-
-        if elapsed < 3600 {
-            return "\(Int(elapsed / 60)) 分钟前"
-        }
-
-        if elapsed < 86400 {
-            return "\(Int(elapsed / 3600)) 小时前"
-        }
-
-        return "\(Int(elapsed / 86400)) 天前"
-    }
-
     private var iconName: String {
         switch item.kind {
         case .text:
@@ -272,23 +265,67 @@ public struct ClipboardRowView: View {
         }
     }
 
-    private var kindTitle: String {
-        switch item.kind {
-        case .text:
-            return "文本"
-        case .url:
-            return "链接"
-        case .file:
-            return "文件"
-        case .folder:
-            return "文件夹"
-        case .imageFile:
-            return "图片文件"
-        case .imageData:
-            return "图片"
-        case .unknown:
-            return "未知"
+}
+
+enum ClipboardRowContentStyle: Equatable {
+    case standard
+    case expandedImagePreview
+
+    static func style(for kind: ClipboardContentKind) -> ClipboardRowContentStyle {
+        switch kind {
+        case .imageFile, .imageData:
+            return .expandedImagePreview
+        case .text, .url, .file, .folder, .unknown:
+            return .standard
         }
+    }
+}
+
+struct ClipboardRowMetadataPresentation: Equatable {
+    let pasteTime: String
+    let contentSummary: String
+
+    init(
+        item: ClipboardItem,
+        imageMetric: String? = nil,
+        now: Date = Date()
+    ) {
+        self.pasteTime = Self.relativeTime(from: item.createdAt, to: now)
+
+        if let imageMetric {
+            self.contentSummary = imageMetric
+        } else {
+            switch item.kind {
+            case .text, .url:
+                self.contentSummary = "\(item.searchableText.count) 字符"
+            case .file:
+                self.contentSummary = "文件"
+            case .folder:
+                self.contentSummary = "文件夹"
+            case .imageFile, .imageData:
+                self.contentSummary = "图片"
+            case .unknown:
+                self.contentSummary = "内容"
+            }
+        }
+    }
+
+    private static func relativeTime(from createdAt: Date, to now: Date) -> String {
+        let elapsed = max(0, now.timeIntervalSince(createdAt))
+
+        if elapsed < 60 {
+            return "刚刚"
+        }
+
+        if elapsed < 3600 {
+            return "\(Int(elapsed / 60)) 分钟前"
+        }
+
+        if elapsed < 86400 {
+            return "\(Int(elapsed / 3600)) 小时前"
+        }
+
+        return "\(Int(elapsed / 86400)) 天前"
     }
 }
 

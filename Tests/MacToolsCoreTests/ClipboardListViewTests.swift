@@ -5,6 +5,109 @@ import XCTest
 @testable import MacToolsCore
 
 final class ClipboardListViewTests: XCTestCase {
+    func testClipboardCategoriesContainOnlyRequestedModes() {
+        XCTAssertEqual(ClipboardPanelMode.allCases, [.all, .text, .images, .favorites])
+        XCTAssertEqual(ClipboardPanelMode.allCases.map(\.title), ["全部", "文本", "图像", "收藏"])
+    }
+
+    func testClipboardCategoryArrowNavigationMovesBetweenAdjacentModes() {
+        XCTAssertEqual(
+            ClipboardPanelModeNavigator.mode(adjacentTo: .all, direction: .next),
+            .text
+        )
+        XCTAssertEqual(
+            ClipboardPanelModeNavigator.mode(adjacentTo: .text, direction: .next),
+            .images
+        )
+        XCTAssertEqual(
+            ClipboardPanelModeNavigator.mode(adjacentTo: .favorites, direction: .previous),
+            .images
+        )
+    }
+
+    func testClipboardCategoryArrowNavigationStopsAtFirstAndLastModes() {
+        XCTAssertEqual(
+            ClipboardPanelModeNavigator.mode(adjacentTo: .all, direction: .previous),
+            .all
+        )
+        XCTAssertEqual(
+            ClipboardPanelModeNavigator.mode(adjacentTo: .favorites, direction: .next),
+            .favorites
+        )
+    }
+
+    func testClipboardCategoryArrowKeyCodesResolveToNavigationDirections() {
+        XCTAssertEqual(ClipboardPanelModeNavigator.direction(forKeyCode: 123), .previous)
+        XCTAssertEqual(ClipboardPanelModeNavigator.direction(forKeyCode: 124), .next)
+        XCTAssertNil(ClipboardPanelModeNavigator.direction(forKeyCode: 125))
+        XCTAssertNil(ClipboardPanelModeNavigator.direction(forKeyCode: 126))
+    }
+
+    func testFirstMouseClickSelectsAndSecondClickOnSameItemPastes() {
+        let itemID = UUID()
+
+        XCTAssertEqual(
+            ClipboardItemClickResolver.action(
+                clickedItemID: itemID,
+                selectedItemID: itemID,
+                armedItemID: nil
+            ),
+            .select
+        )
+        XCTAssertEqual(
+            ClipboardItemClickResolver.action(
+                clickedItemID: itemID,
+                selectedItemID: itemID,
+                armedItemID: itemID
+            ),
+            .paste
+        )
+    }
+
+    func testClickingDifferentItemStartsASelectionBeforePaste() {
+        let selectedItemID = UUID()
+        let clickedItemID = UUID()
+
+        XCTAssertEqual(
+            ClipboardItemClickResolver.action(
+                clickedItemID: clickedItemID,
+                selectedItemID: selectedItemID,
+                armedItemID: selectedItemID
+            ),
+            .select
+        )
+    }
+
+    func testImageRowsUseExpandedPreviewInsteadOfStandardTitleLayout() {
+        XCTAssertEqual(ClipboardRowContentStyle.style(for: .imageData), .expandedImagePreview)
+        XCTAssertEqual(ClipboardRowContentStyle.style(for: .imageFile), .expandedImagePreview)
+        XCTAssertEqual(ClipboardRowContentStyle.style(for: .text), .standard)
+        XCTAssertEqual(ClipboardRowContentStyle.style(for: .file), .standard)
+    }
+
+    func testRowMetadataSeparatesPasteTimeFromTextCharacterCount() {
+        let item = makeItem(text: "当前剪切板的信息")
+        let now = item.createdAt.addingTimeInterval(12 * 60)
+
+        let metadata = ClipboardRowMetadataPresentation(item: item, now: now)
+
+        XCTAssertEqual(metadata.pasteTime, "12 分钟前")
+        XCTAssertEqual(metadata.contentSummary, "8 字符")
+    }
+
+    func testRowMetadataUsesLoadedImageDimensionsAsContentSummary() {
+        let item = makeImageItem()
+
+        let metadata = ClipboardRowMetadataPresentation(
+            item: item,
+            imageMetric: "1280 x 934",
+            now: item.createdAt.addingTimeInterval(30 * 60)
+        )
+
+        XCTAssertEqual(metadata.pasteTime, "30 分钟前")
+        XCTAssertEqual(metadata.contentSummary, "1280 x 934")
+    }
+
     func testFavoriteButtonPresentationMakesHoverVisibleWithoutChangingHitSize() {
         let idle = ClipboardFavoriteButtonPresentation(isFavorite: false, isHovered: false)
         let hovered = ClipboardFavoriteButtonPresentation(isFavorite: false, isHovered: true)
@@ -78,14 +181,6 @@ final class ClipboardListViewTests: XCTestCase {
             selectedItemID: nil
         )
         XCTAssertEqual(imageState.filteredItems.map(\.id), [imageItem.id])
-
-        let folderState = ClipboardPanelRenderState(
-            items: items,
-            mode: .folders,
-            query: "",
-            selectedItemID: nil
-        )
-        XCTAssertEqual(folderState.filteredItems.map(\.id), [folderItem.id])
 
         let favoriteState = ClipboardPanelRenderState(
             items: items,
