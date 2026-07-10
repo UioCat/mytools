@@ -5,6 +5,11 @@
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
+- Confirm clipboard history uses one integrated Spotlight-style search header, flat compact result rows, and native Liquid Glass only on the selected row and interactive controls.
+- Confirm the panel has continuous system-style outer corners with no square transparent residue, and the selected row keeps a concentric inner curve.
+- Resize the panel and confirm no rectangular system shadow appears outside its rounded glass edge.
+- Place the panel over both light and dark windows; confirm all four corners outside the glass arc remain fully transparent with no rectangular backdrop tint.
+- Confirm text, URL, file, folder, and image results use a two-line title/metadata layout; images should render as compact leading thumbnails instead of large cards.
 - Use `Option + 2` to open the translation tool.
 - Copy text and confirm it appears in clipboard search.
 - Copy a file and confirm filename/path appears.

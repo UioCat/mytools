@@ -13,29 +13,26 @@ public struct ContextActionView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            header
+        GlassEffectContainer(spacing: 16) {
+            VStack(spacing: 0) {
+                header
 
-            Divider()
-                .overlay(MacToolsGlassTheme.divider)
-                .opacity(0.9)
+                Divider()
+                    .overlay(MacToolsGlassTheme.divider)
+                    .opacity(0.9)
 
-            scrollingPreviewSection
+                scrollingPreviewSection
 
-            Divider()
-                .overlay(MacToolsGlassTheme.divider)
-                .opacity(usesTextLayout ? 0.9 : 0.55)
+                Divider()
+                    .overlay(MacToolsGlassTheme.divider)
+                    .opacity(usesTextLayout ? 0.9 : 0.55)
 
-            actionSection
+                actionSection
+            }
+            .frame(width: panelWidth)
+            .fixedSize(horizontal: false, vertical: true)
+            .glassEffect(.regular, in: panelShape)
         }
-        .frame(width: panelWidth)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(panelBackground)
-        .clipShape(panelShape)
-        .overlay(panelBorder)
-        .environment(\.colorScheme, .light)
-        .shadow(color: .black.opacity(0.38), radius: 34, x: 0, y: 20)
-        .shadow(color: MacToolsGlassTheme.activeBlue.opacity(0.10), radius: 28, x: 0, y: 12)
     }
 
     private var panelWidth: CGFloat {
@@ -48,20 +45,14 @@ public struct ContextActionView: View {
 
     private var header: some View {
         HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(iconColor.opacity(0.18))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(iconColor.opacity(0.42), lineWidth: 1)
-                    )
-                    .shadow(color: iconColor.opacity(0.20), radius: 10, x: 0, y: 5)
-
-                Image(systemName: content.headerSystemImage)
-                    .font(.system(size: usesTextLayout ? 22 : 24, weight: .semibold))
-                    .foregroundStyle(iconColor)
-            }
-            .frame(width: 52, height: 52)
+            Image(systemName: content.headerSystemImage)
+                .font(.system(size: usesTextLayout ? 22 : 24, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 52, height: 52)
+                .glassEffect(
+                    .regular.tint(iconColor.opacity(0.18)),
+                    in: .rect(cornerRadius: 13)
+                )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(content.headerTitle)
@@ -82,7 +73,6 @@ public struct ContextActionView: View {
         .padding(.horizontal, 22)
         .padding(.top, 22)
         .padding(.bottom, 18)
-        .background(headerBackground)
     }
 
     private var previewSection: some View {
@@ -130,7 +120,6 @@ public struct ContextActionView: View {
             }
         }
         .padding(.vertical, 8)
-        .background(Color.white.opacity(content.kind == .fileSystem ? 0.018 : 0.0))
     }
 
     private var primaryActions: [SuperPanelActionDescriptor] {
@@ -185,79 +174,6 @@ public struct ContextActionView: View {
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 8)
-    }
-
-    private var panelBackground: some View {
-        ZStack {
-            panelShape
-                .fill(.ultraThinMaterial)
-
-            panelShape
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.105),
-                            MacToolsGlassTheme.panelTint.opacity(0.145),
-                            Color.white.opacity(0.045)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-
-            panelShape
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.16),
-                            Color.clear,
-                            MacToolsGlassTheme.activeBlue.opacity(0.055)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .blendMode(.screen)
-        }
-    }
-
-    private var headerBackground: some View {
-        ZStack {
-            if content.kind == .fileSystem {
-                LinearGradient(
-                    colors: [
-                        MacToolsGlassTheme.activeBlue.opacity(0.085),
-                        Color.white.opacity(0.035)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            } else {
-                Color.white.opacity(0.030)
-            }
-        }
-    }
-
-    private var panelBorder: some View {
-        ZStack {
-            panelShape
-                .strokeBorder(Color.white.opacity(0.46), lineWidth: 1.1)
-
-            panelShape
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.46),
-                            MacToolsGlassTheme.activeBlue.opacity(0.16),
-                            Color.black.opacity(0.24)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-                .blendMode(.overlay)
-        }
     }
 
     private var iconColor: Color {

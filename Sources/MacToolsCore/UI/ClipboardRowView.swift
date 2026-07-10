@@ -37,91 +37,63 @@ public struct ClipboardRowView: View {
     public var body: some View {
         if showsBackground {
             rowContent
-                .liquidGlassModule(cornerRadius: 24, isSelected: isSelected)
+                .liquidGlassConcentricModule(isSelected: isSelected)
         } else {
             rowContent
         }
     }
 
     private var rowContent: some View {
-        VStack(spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(spacing: 14) {
+            leadingVisual
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(item.displayTitle)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
-                    .lineLimit(isImage ? 1 : 2)
+                    .lineLimit(1)
 
-                Spacer(minLength: 12)
-
-                if !isImage {
-                    Text(primaryMetric)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
-                        .lineLimit(1)
-                }
-
-                HStack(spacing: 8) {
-                    Text("\(index)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(MacToolsGlassTheme.textTertiary)
-                        .frame(width: 24, alignment: .trailing)
-
-                    favoriteButton
-                }
-            }
-
-            if isImage {
-                imagePreview
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 190)
-            }
-
-            HStack(spacing: 8) {
-                Text(relativeCreatedAt)
-                    .font(.system(size: 12, weight: .medium))
+                Text(metadataLine)
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(MacToolsGlassTheme.textTertiary)
-
-                if item.isPinned {
-                    StatusLabel(title: "置顶")
-                }
-
-                if item.isFavorite {
-                    StatusLabel(title: "收藏")
-                }
-
-                Spacer(minLength: 12)
-
-                if isImage {
-                    Text(primaryMetric)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
-                        .lineLimit(1)
-                }
+                    .lineLimit(1)
             }
+
+            Spacer(minLength: 12)
+
+            Text("\(index)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                .frame(minWidth: 22, alignment: .trailing)
+
+            favoriteButton
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, isImage ? 16 : 14)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .task(id: imagePreviewSource) {
             await loadImagePreview()
         }
     }
 
     @ViewBuilder
-    private var imagePreview: some View {
+    private var leadingVisual: some View {
         if let preview = currentImagePreview {
             Image(decorative: preview.cgImage, scale: 1, orientation: .up)
                 .resizable()
-                .scaledToFit()
-                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .scaledToFill()
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(Color.white.opacity(0.26), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(MacToolsGlassTheme.border, lineWidth: 0.5)
                 )
-                .shadow(color: Color.black.opacity(0.26), radius: 14, x: 0, y: 8)
         } else {
             Image(systemName: iconName)
-                .font(.system(size: 42, weight: .regular))
-                .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                .font(.system(size: 24, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(isSelected ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
+                .frame(width: 44, height: 44)
         }
     }
 
@@ -142,15 +114,15 @@ public struct ClipboardRowView: View {
         .foregroundStyle(
             item.isFavorite
                 ? Color.yellow.opacity(0.95)
-                : Color.white.opacity(presentation.foregroundOpacity)
+                : Color.secondary.opacity(presentation.foregroundOpacity)
         )
         .background(
             Circle()
-                .fill(Color.white.opacity(presentation.backgroundOpacity * 0.70))
+                .fill(Color.primary.opacity(presentation.backgroundOpacity * 0.14))
         )
         .overlay(
             Circle()
-                .strokeBorder(Color.white.opacity(presentation.strokeOpacity), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(presentation.strokeOpacity * 0.24), lineWidth: 0.5)
         )
         .scaleEffect(presentation.scale)
         .onHover { isFavoriteButtonHovered = $0 }
@@ -184,6 +156,45 @@ public struct ClipboardRowView: View {
         case .unknown:
             return kindTitle
         }
+    }
+
+    private var metadataLine: String {
+        var components = [kindTitle]
+
+        if primaryMetric != kindTitle {
+            components.append(primaryMetric)
+        }
+
+        if item.isPinned {
+            components.append("置顶")
+        }
+
+        components.append(relativeCreatedAt)
+
+        if let locationLabel {
+            components.append(locationLabel)
+        }
+
+        return components.joined(separator: " · ")
+    }
+
+    private var locationLabel: String? {
+        if let originalPath = item.originalPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !originalPath.isEmpty {
+            let parentName = URL(fileURLWithPath: originalPath)
+                .deletingLastPathComponent()
+                .lastPathComponent
+            if !parentName.isEmpty {
+                return parentName
+            }
+        }
+
+        guard let sourceApp = item.sourceApp?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sourceApp.isEmpty else {
+            return nil
+        }
+
+        return sourceApp
     }
 
     private var currentImagePreview: ClipboardLoadedImagePreview? {
@@ -259,14 +270,6 @@ public struct ClipboardRowView: View {
         case .unknown:
             return "questionmark.circle"
         }
-    }
-
-    private var sourceLabel: String {
-        if let sourceApp = item.sourceApp, !sourceApp.isEmpty {
-            return "\(sourceApp) - \(kindTitle)"
-        }
-
-        return kindTitle
     }
 
     private var kindTitle: String {
@@ -451,18 +454,5 @@ struct ClipboardFavoriteButtonPresentation: Equatable {
         self.strokeOpacity = isHovered ? 0.18 : 0
         self.scale = isHovered ? 1.06 : 1
         self.hitSize = CGSize(width: 30, height: 30)
-    }
-}
-
-private struct StatusLabel: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(MacToolsGlassTheme.textSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .liquidGlassChip(cornerRadius: 9)
     }
 }

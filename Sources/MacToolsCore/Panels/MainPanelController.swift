@@ -3,6 +3,8 @@ import SwiftUI
 
 public final class MainPanelController {
     public static let windowStyleMask: NSWindow.StyleMask = [.borderless, .resizable]
+    static let usesSystemWindowShadow = false
+    static let windowCornerRadius = LiquidGlassCornerGeometry.windowRadius
 
     private var panel: NSPanel?
     private let rootView: AnyView
@@ -34,7 +36,8 @@ public final class MainPanelController {
             panel.standardWindowButton(.zoomButton)?.isHidden = true
             panel.isOpaque = false
             panel.backgroundColor = .clear
-            panel.hasShadow = true
+            // NSWindow shadows follow the rectangular window bounds, not the rounded SwiftUI glass shape.
+            panel.hasShadow = Self.usesSystemWindowShadow
             panel.minSize = minimumSize
             panel.isMovableByWindowBackground = true
             panel.onDismiss = { [weak self] in
@@ -42,9 +45,12 @@ public final class MainPanelController {
             }
 
             let hostingView = NSHostingView(rootView: rootView)
-            hostingView.wantsLayer = true
-            hostingView.layer?.backgroundColor = NSColor.clear.cgColor
             panel.contentView = hostingView
+            Self.configureRoundedBackingLayer(hostingView)
+            if let frameView = hostingView.superview {
+                // Liquid Glass can place its backdrop under the hosting view, so the AppKit frame must match too.
+                Self.configureRoundedBackingLayer(frameView)
+            }
             self.panel = panel
         }
 
@@ -55,6 +61,14 @@ public final class MainPanelController {
 
     public func hide() {
         panel?.orderOut(nil)
+    }
+
+    static func configureRoundedBackingLayer(_ view: NSView) {
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.layer?.cornerRadius = windowCornerRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
     }
 }
 

@@ -27,6 +27,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <string>MacTools</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>26.0</string>
   <key>LSUIElement</key>
   <true/>
 </dict>

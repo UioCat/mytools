@@ -101,7 +101,7 @@ MacTools 是一个原生 macOS 菜单栏效率工具，目标是做一个轻量�
 
 ## 环境要求
 
-- macOS 13 或更高版本。
+- macOS 26 或更高版本（界面使用系统原生 Liquid Glass）。
 - Xcode 或 Xcode Command Line Tools。
 - Swift 5.10。
 

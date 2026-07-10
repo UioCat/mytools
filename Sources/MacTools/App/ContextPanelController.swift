@@ -120,7 +120,7 @@ final class ContextPanelController {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.level = .floating
         panel.collectionBehavior = [.transient, .ignoresCycle]
         panel.isMovableByWindowBackground = true

@@ -189,47 +189,36 @@ public struct MainPanelView: View {
     private var content: some View {
         let renderState = currentRenderState
 
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
             header(itemSummary: renderState.itemSummary)
 
-            modeSwitcher(itemSummary: renderState.itemSummary)
+            Divider()
+                .overlay(MacToolsGlassTheme.divider)
+                .padding(.horizontal, 4)
 
-            clipboardContentArea(renderState: renderState)
+            clipboardList(renderState: renderState)
+                .padding(.top, 6)
         }
-        .padding(18)
+        .padding(presentation == .window ? 18 : 0)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
         .onAppear {
             focusSearchField()
         }
-        .onChange(of: items) { _ in
+        .onChange(of: items) {
             normalizeSelection()
         }
-        .onChange(of: mode) { _ in
+        .onChange(of: mode) {
             normalizeSelection()
         }
-        .onChange(of: query) { _ in
+        .onChange(of: query) {
             normalizeSelection()
         }
-        .onChange(of: resetToken) { _ in
+        .onChange(of: resetToken) {
             resetPanelState()
             focusSearchField()
         }
-        .onChange(of: searchFocusToken) { _ in
+        .onChange(of: searchFocusToken) {
             focusSearchField()
-        }
-    }
-
-    private func clipboardContentArea(renderState: ClipboardPanelRenderState) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) {
-                clipboardList(renderState: renderState)
-                    .frame(minWidth: 0, maxWidth: .infinity)
-
-                clipboardDetailPane(selectedItem: renderState.selectedItem)
-                    .frame(width: 292)
-            }
-
-            clipboardList(renderState: renderState)
         }
     }
 
@@ -250,117 +239,11 @@ public struct MainPanelView: View {
     }
 
     @ViewBuilder
-    private func clipboardDetailPane(selectedItem: ClipboardItem?) -> some View {
-        if let selectedItem {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    GlassIconBadge(systemName: iconName(for: selectedItem), size: 46, iconSize: 20)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(selectedItem.displayTitle)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(MacToolsGlassTheme.textPrimary)
-                            .lineLimit(2)
-
-                        Text(detailMetric(for: selectedItem))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(MacToolsGlassTheme.textSecondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-
-                Text(detailPreview(for: selectedItem))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
-                    .lineSpacing(4)
-                    .lineLimit(6)
-                    .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(MacToolsGlassTheme.fieldFill)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(MacToolsGlassTheme.border, lineWidth: 1)
-                    )
-
-                VStack(spacing: 10) {
-                    Button {
-                        onSelect(selectedItem, .copyAndPaste)
-                    } label: {
-                        Label("粘贴", systemImage: "clipboard")
-                            .font(.system(size: 15, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GlassPrimaryButtonStyle(cornerRadius: 14))
-
-                    detailSecondaryButton(title: "复制", systemImage: "doc.on.doc") {
-                        onSelect(selectedItem, .copy)
-                    }
-
-                    detailSecondaryButton(
-                        title: selectedItem.isFavorite ? "取消收藏" : "收藏",
-                        systemImage: selectedItem.isFavorite ? "star.slash" : "star"
-                    ) {
-                        onFavoriteToggle(selectedItem)
-                    }
-
-                    detailSecondaryButton(
-                        title: "删除",
-                        systemImage: "trash",
-                        foreground: MacToolsGlassTheme.destructive
-                    ) {
-                        onDelete(selectedItem)
-                    }
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(18)
-            .liquidGlassModule(cornerRadius: 24)
-        } else {
-            VStack(spacing: 10) {
-                Image(systemName: "doc.on.clipboard")
-                    .font(.system(size: 28, weight: .regular))
-                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
-
-                Text("选择一条记录查看详情")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 240)
-            .padding(18)
-            .liquidGlassModule(cornerRadius: 24)
-        }
-    }
-
-    private func detailSecondaryButton(
-        title: String,
-        systemImage: String,
-        foreground: Color = MacToolsGlassTheme.textPrimary,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 14, weight: .semibold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .foregroundStyle(foreground)
-        .liquidGlassButtonStyle(cornerRadius: 14)
-    }
-
-    @ViewBuilder
     private func header(itemSummary: ClipboardPanelItemSummary) -> some View {
-        HStack(spacing: 14) {
-            if let workspaceSidebarChrome {
-                sidebarToggleButton(workspaceSidebarChrome)
-            }
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
 
             TextField(
                 "搜索...",
@@ -368,78 +251,98 @@ public struct MainPanelView: View {
                 prompt: Text("搜索剪贴板").foregroundColor(MacToolsGlassTheme.textTertiary)
             )
                 .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(MacToolsGlassTheme.textPrimary)
                 .focused($isSearchFocused)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 14)
-                .liquidGlassInteractiveModule(cornerRadius: 24)
                 .onSubmit {
                     performSelectedAction(.copyAndPaste)
                 }
 
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                .help("清除搜索")
+                .accessibilityLabel("清除搜索")
+            }
+
+            scopeMenu(itemSummary: itemSummary)
+
+            if let workspaceSidebarChrome {
+                sidebarToggleButton(workspaceSidebarChrome)
+            }
+
             Button {
                 onClear()
             } label: {
-                Label("清空", systemImage: "trash")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(minWidth: 56)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 13)
-                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 38, height: 38)
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .foregroundStyle(clearButtonColor(for: itemSummary))
-            .liquidGlassButtonStyle(cornerRadius: 22)
+            .liquidGlassButtonStyle(cornerRadius: 14, minimumSize: CGSize(width: 38, height: 38))
             .disabled(!itemSummary.hasClearableItems)
             .opacity(itemSummary.hasClearableItems ? 1 : 0.64)
+            .help("清空未收藏的记录")
+            .accessibilityLabel("清空未收藏的记录")
         }
-        .liquidGlassGroup(spacing: 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .liquidGlassGroup(spacing: 12)
     }
 
     private func sidebarToggleButton(_ chrome: MainWorkspaceSidebarChrome) -> some View {
         Button {
             chrome.toggleSidebar()
         } label: {
-            Image(systemName: chrome.isSidebarVisible ? "sidebar.left" : "sidebar.left")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(
-                    width: MainWorkspaceLayout.collapsedSidebarToggleSize.width,
-                    height: MainWorkspaceLayout.collapsedSidebarToggleSize.height
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 38, height: 38)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .foregroundStyle(chrome.isSidebarVisible ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
         .liquidGlassButtonStyle(
-            cornerRadius: 18,
+            cornerRadius: 14,
             isSelected: chrome.isSidebarVisible,
-            minimumSize: MainWorkspaceLayout.collapsedSidebarToggleSize
+            minimumSize: CGSize(width: 38, height: 38)
         )
         .help(chrome.isSidebarVisible ? "隐藏工具栏" : "显示工具栏")
     }
 
     @ViewBuilder
-    private func modeSwitcher(itemSummary: ClipboardPanelItemSummary) -> some View {
-        HStack(spacing: 10) {
+    private func scopeMenu(itemSummary: ClipboardPanelItemSummary) -> some View {
+        Menu {
             ForEach(ClipboardPanelMode.allCases, id: \.self) { itemMode in
                 Button {
                     mode = itemMode
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: itemMode.iconName)
-                            .font(.system(size: 15, weight: .semibold))
-
-                        Text(tabTitle(for: itemMode, itemSummary: itemSummary))
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    Label(
+                        tabTitle(for: itemMode, itemSummary: itemSummary),
+                        systemImage: mode == itemMode ? "checkmark" : itemMode.iconName
+                    )
                 }
-                .foregroundStyle(mode == itemMode ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
-                .liquidGlassButtonStyle(cornerRadius: 20, isSelected: mode == itemMode)
             }
+        } label: {
+            Label(tabTitle(for: mode, itemSummary: itemSummary), systemImage: mode.iconName)
+                .font(.system(size: 13, weight: .medium))
+                .padding(.horizontal, 10)
+                .frame(height: 36)
+                .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
-        .liquidGlassGroup(spacing: 10)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(MacToolsGlassTheme.textSecondary)
+        .liquidGlassButtonStyle(cornerRadius: 13, minimumSize: CGSize(width: 72, height: 36))
+        .help("筛选范围：\(tabTitle(for: mode, itemSummary: itemSummary))")
     }
 
     private var keyboardActions: some View {
@@ -477,73 +380,6 @@ public struct MainPanelView: View {
         return mode.title
     }
 
-    private func iconName(for item: ClipboardItem) -> String {
-        switch item.kind {
-        case .text:
-            return "text.alignleft"
-        case .url:
-            return "link"
-        case .file:
-            return "doc"
-        case .folder:
-            return "folder"
-        case .imageFile, .imageData:
-            return "photo"
-        case .unknown:
-            return "questionmark.circle"
-        }
-    }
-
-    private func detailMetric(for item: ClipboardItem) -> String {
-        let relativeTime = relativeCreatedAt(for: item)
-        let metric: String
-        switch item.kind {
-        case .text, .url:
-            metric = "\(item.searchableText.count) 字符"
-        case .file:
-            metric = "文件"
-        case .folder:
-            metric = "文件夹"
-        case .imageFile, .imageData:
-            metric = "图片"
-        case .unknown:
-            metric = "未知类型"
-        }
-
-        return "\(relativeTime) · \(metric)"
-    }
-
-    private func detailPreview(for item: ClipboardItem) -> String {
-        let candidates = [
-            item.text,
-            item.originalPath,
-            item.searchableText.isEmpty ? nil : item.searchableText,
-            item.displayTitle
-        ]
-
-        return candidates
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first(where: { !$0.isEmpty }) ?? "暂无可预览内容"
-    }
-
-    private func relativeCreatedAt(for item: ClipboardItem) -> String {
-        let elapsed = max(0, Date().timeIntervalSince(item.createdAt))
-
-        if elapsed < 60 {
-            return "刚刚"
-        }
-
-        if elapsed < 3600 {
-            return "\(Int(elapsed / 60)) 分钟前"
-        }
-
-        if elapsed < 86400 {
-            return "\(Int(elapsed / 3600)) 小时前"
-        }
-
-        return "\(Int(elapsed / 86400)) 天前"
-    }
-
     private func clearButtonColor(for itemSummary: ClipboardPanelItemSummary) -> Color {
         itemSummary.hasClearableItems ? MacToolsGlassTheme.textSecondary : MacToolsGlassTheme.textDisabled
     }
@@ -573,16 +409,6 @@ public struct MainPanelView: View {
         } ?? 0
         let nextIndex = min(max(currentIndex + offset, 0), visibleItems.count - 1)
         selectedItemID = visibleItems[nextIndex].id
-    }
-
-    private func switchMode(by offset: Int) {
-        let modes = ClipboardPanelMode.allCases
-        guard let currentIndex = modes.firstIndex(of: mode) else {
-            return
-        }
-
-        let nextIndex = min(max(currentIndex + offset, 0), modes.count - 1)
-        mode = modes[nextIndex]
     }
 
     private func normalizeSelection() {
@@ -625,12 +451,6 @@ public struct MainPanelView: View {
         switch event.keyCode {
         case 36, 76:
             performSelectedAction(event.modifierFlags.contains(.command) ? .copy : .copyAndPaste)
-            return true
-        case 123:
-            switchMode(by: -1)
-            return true
-        case 124:
-            switchMode(by: 1)
             return true
         case 125:
             moveSelection(by: 1)

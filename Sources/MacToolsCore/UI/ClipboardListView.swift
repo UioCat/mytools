@@ -36,7 +36,7 @@ public struct ClipboardListView: View {
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 10) {
+                LazyVStack(spacing: 2) {
                     if items.isEmpty {
                         emptyState
                     } else {
@@ -47,13 +47,13 @@ public struct ClipboardListView: View {
                                 item: item,
                                 index: index + 1,
                                 isSelected: isSelected,
-                                showsBackground: true,
+                                showsBackground: isSelected,
                                 onFavoriteToggle: {
                                     onFavoriteToggle(item)
                                 }
                             )
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .onTapGesture {
                                 onSelect(item)
                             }
@@ -78,11 +78,11 @@ public struct ClipboardListView: View {
                         }
                     }
                 }
-                .padding(.vertical, 2)
-                .liquidGlassGroup(spacing: 10)
+                .padding(.vertical, 4)
+                .liquidGlassGroup(spacing: 2)
             }
             .background(Color.clear)
-            .onChange(of: selectedItemID) { id in
+            .onChange(of: selectedItemID) { _, id in
                 guard let id else {
                     return
                 }
@@ -109,7 +109,6 @@ public struct ClipboardListView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 72)
-        .liquidGlassModule(cornerRadius: 24)
     }
 }
 
