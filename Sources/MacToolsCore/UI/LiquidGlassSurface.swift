@@ -5,6 +5,8 @@ enum LiquidGlassTint: Equatable {
     case none
     case neutral(Double)
     case adaptiveGray(Double)
+    case frost(Double)
+    case selection(Double)
     case accent(Double)
 
     var color: Color? {
@@ -15,6 +17,10 @@ enum LiquidGlassTint: Equatable {
             return Color(nsColor: .windowBackgroundColor).opacity(opacity)
         case .adaptiveGray(let opacity):
             return Color.primary.opacity(opacity)
+        case .frost(let opacity):
+            return Color.white.opacity(opacity)
+        case .selection(let opacity):
+            return MacToolsGlassTheme.selectionBlue.opacity(opacity)
         case .accent(let opacity):
             return Color.accentColor.opacity(opacity)
         }
@@ -66,8 +72,16 @@ struct LiquidGlassSurfaceStyle {
     static func concentricModule(minimumCornerRadius: CGFloat, isSelected: Bool) -> LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .concentric(minimum: minimumCornerRadius),
-            isInteractive: false,
-            tint: isSelected ? .adaptiveGray(0.18) : .neutral(0.10)
+            isInteractive: isSelected,
+            tint: isSelected ? .frost(0.22) : .neutral(0.10)
+        )
+    }
+
+    static func floatingSelection(cornerRadius: CGFloat) -> LiquidGlassSurfaceStyle {
+        LiquidGlassSurfaceStyle(
+            cornerShape: .fixed(cornerRadius),
+            isInteractive: true,
+            tint: .selection(0.12)
         )
     }
 
@@ -219,12 +233,56 @@ struct LiquidGlassConcentricModuleModifier: ViewModifier {
     let isSelected: Bool
 
     func body(content: Content) -> some View {
+        let shape = ConcentricRectangle(
+            corners: .concentric(minimum: .fixed(minimumCornerRadius)),
+            isUniform: true
+        )
+
         content.nativeLiquidGlassSurface(
             style: .concentricModule(
                 minimumCornerRadius: minimumCornerRadius,
                 isSelected: isSelected
             )
         )
+        .overlay {
+            if isSelected {
+                shape
+                    .stroke(Color.white.opacity(0.36), lineWidth: 1.5)
+                shape
+                    .stroke(MacToolsGlassTheme.selectionBlue.opacity(0.30), lineWidth: 0.75)
+            }
+        }
+        .shadow(
+            color: Color.black.opacity(isSelected ? 0.14 : 0),
+            radius: isSelected ? 14 : 0,
+            x: 0,
+            y: isSelected ? 6 : 0
+        )
+        .shadow(
+            color: Color.black.opacity(isSelected ? 0.055 : 0),
+            radius: isSelected ? 3 : 0,
+            x: 0,
+            y: isSelected ? 1 : 0
+        )
+    }
+}
+
+struct LiquidGlassFloatingSelectionModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        content
+            .nativeLiquidGlassSurface(style: .floatingSelection(cornerRadius: cornerRadius))
+            .overlay {
+                shape
+                    .stroke(Color.white.opacity(0.30), lineWidth: 1.25)
+                shape
+                    .stroke(MacToolsGlassTheme.selectionBlue.opacity(0.24), lineWidth: 0.75)
+            }
+            .shadow(color: Color.black.opacity(0.10), radius: 8, x: 0, y: 3)
+            .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
     }
 }
 
@@ -361,6 +419,10 @@ public extension View {
                 isSelected: isSelected
             )
         )
+    }
+
+    func liquidGlassFloatingSelection(cornerRadius: CGFloat = 12) -> some View {
+        modifier(LiquidGlassFloatingSelectionModifier(cornerRadius: cornerRadius))
     }
 
     func liquidGlassInteractiveModule(cornerRadius: CGFloat = 22, isSelected: Bool = false) -> some View {

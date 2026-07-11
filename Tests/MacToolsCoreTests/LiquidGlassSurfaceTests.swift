@@ -11,7 +11,7 @@ final class LiquidGlassSurfaceTests: XCTestCase {
         XCTAssertEqual(style.tint, .none)
     }
 
-    func testSelectedClipboardRowUsesDeeperAdaptiveGrayAndConcentricGeometry() {
+    func testSelectedClipboardRowUsesInteractiveFrostTintAndConcentricGeometry() {
         let selectedRow = LiquidGlassSurfaceStyle.concentricModule(
             minimumCornerRadius: LiquidGlassCornerGeometry.selectedRowMinimumRadius,
             isSelected: true
@@ -19,8 +19,16 @@ final class LiquidGlassSurfaceTests: XCTestCase {
 
         XCTAssertEqual(LiquidGlassCornerGeometry.windowRadius, 40)
         XCTAssertEqual(selectedRow.cornerShape, .concentric(minimum: 18))
-        XCTAssertEqual(selectedRow.tint, .adaptiveGray(0.18))
-        XCTAssertFalse(selectedRow.isInteractive)
+        XCTAssertEqual(selectedRow.tint, .frost(0.22))
+        XCTAssertTrue(selectedRow.isInteractive)
+    }
+
+    func testFloatingSelectionUsesProminentSelectionTintWithPointerResponse() {
+        let selection = LiquidGlassSurfaceStyle.floatingSelection(cornerRadius: 12)
+
+        XCTAssertEqual(selection.cornerShape, .fixed(12))
+        XCTAssertEqual(selection.tint, .selection(0.12))
+        XCTAssertTrue(selection.isInteractive)
     }
 
     func testMainWorkspaceOpensAtTwoThirdsOfPreviousSize() {

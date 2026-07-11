@@ -3,6 +3,7 @@ import SwiftUI
 public enum MacToolsGlassTheme {
     public static let activeBlue = Color.accentColor
     public static let activeBlueSoft = Color.accentColor.opacity(0.72)
+    public static let selectionBlue = Color(nsColor: .systemBlue)
     public static let success = Color.green
     public static let warning = Color.orange
     public static let destructive = Color.red

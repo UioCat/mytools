@@ -356,14 +356,24 @@ public struct MainPanelView: View {
                 Button {
                     mode = itemMode
                 } label: {
-                    Label(
-                        tabTitle(for: itemMode, itemSummary: itemSummary),
-                        systemImage: itemMode.iconName
-                    )
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                    .foregroundStyle(
-                        isSelected ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary
-                    )
+                    VStack(spacing: 2) {
+                        HStack(spacing: 6) {
+                            Image(systemName: itemMode.iconName)
+                                .foregroundStyle(
+                                    isSelected ? MacToolsGlassTheme.selectionBlue : MacToolsGlassTheme.textSecondary
+                                )
+
+                            Text(tabTitle(for: itemMode, itemSummary: itemSummary))
+                                .foregroundStyle(
+                                    isSelected ? MacToolsGlassTheme.selectionBlue : MacToolsGlassTheme.textSecondary
+                                )
+                        }
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+
+                        Capsule()
+                            .fill(isSelected ? MacToolsGlassTheme.selectionBlue : Color.clear)
+                            .frame(width: 18, height: 3)
+                    }
                     .frame(maxWidth: .infinity)
                     .frame(height: 36)
                     .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -571,7 +581,7 @@ private struct ClipboardCategoryButtonSurfaceModifier: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if isVisible {
-            content.liquidGlassModule(cornerRadius: 12, isSelected: true)
+            content.liquidGlassFloatingSelection(cornerRadius: 12)
         } else {
             content
         }

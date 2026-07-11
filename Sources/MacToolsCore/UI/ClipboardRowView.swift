@@ -165,7 +165,7 @@ public struct ClipboardRowView: View {
             Image(systemName: iconName)
                 .font(.system(size: 24, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(isSelected ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
+                .foregroundStyle(isSelected ? MacToolsGlassTheme.selectionBlue : MacToolsGlassTheme.textSecondary)
                 .frame(width: 44, height: 44)
         }
     }
