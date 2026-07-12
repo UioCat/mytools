@@ -1,6 +1,7 @@
 import CoreGraphics
 
 public enum ScreenshotAnnotation: Equatable {
+    case line(start: CGPoint, end: CGPoint)
     case arrow(start: CGPoint, end: CGPoint)
     case rectangle(CGRect)
     case mosaic(CGRect)

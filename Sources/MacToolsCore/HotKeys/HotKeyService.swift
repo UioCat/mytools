@@ -42,7 +42,7 @@ public final class HotKeyService {
             (settings.mainPanelShortcut.hotKey, .mainPanel),
             (settings.clipboardShortcut.hotKey, .clipboard),
             (settings.reservedTool2Shortcut.hotKey, .translation),
-            (settings.reservedTool3Shortcut.hotKey, .reservedTool3)
+            (settings.reservedTool3Shortcut.hotKey, .screenCapture)
         ]
 
         let windowLayoutHotKeys = settings.windowLayout.shortcutBindings.map { shortcutBinding in

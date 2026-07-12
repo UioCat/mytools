@@ -9,7 +9,7 @@ final class HotKeyServiceTests: XCTestCase {
         XCTAssertEqual(service.binding(for: "Option+Space"), .mainPanel)
         XCTAssertEqual(service.binding(for: "Option+1"), .clipboard)
         XCTAssertEqual(service.binding(for: "Option+2"), .translation)
-        XCTAssertEqual(service.binding(for: "Option+3"), .reservedTool3)
+        XCTAssertEqual(service.binding(for: "Option+3"), .screenCapture)
         XCTAssertEqual(service.binding(for: "Control+Command+Left"), .windowLayout(.leftHalf))
         XCTAssertEqual(service.binding(for: "Control+Command+Right"), .windowLayout(.rightHalf))
         XCTAssertEqual(service.binding(for: "Control+Option+Left"), .windowLayout(.leftThird))

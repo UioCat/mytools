@@ -15,7 +15,7 @@ public enum ScreenCaptureSessionState: Equatable {
 
     @discardableResult
     public mutating func acceptSelection(_ selection: ScreenCaptureSelection) -> Bool {
-        guard selection.isValid else {
+        guard case .selecting = self, selection.isValid else {
             return false
         }
 

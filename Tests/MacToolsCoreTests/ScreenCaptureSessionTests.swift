@@ -25,6 +25,18 @@ final class ScreenCaptureSessionTests: XCTestCase {
         XCTAssertEqual(state, .capturingScreenshot)
     }
 
+    func testSessionRejectsASelectionOutsideSelectionMode() {
+        var state = ScreenCaptureSessionState.idle
+        let selection = ScreenCaptureSelection(
+            displayID: 7,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            rawSelectionFrame: CGRect(x: 10, y: 10, width: 50, height: 50)
+        )
+
+        XCTAssertFalse(state.acceptSelection(selection))
+        XCTAssertEqual(state, .idle)
+    }
+
     func testRecordingStateTransitionsToFinishedWhenStopped() {
         var state = ScreenCaptureSessionState.idle
         let selection = ScreenCaptureSelection(
@@ -33,6 +45,7 @@ final class ScreenCaptureSessionTests: XCTestCase {
             rawSelectionFrame: CGRect(x: 10, y: 10, width: 40, height: 40)
         )
 
+        state.beginSelection()
         XCTAssertTrue(state.acceptSelection(selection))
         XCTAssertTrue(state.beginRecording())
 

@@ -21,6 +21,15 @@
 - Place the panel over both light and dark windows; confirm all four corners outside the glass arc remain fully transparent with no rectangular backdrop tint.
 - Confirm text, URL, file, folder, and image results use a two-line title/metadata layout; images should render as compact leading thumbnails instead of large cards.
 - Use `Option + 2` to open the translation tool.
+- Use `Option + 3`, or select `截图与录屏` from the MacTools menu bar menu, to start Screenshot and Recording. If the permission is absent, confirm the alert opens the Screen Recording privacy pane.
+- Confirm the dimmed selector accepts only a manually dragged rectangle within the display where the drag began; press Escape and confirm that it writes no clipboard item and creates no file.
+- After selection, confirm the floating action bar offers exactly `截图` and `录屏`.
+- Choose `截图`; draw a line, an arrow, a rectangle, and a mosaic region, then confirm `完成并复制` writes the edited PNG to the system clipboard.
+- In the screenshot editor, confirm Cmd+Z removes only the most recent annotation, Cmd+Return copies the PNG, and Escape cancels editing.
+- Choose `录屏`; confirm the red floating control shows elapsed time and a labeled `停止` action, and does not appear in the recorded video.
+- Stop a recording and confirm a playable H.264 MP4 named `MacTools Recording …` is created in Downloads and selected in Finder.
+- While recording, press `Option + 3` again and confirm the existing recording remains active without opening a second selector.
+- Place the selection overlay, editor, and recording control over both light and dark content; confirm no titlebar residue, rectangular system shadow, gray outline, or backing layer appears outside the intended rounded surfaces.
 - Copy text and confirm it appears in clipboard search.
 - Copy a file and confirm filename/path appears.
 - Copy a folder and confirm folder actions show Copy Path and Open in Terminal.

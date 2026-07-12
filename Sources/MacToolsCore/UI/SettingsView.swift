@@ -139,7 +139,7 @@ public struct SettingsView: View {
             SettingsRow(title: "设置页", value: settings.mainPanelShortcut.displayValue)
             SettingsRow(title: "剪贴板", value: settings.clipboardShortcut.displayValue)
             SettingsRow(title: "翻译", value: settings.reservedTool2Shortcut.displayValue)
-            SettingsRow(title: "工具 3", value: settings.reservedTool3Shortcut.displayValue)
+            SettingsRow(title: "截图与录屏", value: settings.reservedTool3Shortcut.displayValue)
         }
     }
 
