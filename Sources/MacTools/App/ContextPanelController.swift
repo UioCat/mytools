@@ -105,7 +105,7 @@ final class ContextPanelController {
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 210),
             styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -125,32 +125,7 @@ final class ContextPanelController {
     }
 
     private func panelSize(for content: SuperPanelContent) -> NSSize {
-        let previewRowsHeight = CGFloat(content.previewRows.count) * 46
-        let primaryActionCount = content.actions.filter { !$0.id.isWindowLayoutButton }.count
-        let windowLayoutActionCount = content.actions.count - primaryActionCount
-        let windowLayoutRows = CGFloat((windowLayoutActionCount + 1) / 2)
-        let actionsHeight = CGFloat(primaryActionCount) * 58
-            + (windowLayoutActionCount > 0 ? 42 + windowLayoutRows * 44 : 0)
-        let expandedTextHeight = estimatedExpandedTextHeight(for: content)
-        let height = 92 + previewRowsHeight + expandedTextHeight + actionsHeight + 22
-        let cappedHeight = min(max(height, 260), 620)
-        let width: CGFloat = content.kind == .fileSystem ? 520 : 500
-        return NSSize(width: width, height: cappedHeight)
-    }
-
-    private func estimatedExpandedTextHeight(for content: SuperPanelContent) -> CGFloat {
-        guard content.kind == .text || content.kind == .textTransit else {
-            return 0
-        }
-
-        let totalCharacters = content.previewRows.reduce(0) { total, row in
-            total + row.value.count
-        }
-        guard totalCharacters > 120 else {
-            return 0
-        }
-
-        return min(CGFloat(totalCharacters / 48) * 18, 280)
+        SuperPanelLayout.panelSize(for: content)
     }
 
     private func panelOrigin(for size: NSSize) -> NSPoint {

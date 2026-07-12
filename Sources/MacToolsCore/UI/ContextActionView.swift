@@ -13,6 +13,8 @@ public struct ContextActionView: View {
     }
 
     public var body: some View {
+        let panelSize = SuperPanelLayout.panelSize(for: content)
+
         GlassEffectContainer(spacing: 16) {
             VStack(spacing: 0) {
                 header
@@ -21,22 +23,11 @@ public struct ContextActionView: View {
                     .overlay(MacToolsGlassTheme.divider)
                     .opacity(0.9)
 
-                scrollingPreviewSection
-
-                Divider()
-                    .overlay(MacToolsGlassTheme.divider)
-                    .opacity(usesTextLayout ? 0.9 : 0.55)
-
-                actionSection
+                scrollableBody
             }
-            .frame(width: panelWidth)
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: panelSize.width, height: panelSize.height)
             .glassEffect(.regular, in: panelShape)
         }
-    }
-
-    private var panelWidth: CGFloat {
-        usesTextLayout ? 500 : 520
     }
 
     private var panelShape: RoundedRectangle {
@@ -44,35 +35,40 @@ public struct ContextActionView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: SuperPanelLayout.headerSpacing) {
             Image(systemName: content.headerSystemImage)
-                .font(.system(size: usesTextLayout ? 22 : 24, weight: .semibold))
+                .font(.system(size: SuperPanelLayout.headerIconFontSize, weight: .semibold))
                 .foregroundStyle(iconColor)
-                .frame(width: 52, height: 52)
+                .frame(
+                    width: SuperPanelLayout.headerIconSize,
+                    height: SuperPanelLayout.headerIconSize
+                )
                 .glassEffect(
                     .regular.tint(iconColor.opacity(0.18)),
-                    in: .rect(cornerRadius: 13)
+                    in: .rect(cornerRadius: 9)
                 )
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: SuperPanelLayout.headerTextSpacing) {
                 Text(content.headerTitle)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: SuperPanelLayout.headerTitleFontSize, weight: .semibold))
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
 
                 Text(content.headerSubtitle)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: SuperPanelLayout.headerSubtitleFontSize, weight: .medium))
                     .foregroundStyle(MacToolsGlassTheme.textSecondary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
 
-            Spacer(minLength: 16)
+            Spacer(minLength: 8)
 
             trailingHeaderAccessory
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 22)
-        .padding(.bottom, 18)
+        .padding(.horizontal, SuperPanelLayout.headerHorizontalPadding)
+        .padding(.top, SuperPanelLayout.headerTopPadding)
+        .padding(.bottom, SuperPanelLayout.headerBottomPadding)
     }
 
     private var previewSection: some View {
@@ -91,11 +87,18 @@ public struct ContextActionView: View {
         .background(MacToolsGlassTheme.fieldFill.opacity(usesTextLayout ? 1 : 0))
     }
 
-    private var scrollingPreviewSection: some View {
+    private var scrollableBody: some View {
         ScrollView {
-            previewSection
+            VStack(spacing: 0) {
+                previewSection
+
+                Divider()
+                    .overlay(MacToolsGlassTheme.divider)
+                    .opacity(usesTextLayout ? 0.9 : 0.55)
+
+                actionSection
+            }
         }
-        .frame(maxHeight: usesTextLayout ? 380 : nil)
     }
 
     private var actionSection: some View {
@@ -206,11 +209,17 @@ public struct ContextActionView: View {
     private var trailingHeaderAccessory: some View {
         if content.showsLoadingIndicator {
             ProgressView()
-                .controlSize(.regular)
-                .frame(width: 28, height: 28)
+                .controlSize(.small)
+                .frame(
+                    width: SuperPanelLayout.headerAccessorySize,
+                    height: SuperPanelLayout.headerAccessorySize
+                )
         } else {
             Image(systemName: trailingHeaderIconName)
-                .font(.system(size: 26, weight: .regular))
+                .font(.system(
+                    size: SuperPanelLayout.headerTrailingIconFontSize,
+                    weight: .regular
+                ))
                 .foregroundStyle(MacToolsGlassTheme.textSecondary)
         }
     }
