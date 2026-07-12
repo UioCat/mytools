@@ -18,6 +18,7 @@ final class AppEnvironment {
     private let permissionService = PermissionService()
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
     private let finderCurrentFolderResolver: any FinderCurrentFolderResolving = SystemFinderCurrentFolderResolver()
+    private let finderFolderResolutionCoordinator = FinderFolderResolutionCoordinator()
     private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
     private var clipboardTimer: Timer?
@@ -393,6 +394,7 @@ final class AppEnvironment {
             sourceApplication: result.sourceApplication
         ) {
         case .text:
+            finderFolderResolutionCoordinator.cancel()
             contextPanel.showText(
                 originalText: result.item.text ?? "",
                 translation: result.translation,
@@ -400,22 +402,34 @@ final class AppEnvironment {
                 reposition: result.translation == nil
             )
         case .fileSystem:
+            finderFolderResolutionCoordinator.cancel()
             contextPanel.show(item: result.item)
         case .finderCurrentFolder:
-            Task { [weak self] in
-                await self?.showFinderCurrentFolder(sourceApplication: result.sourceApplication)
-            }
+            let sourceApplication = result.sourceApplication
+            finderFolderResolutionCoordinator.replace(
+                operation: { [finderCurrentFolderResolver] in
+                    await finderCurrentFolderResolver.currentFolderURL(
+                        processIdentifier: sourceApplication?.processIdentifier
+                    )
+                },
+                completion: { [weak self] folderURL in
+                    self?.showFinderCurrentFolder(
+                        folderURL: folderURL,
+                        sourceApplication: sourceApplication
+                    )
+                }
+            )
         case .windowLayoutOnly:
+            finderFolderResolutionCoordinator.cancel()
             contextPanel.showWindowLayoutOnly()
         }
     }
 
     private func showFinderCurrentFolder(
+        folderURL: URL?,
         sourceApplication: SuperRightClickSourceApplication?
-    ) async {
-        guard let folderURL = await finderCurrentFolderResolver.currentFolderURL(
-            processIdentifier: sourceApplication?.processIdentifier
-        ) else {
+    ) {
+        guard let folderURL else {
             logger.error("finder current folder unavailable; showing window layouts only")
             contextPanel.showWindowLayoutOnly()
             return

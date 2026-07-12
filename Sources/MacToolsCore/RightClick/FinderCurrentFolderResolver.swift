@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Darwin
 import Foundation
 
 public protocol FinderCurrentFolderResolving {
@@ -47,9 +48,226 @@ enum FinderWindowLookupClassification: Equatable {
     }
 }
 
+enum FinderScriptingProcessResult: Equatable {
+    case success(String)
+    case launchFailure
+    case nonzeroStatus(Int32)
+    case timeout
+    case cancellation
+    case invalidOutput
+}
+
+struct FinderScriptingProcessRunner: Sendable {
+    private let executableURL: URL
+    private let arguments: [String]
+    private let timeout: TimeInterval
+    private let terminationGracePeriod: TimeInterval
+    private let state = State()
+
+    init(
+        executableURL: URL,
+        arguments: [String],
+        timeout: TimeInterval,
+        terminationGracePeriod: TimeInterval = 0.2
+    ) {
+        self.executableURL = executableURL
+        self.arguments = arguments
+        self.timeout = timeout
+        self.terminationGracePeriod = terminationGracePeriod
+    }
+
+    func run() async -> FinderScriptingProcessResult {
+        let worker = Task.detached(priority: .userInitiated) {
+            runSynchronously()
+        }
+
+        return await withTaskCancellationHandler {
+            let result = await worker.value
+            return Task.isCancelled ? .cancellation : result
+        } onCancel: {
+            worker.cancel()
+            cancel()
+        }
+    }
+
+    private func cancel() {
+        state.cancel()
+    }
+
+    private func runSynchronously() -> FinderScriptingProcessResult {
+        guard !state.isCancellationRequested else {
+            return .cancellation
+        }
+
+        let process = Process()
+        let outputPipe = Pipe()
+        let readingHandle = outputPipe.fileHandleForReading
+        let writingHandle = outputPipe.fileHandleForWriting
+        defer {
+            try? readingHandle.close()
+            try? writingHandle.close()
+        }
+
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardOutput = outputPipe
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [state] _ in
+            state.signalProcessCompletion()
+        }
+
+        do {
+            try process.run()
+            try? writingHandle.close()
+        } catch {
+            return state.isCancellationRequested ? .cancellation : .launchFailure
+        }
+
+        guard state.register(process) else {
+            terminateAndReap(process)
+            return .cancellation
+        }
+
+        let waitDeadline = DispatchTime.now() + timeout
+        while process.isRunning && !state.isCancellationRequested {
+            if state.waitForProcessCompletion(until: waitDeadline) == .timedOut {
+                break
+            }
+        }
+
+        if process.isRunning {
+            let result: FinderScriptingProcessResult = state.isCancellationRequested
+                ? .cancellation
+                : .timeout
+            terminateAndReap(process)
+            return result
+        }
+
+        process.waitUntilExit()
+        state.clear(process)
+        guard !state.isCancellationRequested else {
+            return .cancellation
+        }
+        guard process.terminationStatus == 0 else {
+            return .nonzeroStatus(process.terminationStatus)
+        }
+
+        let output = readingHandle.readDataToEndOfFile()
+        guard let rawDocument = String(data: output, encoding: .utf8) else {
+            return .invalidOutput
+        }
+
+        let document = rawDocument.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard FinderDocumentURLParser.fileURL(from: document) != nil else {
+            return .invalidOutput
+        }
+        return .success(document)
+    }
+
+    private func terminateAndReap(_ process: Process) {
+        let processIdentifier = process.processIdentifier
+        Self.sendSignal(SIGTERM, toProcessTreeRootedAt: processIdentifier)
+
+        let graceDeadline = DispatchTime.now() + terminationGracePeriod
+        while process.isRunning {
+            if state.waitForProcessCompletion(until: graceDeadline) == .timedOut {
+                break
+            }
+        }
+
+        if process.isRunning {
+            Self.sendSignal(SIGKILL, toProcessTreeRootedAt: processIdentifier)
+        }
+        process.waitUntilExit()
+        state.clear(process)
+    }
+
+    private static func sendSignal(_ signal: Int32, toProcessTreeRootedAt root: pid_t) {
+        for descendant in descendants(of: root).reversed() {
+            _ = Darwin.kill(descendant, signal)
+        }
+        _ = Darwin.kill(root, signal)
+    }
+
+    private static func descendants(of processIdentifier: pid_t) -> [pid_t] {
+        var pending = [processIdentifier]
+        var descendants: [pid_t] = []
+
+        while let parent = pending.popLast() {
+            var children = Array(repeating: pid_t(0), count: 64)
+            let reportedCount = children.withUnsafeMutableBytes { buffer in
+                proc_listchildpids(parent, buffer.baseAddress, Int32(buffer.count))
+            }
+            guard reportedCount > 0 else {
+                continue
+            }
+
+            let count = min(Int(reportedCount), children.count)
+            let validChildren = children.prefix(count).filter { $0 > 0 }
+            descendants.append(contentsOf: validChildren)
+            pending.append(contentsOf: validChildren)
+        }
+
+        return descendants
+    }
+
+    // NSLock protects the non-Sendable Process reference and cancellation handoff.
+    private final class State: @unchecked Sendable {
+        private let lock = NSLock()
+        private let processCompletion = DispatchSemaphore(value: 0)
+        private var cancellationRequested = false
+        private var activeProcess: Process?
+
+        var isCancellationRequested: Bool {
+            lock.withLock { cancellationRequested }
+        }
+
+        func register(_ process: Process) -> Bool {
+            lock.withLock {
+                guard !cancellationRequested else {
+                    return false
+                }
+                activeProcess = process
+                return true
+            }
+        }
+
+        func clear(_ process: Process) {
+            lock.withLock {
+                if activeProcess === process {
+                    activeProcess = nil
+                }
+            }
+        }
+
+        func cancel() {
+            let process = lock.withLock {
+                cancellationRequested = true
+                return activeProcess?.isRunning == true ? activeProcess : nil
+            }
+            if let process {
+                FinderScriptingProcessRunner.sendSignal(
+                    SIGTERM,
+                    toProcessTreeRootedAt: process.processIdentifier
+                )
+            }
+            processCompletion.signal()
+        }
+
+        func signalProcessCompletion() {
+            processCompletion.signal()
+        }
+
+        func waitForProcessCompletion(until deadline: DispatchTime) -> DispatchTimeoutResult {
+            processCompletion.wait(timeout: deadline)
+        }
+    }
+}
+
 public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolving {
     private let desktopDirectory: URL
     private let accessibilityDocument: (Int32) -> FinderAccessibilityDocumentResult
+    private let automationAuthorization: () async -> Bool
     private let scriptingDocument: () async -> String?
 
     public init(
@@ -60,16 +278,19 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
     ) {
         self.desktopDirectory = desktopDirectory
         accessibilityDocument = Self.systemAccessibilityDocument
+        automationAuthorization = Self.systemAutomationAuthorization
         scriptingDocument = Self.systemScriptingDocument
     }
 
     init(
         desktopDirectory: URL,
         accessibilityDocument: @escaping (Int32) -> FinderAccessibilityDocumentResult,
+        automationAuthorization: @escaping () async -> Bool,
         scriptingDocument: @escaping () async -> String?
     ) {
         self.desktopDirectory = desktopDirectory
         self.accessibilityDocument = accessibilityDocument
+        self.automationAuthorization = automationAuthorization
         self.scriptingDocument = scriptingDocument
     }
 
@@ -85,10 +306,21 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
             if let url = fileURL(from: value) {
                 return url
             }
-            return await scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
+            return await authorizedScriptingDocumentURL()
         case .unavailable:
-            return await scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
+            return await authorizedScriptingDocumentURL()
         }
+    }
+
+    private func authorizedScriptingDocumentURL() async -> URL? {
+        guard await automationAuthorization() else {
+            Self.logScriptingFailure("automation denied")
+            return nil
+        }
+        guard !Task.isCancelled else {
+            return nil
+        }
+        return await scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
     }
 
     private func fileURL(from documentValue: CFTypeRef) -> URL? {
@@ -134,59 +366,52 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
         end tell
         """
 
-        return await Task.detached(priority: .userInitiated) {
-            runScriptingProcess(source: source)
-        }.value
+        let result = await FinderScriptingProcessRunner(
+            executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+            arguments: ["-e", source],
+            timeout: 3
+        ).run()
+        switch result {
+        case .success(let document):
+            return document
+        case .launchFailure:
+            logScriptingFailure("launch error")
+        case .nonzeroStatus(let status):
+            logScriptingFailure("nonzero status \(status)")
+        case .timeout:
+            logScriptingFailure("process timeout")
+        case .cancellation:
+            logScriptingFailure("process cancelled")
+        case .invalidOutput:
+            logScriptingFailure("invalid output")
+        }
+        return nil
     }
 
-    private static func runScriptingProcess(source: String) -> String? {
-        let process = Process()
-        let outputPipe = Pipe()
-        let processFinished = DispatchSemaphore(value: 0)
+    private static func systemAutomationAuthorization() async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            var target = AEAddressDesc()
+            let bundleIdentifier = Data("com.apple.finder".utf8)
+            let createStatus = bundleIdentifier.withUnsafeBytes { bytes in
+                AECreateDesc(
+                    DescType(typeApplicationBundleID),
+                    bytes.baseAddress,
+                    bytes.count,
+                    &target
+                )
+            }
+            guard createStatus == noErr else {
+                return false
+            }
+            defer { AEDisposeDesc(&target) }
 
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", source]
-        process.standardOutput = outputPipe
-        process.standardError = FileHandle.nullDevice
-        process.terminationHandler = { _ in
-            processFinished.signal()
-        }
-
-        do {
-            try process.run()
-        } catch {
-            logScriptingFailure("launch error")
-            return nil
-        }
-
-        guard processFinished.wait(timeout: .now() + 3) == .success else {
-            process.terminate()
-            logScriptingFailure("process timeout")
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else {
-            logScriptingFailure("nonzero status \(process.terminationStatus)")
-            return nil
-        }
-
-        let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        guard let rawDocument = String(data: output, encoding: .utf8) else {
-            logScriptingFailure("invalid stdout encoding")
-            return nil
-        }
-
-        let document = rawDocument.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !document.isEmpty else {
-            logScriptingFailure("empty output")
-            return nil
-        }
-        guard FinderDocumentURLParser.fileURL(from: document) != nil else {
-            logScriptingFailure("invalid URL")
-            return nil
-        }
-
-        return document
+            return AEDeterminePermissionToAutomateTarget(
+                &target,
+                AEEventClass(typeWildCard),
+                AEEventID(typeWildCard),
+                true
+            ) == noErr
+        }.value
     }
 
     private enum FinderWindowLookupResult {
