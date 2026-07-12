@@ -17,6 +17,7 @@ final class AppEnvironment {
     private let pasteActionService: PasteActionService
     private let permissionService = PermissionService()
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
+    private let finderCurrentFolderResolver: any FinderCurrentFolderResolving = SystemFinderCurrentFolderResolver()
     private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
     private var clipboardTimer: Timer?
@@ -387,19 +388,59 @@ final class AppEnvironment {
     }
 
     private func handleSuperRightClickResult(_ result: SuperRightClickResult) {
-        switch result.item.kind {
-        case .text, .url:
+        switch SuperRightClickPresentationRouter.route(
+            for: result.item.kind,
+            sourceApplication: result.sourceApplication
+        ) {
+        case .text:
             contextPanel.showText(
                 originalText: result.item.text ?? "",
                 translation: result.translation,
                 isTranslationLoading: result.isTranslationPending,
                 reposition: result.translation == nil
             )
-        case .file, .folder, .imageFile:
+        case .fileSystem:
             contextPanel.show(item: result.item)
-        case .imageData, .unknown:
-            logger.info("no context actions for \(result.item.kind.rawValue)")
+        case .finderCurrentFolder:
+            showFinderCurrentFolder(sourceApplication: result.sourceApplication)
+        case .windowLayoutOnly:
+            contextPanel.showWindowLayoutOnly()
         }
+    }
+
+    private func showFinderCurrentFolder(
+        sourceApplication: SuperRightClickSourceApplication?
+    ) {
+        guard let folderURL = finderCurrentFolderResolver.currentFolderURL(
+            processIdentifier: sourceApplication?.processIdentifier
+        ) else {
+            logger.error("finder current folder unavailable; showing window layouts only")
+            contextPanel.showWindowLayoutOnly()
+            return
+        }
+
+        let path = folderURL.path
+        let displayTitle = folderURL.lastPathComponent.isEmpty
+            ? path
+            : folderURL.lastPathComponent
+        let item = ClipboardItem(
+            id: UUID(),
+            kind: .folder,
+            displayTitle: displayTitle,
+            searchableText: path,
+            text: nil,
+            originalPath: path,
+            cachedFilePath: nil,
+            thumbnailPath: nil,
+            sourceApp: sourceApplication?.localizedName ?? "访达",
+            createdAt: Date(),
+            lastUsedAt: nil,
+            useCount: 0,
+            isPinned: false,
+            isFavorite: false
+        )
+
+        contextPanel.show(item: item)
     }
 
     private func showPostEventRequiredAlert() {

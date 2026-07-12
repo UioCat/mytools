@@ -30,6 +30,10 @@
 - Use Cmd+Enter; confirm it copies without sending paste.
 - Short right-click in Finder; confirm the system menu appears.
 - Long right-click selected text; confirm the panel uses a compact 250 pt width, the header icon/text/accessory are smaller, and no window-layout section appears.
+- In a non-Finder app with no selected text or supported content, long right-click and confirm the panel shows only the configured window-layout list.
+- In Finder with no selected item, long right-click the current window background and confirm the panel shows `新建文件`, `复制当前路径`, `在终端打开`, then the configured window-layout list for the active Finder directory.
+- In Finder with a selected folder, long right-click and confirm it shows the same directory actions followed by the window-layout list.
+- In Finder with a selected file or image file, long right-click and confirm it shows only `复制文件路径` followed by the window-layout list.
 - Place the super-right-click panel over contrasting light and dark windows; confirm no gray outline, titlebar residue, rectangular system shadow, or backing layer appears outside its rounded Liquid Glass surface.
 - Long right-click a selected folder; confirm only the MacTools context action window appears and the system menu does not appear.
 - Confirm file and folder super-right-click panels use a compact 260 pt width, retain configured window-layout actions, and scroll instead of clipping content at the halved height.
