@@ -96,7 +96,7 @@ final class SuperPanelContentTests: XCTestCase {
         XCTAssertFalse(content.actions.contains { $0.id.isWindowLayoutButton })
     }
 
-    func testFolderPanelUsesFinderStyleHeaderAndFileActions() {
+    func testFolderPanelUsesDirectoryActions() {
         let content = SuperPanelContent.fileSystem(
             item: .testItem(
                 kind: .folder,
@@ -114,15 +114,15 @@ final class SuperPanelContentTests: XCTestCase {
         ])
         XCTAssertEqual(
             content.actions.map(\.id),
-            [.copyPath, .createNewFile, .openTerminal, .openClaudeCode, .openClaudeCodeSkipConfirmation]
+            [.createNewFile, .copyPath, .openTerminal]
         )
         XCTAssertEqual(
             content.actions.map(\.title),
-            ["复制当前路径", "新建文件", "终端中打开", "Claude Code 打开", "Claude Code 打开（跳过确认）"]
+            ["新建文件", "复制当前路径", "在终端打开"]
         )
     }
 
-    func testFilePanelKeepsPathActionAndRevealFallback() {
+    func testFilePanelKeepsOnlyCopyPathAction() {
         let content = SuperPanelContent.fileSystem(
             item: .testItem(
                 kind: .file,
@@ -137,7 +137,34 @@ final class SuperPanelContentTests: XCTestCase {
         ])
         XCTAssertEqual(
             content.actions.map(\.id),
-            [.copyPath, .revealInFinder, .openClaudeCode, .openClaudeCodeSkipConfirmation]
+            [.copyPath]
+        )
+        XCTAssertEqual(
+            content.actions.map(\.title),
+            ["复制文件路径"]
+        )
+    }
+
+    func testImageFilePanelUsesTheSelectedFileActionSet() {
+        let content = SuperPanelContent.fileSystem(
+            item: .testItem(
+                kind: .imageFile,
+                displayTitle: "screenshot.png",
+                originalPath: "/Users/example/screenshot.png",
+                sourceApp: "访达"
+            ),
+            windowLayoutButtons: [
+                WindowLayoutButton(id: "mode.leftHalf", title: "左半屏", modes: [.leftHalf])
+            ]
+        )
+
+        XCTAssertEqual(
+            content.actions.map(\.id),
+            [.copyPath, .windowLayoutButton("mode.leftHalf")]
+        )
+        XCTAssertEqual(
+            content.actions.map(\.title),
+            ["复制文件路径", "左半屏"]
         )
     }
 

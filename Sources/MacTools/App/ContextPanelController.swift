@@ -43,6 +43,20 @@ final class ContextPanelController {
         }
     }
 
+    func showWindowLayoutOnly() {
+        let layoutButtons = windowLayoutButtons()
+        let content = SuperPanelContent.windowLayoutOnly(
+            windowLayoutButtons: layoutButtons
+        )
+        show(content: content) { [weak self] actionID in
+            guard case .windowLayoutButton(let id) = actionID else {
+                self?.logger.error("unexpected window-layout-only action: \(actionID.rawValue)")
+                return .close
+            }
+            return self?.performWindowLayoutAction(id, buttons: layoutButtons) ?? .close
+        }
+    }
+
     func showText(
         originalText: String,
         translation: Result<TranslationResponse, TranslationError>?,

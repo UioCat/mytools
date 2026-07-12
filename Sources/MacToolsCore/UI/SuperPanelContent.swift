@@ -183,18 +183,13 @@ public struct SuperPanelContent: Equatable {
 
         if item.kind == .folder {
             actions = [
-                .init(id: .copyPath, title: "复制当前路径", systemImage: "folder.fill"),
                 .init(id: .createNewFile, title: "新建文件", systemImage: "plus.square.fill"),
-                .init(id: .openTerminal, title: "终端中打开", systemImage: "terminal.fill"),
-                .init(id: .openClaudeCode, title: "Claude Code 打开", systemImage: "chevron.left.forwardslash.chevron.right"),
-                .init(id: .openClaudeCodeSkipConfirmation, title: "Claude Code 打开（跳过确认）", systemImage: "chevron.left.forwardslash.chevron.right")
+                .init(id: .copyPath, title: "复制当前路径", systemImage: "folder.fill"),
+                .init(id: .openTerminal, title: "在终端打开", systemImage: "terminal.fill")
             ]
         } else {
             actions = [
-                .init(id: .copyPath, title: "复制当前路径", systemImage: "folder.fill"),
-                .init(id: .revealInFinder, title: "在访达中显示", systemImage: "folder"),
-                .init(id: .openClaudeCode, title: "Claude Code 打开", systemImage: "chevron.left.forwardslash.chevron.right"),
-                .init(id: .openClaudeCodeSkipConfirmation, title: "Claude Code 打开（跳过确认）", systemImage: "chevron.left.forwardslash.chevron.right")
+                .init(id: .copyPath, title: "复制文件路径", systemImage: "doc.on.doc")
             ]
         }
         actions.append(contentsOf: windowLayoutActionDescriptors(from: windowLayoutButtons))
