@@ -28,6 +28,12 @@ MacTools is a Swift Package Manager macOS menu bar app. It provides clipboard hi
 - Use dependency injection for system services such as pasteboard, workspace opening, event posting, permissions, and translation providers.
 - Keep runtime UI text and permission behavior aligned with `docs/manual-verification.md`.
 
+## UI Visual Verification
+
+- After every UI change, run `scripts/rebuild_and_run_app.sh` and inspect every affected panel over contrasting light and dark backgrounds.
+- Treat any unintended gray outline, titlebar residue, rectangular system shadow, or backing layer outside the intended rounded Liquid Glass shape as a release blocker; remove it before considering the change complete.
+- For `NSPanel` surfaces, verify the AppKit style mask, `hasShadow`, and rounded backing-layer clipping instead of trying to cover window chrome inside SwiftUI.
+
 ## Privacy And Secrets
 
 - Do not commit `.idea/`, `*.iml`, `.env*`, local credentials, generated app bundles, SQLite files, or clipboard caches.

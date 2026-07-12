@@ -30,6 +30,7 @@
 - Use Cmd+Enter; confirm it copies without sending paste.
 - Short right-click in Finder; confirm the system menu appears.
 - Long right-click selected text; confirm the panel uses a compact 250 pt width, the header icon/text/accessory are smaller, and no window-layout section appears.
+- Place the super-right-click panel over contrasting light and dark windows; confirm no gray outline, titlebar residue, rectangular system shadow, or backing layer appears outside its rounded Liquid Glass surface.
 - Long right-click a selected folder; confirm only the MacTools context action window appears and the system menu does not appear.
 - Confirm file and folder super-right-click panels use a compact 260 pt width, retain configured window-layout actions, and scroll instead of clipping content at the halved height.
 - Open settings and confirm the window layout section shows compact rows with preview icons; hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row.
