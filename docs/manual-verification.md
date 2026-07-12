@@ -29,7 +29,9 @@
 - Select a clipboard item and press Enter; confirm it copies and attempts paste.
 - Use Cmd+Enter; confirm it copies without sending paste.
 - Short right-click in Finder; confirm the system menu appears.
+- Long right-click selected text; confirm the panel uses a compact 250 pt width, the header icon/text/accessory are smaller, and no window-layout section appears.
 - Long right-click a selected folder; confirm only the MacTools context action window appears and the system menu does not appear.
+- Confirm file and folder super-right-click panels use a compact 260 pt width, retain configured window-layout actions, and scroll instead of clipping content at the halved height.
 - Open settings and confirm the window layout section shows compact rows with preview icons; hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row.
 - Open settings and confirm the clipboard section can choose a custom cache storage folder, restore the default folder, and switch cache size between `200M`, `500M`, `1024M`, and `2048M`.
 - Long right-click selected text or a Finder item, click a window layout button, and confirm the frontmost app window moves to the selected visible-screen region.
