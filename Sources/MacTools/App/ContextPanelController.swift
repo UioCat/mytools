@@ -95,6 +95,10 @@ final class ContextPanelController {
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.frame = NSRect(origin: .zero, size: contentSize)
         panel?.contentView = hostingView
+        ContextPanelWindowAppearance.configureRoundedBackingLayer(hostingView)
+        if let frameView = hostingView.superview {
+            ContextPanelWindowAppearance.configureRoundedBackingLayer(frameView)
+        }
         panel?.setContentSize(contentSize)
         if reposition {
             panel?.setFrameOrigin(panelOrigin(for: panel?.frame.size ?? contentSize))
@@ -106,18 +110,13 @@ final class ContextPanelController {
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 260, height: 210),
-            styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: ContextPanelWindowAppearance.windowStyleMask,
             backing: .buffered,
             defer: false
         )
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = ContextPanelWindowAppearance.usesSystemWindowShadow
         panel.level = .floating
         panel.collectionBehavior = [.transient, .ignoresCycle]
         panel.isMovableByWindowBackground = true
