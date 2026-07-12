@@ -105,7 +105,7 @@ public struct SuperPanelContent: Equatable {
         originalText: String,
         translation: Result<TranslationResponse, TranslationError>?,
         isTranslationLoading: Bool = false,
-        windowLayoutButtons: [WindowLayoutButton] = []
+        windowLayoutButtons _: [WindowLayoutButton] = []
     ) -> SuperPanelContent {
         let normalizedText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayText = normalizedText.isEmpty ? originalText : normalizedText
@@ -142,7 +142,6 @@ public struct SuperPanelContent: Equatable {
         actions.append(contentsOf: [
             .init(id: .textTransit, title: "文本悬浮中转", systemImage: "pin.fill")
         ])
-        actions.append(contentsOf: windowLayoutActionDescriptors(from: windowLayoutButtons))
 
         return SuperPanelContent(
             kind: .text,
@@ -157,7 +156,7 @@ public struct SuperPanelContent: Equatable {
 
     public static func textTransit(
         text: String,
-        windowLayoutButtons: [WindowLayoutButton] = []
+        windowLayoutButtons _: [WindowLayoutButton] = []
     ) -> SuperPanelContent {
         let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayText = normalizedText.isEmpty ? text : normalizedText
@@ -170,7 +169,7 @@ public struct SuperPanelContent: Equatable {
             previewRows: [.init(label: "文本", value: displayText)],
             actions: [
                 .init(id: .copyTransitText, title: "复制文本", systemImage: "doc.on.doc")
-            ] + windowLayoutActionDescriptors(from: windowLayoutButtons)
+            ]
         )
     }
 

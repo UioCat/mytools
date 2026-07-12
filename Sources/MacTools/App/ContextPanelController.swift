@@ -49,12 +49,10 @@ final class ContextPanelController {
         isTranslationLoading: Bool = false,
         reposition: Bool = true
     ) {
-        let layoutButtons = windowLayoutButtons()
         let content = SuperPanelContent.text(
             originalText: originalText,
             translation: translation,
-            isTranslationLoading: isTranslationLoading,
-            windowLayoutButtons: layoutButtons
+            isTranslationLoading: isTranslationLoading
         )
         let translatedText: String?
         if case .success(let response) = translation {
@@ -67,8 +65,7 @@ final class ContextPanelController {
             self?.performTextAction(
                 actionID,
                 originalText: originalText,
-                translatedText: translatedText,
-                windowLayoutButtons: layoutButtons
+                translatedText: translatedText
             ) ?? .close
         }
     }
@@ -189,14 +186,13 @@ final class ContextPanelController {
         stopOutsideClickDismissMonitors()
     }
 
-    private func showTextTransit(_ text: String, windowLayoutButtons: [WindowLayoutButton]) {
-        let content = SuperPanelContent.textTransit(text: text, windowLayoutButtons: windowLayoutButtons)
+    private func showTextTransit(_ text: String) {
+        let content = SuperPanelContent.textTransit(text: text)
         show(content: content, reposition: false) { [weak self] actionID in
             self?.performTextAction(
                 actionID,
                 originalText: text,
-                translatedText: nil,
-                windowLayoutButtons: windowLayoutButtons
+                translatedText: nil
             ) ?? .close
         }
     }
@@ -256,8 +252,7 @@ final class ContextPanelController {
     private func performTextAction(
         _ actionID: SuperPanelActionID,
         originalText: String,
-        translatedText: String?,
-        windowLayoutButtons: [WindowLayoutButton]
+        translatedText: String?
     ) -> ContextPanelActionResult {
         switch actionID {
         case .copyTranslatedText:
@@ -269,15 +264,14 @@ final class ContextPanelController {
             logger.info("super panel copied translated text")
             return .close
         case .textTransit:
-            showTextTransit(originalText, windowLayoutButtons: windowLayoutButtons)
+            showTextTransit(originalText)
             return .keepVisible
         case .copyTransitText:
             pasteboard.writeText(Self.normalizedText(originalText))
             logger.info("super panel copied transit text")
             return .close
-        case .windowLayoutButton(let id):
-            return performWindowLayoutAction(id, buttons: windowLayoutButtons)
-        case .copyPath, .createNewFile, .openTerminal, .revealInFinder, .openClaudeCode, .openClaudeCodeSkipConfirmation:
+        case .copyPath, .createNewFile, .openTerminal, .revealInFinder, .openClaudeCode,
+             .openClaudeCodeSkipConfirmation, .windowLayoutButton:
             logger.error("unexpected text action: \(actionID.rawValue)")
             return .close
         }

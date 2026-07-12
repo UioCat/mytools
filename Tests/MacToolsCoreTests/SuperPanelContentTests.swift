@@ -45,12 +45,13 @@ final class SuperPanelContentTests: XCTestCase {
         ])
         XCTAssertEqual(
             content.actions.map(\.id),
-            [.textTransit, .windowLayoutButton("custom.left-right")]
+            [.textTransit]
         )
         XCTAssertEqual(
             content.actions.map(\.title),
-            ["文本悬浮中转", "左右半屏"]
+            ["文本悬浮中转"]
         )
+        XCTAssertFalse(content.actions.contains { $0.id.isWindowLayoutButton })
     }
 
     func testTextPanelShowsLoadingStateBeforeTranslationCompletes() {
@@ -81,6 +82,18 @@ final class SuperPanelContentTests: XCTestCase {
         ])
         XCTAssertEqual(content.actions.map(\.id), [.copyTransitText])
         XCTAssertEqual(content.actions.map(\.title), ["复制文本"])
+    }
+
+    func testTextTransitPanelIgnoresConfiguredWindowLayoutButtons() {
+        let content = SuperPanelContent.textTransit(
+            text: "hello",
+            windowLayoutButtons: [
+                WindowLayoutButton(id: "mode.leftHalf", title: "左半屏", modes: [.leftHalf])
+            ]
+        )
+
+        XCTAssertEqual(content.actions.map(\.id), [.copyTransitText])
+        XCTAssertFalse(content.actions.contains { $0.id.isWindowLayoutButton })
     }
 
     func testFolderPanelUsesFinderStyleHeaderAndFileActions() {
