@@ -22,7 +22,7 @@ final class SuperPanelLayoutTests: XCTestCase {
     }
 
     func testLargeFolderPanelUsesHalfMaximumHeight() {
-        let buttons = (0..<8).map {
+        let buttons = (0..<12).map {
             WindowLayoutButton(id: "layout.\($0)", title: "布局 \($0)", modes: [.maximize])
         }
         let item = ClipboardItem(
