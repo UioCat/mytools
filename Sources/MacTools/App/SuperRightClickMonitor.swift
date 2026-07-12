@@ -153,10 +153,13 @@ final class SuperRightClickMonitor {
         longPressTimer?.invalidate()
         longPressTimer = nil
         logger.info("super right click long press triggered")
-        let sourceApp = frontmostApplicationName()
+        let sourceApplication = frontmostApplicationContext()
 
         Task {
-            let result = await service.handleDecision(.triggerSuperRightClick, sourceApp: sourceApp)
+            let result = await service.handleDecision(
+                .triggerSuperRightClick,
+                sourceApplication: sourceApplication
+            )
             await MainActor.run {
                 guard let result else {
                     return
@@ -207,7 +210,15 @@ final class SuperRightClickMonitor {
         Int(Date().timeIntervalSince1970 * 1000)
     }
 
-    private func frontmostApplicationName() -> String? {
-        NSWorkspace.shared.frontmostApplication?.localizedName
+    private func frontmostApplicationContext() -> SuperRightClickSourceApplication? {
+        guard let application = NSWorkspace.shared.frontmostApplication else {
+            return nil
+        }
+
+        return SuperRightClickSourceApplication(
+            localizedName: application.localizedName,
+            bundleIdentifier: application.bundleIdentifier,
+            processIdentifier: application.processIdentifier
+        )
     }
 }

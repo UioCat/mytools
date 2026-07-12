@@ -138,7 +138,10 @@ final class SuperRightClickServiceTests: XCTestCase {
             translationService: TranslationService(provider: translationProvider)
         )
 
-        let result = await service.handleDecision(.allowSystemMenu, sourceApp: "Notes")
+        let result = await service.handleDecision(
+            .allowSystemMenu,
+            sourceApplication: .notes
+        )
 
         XCTAssertNil(result)
         XCTAssertEqual(selectionCapture.captureCount, 0)
@@ -155,11 +158,15 @@ final class SuperRightClickServiceTests: XCTestCase {
             translationService: TranslationService(provider: translationProvider)
         )
 
-        let result = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
+        let result = await service.handleDecision(
+            .triggerSuperRightClick,
+            sourceApplication: .notes
+        )
 
         XCTAssertEqual(result?.item.kind, .text)
         XCTAssertEqual(result?.item.text, "hello")
         XCTAssertEqual(result?.item.sourceApp, "Notes")
+        XCTAssertEqual(result?.sourceApplication, .notes)
         XCTAssertNil(result?.translation)
         XCTAssertEqual(result?.isTranslationPending, true)
         XCTAssertEqual(selectionCapture.captureCount, 1)
@@ -187,7 +194,10 @@ final class SuperRightClickServiceTests: XCTestCase {
             translationService: TranslationService(provider: translationProvider)
         )
 
-        _ = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
+        _ = await service.handleDecision(
+            .triggerSuperRightClick,
+            sourceApplication: .notes
+        )
         XCTAssertTrue(translationProvider.requests.isEmpty)
 
         _ = await service.translateText("你好")
@@ -208,11 +218,81 @@ final class SuperRightClickServiceTests: XCTestCase {
             translationService: TranslationService(provider: translationProvider)
         )
 
-        let result = await service.handleDecision(.triggerSuperRightClick, sourceApp: "Notes")
+        let result = await service.handleDecision(
+            .triggerSuperRightClick,
+            sourceApplication: .notes
+        )
 
         XCTAssertNil(result)
         XCTAssertEqual(selectionCapture.captureCount, 0)
         XCTAssertTrue(translationProvider.requests.isEmpty)
+    }
+}
+
+final class SuperRightClickPresentationRouterTests: XCTestCase {
+    func testEmptySelectionInRegularApplicationShowsWindowLayoutsOnly() {
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .unknown,
+                sourceApplication: .notes
+            ),
+            .windowLayoutOnly
+        )
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .imageData,
+                sourceApplication: .notes
+            ),
+            .windowLayoutOnly
+        )
+    }
+
+    func testEmptySelectionInFinderUsesCurrentFolder() {
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .unknown,
+                sourceApplication: .finder
+            ),
+            .finderCurrentFolder
+        )
+    }
+
+    func testSelectedTextAndFileSystemItemsKeepTheirContentRoutes() {
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .text,
+                sourceApplication: .notes
+            ),
+            .text
+        )
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .url,
+                sourceApplication: .notes
+            ),
+            .text
+        )
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .file,
+                sourceApplication: .finder
+            ),
+            .fileSystem
+        )
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .folder,
+                sourceApplication: .finder
+            ),
+            .fileSystem
+        )
+        XCTAssertEqual(
+            SuperRightClickPresentationRouter.route(
+                for: .imageFile,
+                sourceApplication: .finder
+            ),
+            .fileSystem
+        )
     }
 }
 
@@ -272,4 +352,18 @@ private final class RecordingTranslationProvider: TranslationProvider {
         requests.append(request)
         return .success(TranslationResponse(translatedText: "translated", providerID: providerID))
     }
+}
+
+private extension SuperRightClickSourceApplication {
+    static let notes = SuperRightClickSourceApplication(
+        localizedName: "Notes",
+        bundleIdentifier: "com.apple.Notes",
+        processIdentifier: 42
+    )
+
+    static let finder = SuperRightClickSourceApplication(
+        localizedName: "访达",
+        bundleIdentifier: "com.apple.finder",
+        processIdentifier: 43
+    )
 }
