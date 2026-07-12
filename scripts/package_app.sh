@@ -29,6 +29,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
   <string>26.0</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>用于读取访达当前窗口目录，以显示超级右键的目录操作。</string>
   <key>LSUIElement</key>
   <true/>
 </dict>
