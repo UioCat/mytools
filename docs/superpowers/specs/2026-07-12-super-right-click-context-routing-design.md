@@ -38,9 +38,9 @@ This keeps AppKit-specific presentation code out of the routing rules.
 
 ## Finder Current Directory
 
-Add a `FinderCurrentFolderResolving` protocol and an AppKit implementation that reads the active Finder window's accessibility `AXDocument` URL using the captured Finder process identifier. This reuses the accessibility permission already required by super right click and avoids adding an Apple Events automation dependency.
+Add a `FinderCurrentFolderResolving` protocol and an AppKit implementation that primarily reads the active Finder window's accessibility `AXDocument` URL using the captured Finder process identifier. When `AXDocument` has no usable value, asynchronously run a fixed Finder Apple Events query as a fallback. The fallback requires Automation permission for MacTools to control Finder; denial or revocation safely degrades to the window-layout-only panel.
 
-If Finder has no open window, use the user's Desktop directory. If the accessibility value is missing or invalid, log the failure and show the window-layout-only panel. Never fall back to stale clipboard content.
+Only a successful accessibility lookup that reports an empty Finder windows array means Finder has no open window and may use the user's Desktop directory. Accessibility failures, invalid window data, and failed Apple Events fallback log only safe diagnostic reasons and show the window-layout-only panel. Never fall back to stale clipboard content.
 
 ## Panel Content
 

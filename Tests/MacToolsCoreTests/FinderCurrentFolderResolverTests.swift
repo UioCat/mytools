@@ -3,7 +3,7 @@ import XCTest
 @testable import MacToolsCore
 
 final class FinderCurrentFolderResolverTests: XCTestCase {
-    func testFallsBackToScriptingDocumentWhenAccessibilityDocumentIsUnavailable() {
+    func testFallsBackToScriptingDocumentWhenAccessibilityDocumentIsUnavailable() async {
         var scriptingCallCount = 0
         let resolver = SystemFinderCurrentFolderResolver(
             desktopDirectory: URL(fileURLWithPath: "/Users/example/Desktop", isDirectory: true),
@@ -14,13 +14,13 @@ final class FinderCurrentFolderResolverTests: XCTestCase {
             }
         )
 
-        let result = resolver.currentFolderURL(processIdentifier: 42)
+        let result = await resolver.currentFolderURL(processIdentifier: 42)
 
         XCTAssertEqual(result?.standardizedFileURL.path, "/Users/example/Project")
         XCTAssertEqual(scriptingCallCount, 1)
     }
 
-    func testValidAccessibilityDocumentWinsWithoutCallingScriptingDocument() {
+    func testValidAccessibilityDocumentWinsWithoutCallingScriptingDocument() async {
         var scriptingCallCount = 0
         let resolver = SystemFinderCurrentFolderResolver(
             desktopDirectory: URL(fileURLWithPath: "/Users/example/Desktop", isDirectory: true),
@@ -33,13 +33,13 @@ final class FinderCurrentFolderResolverTests: XCTestCase {
             }
         )
 
-        let result = resolver.currentFolderURL(processIdentifier: 42)
+        let result = await resolver.currentFolderURL(processIdentifier: 42)
 
         XCTAssertEqual(result?.standardizedFileURL.path, "/Users/example/Accessibility")
         XCTAssertEqual(scriptingCallCount, 0)
     }
 
-    func testNoFinderWindowReturnsDesktopWithoutCallingScriptingDocument() {
+    func testNoFinderWindowReturnsDesktopWithoutCallingScriptingDocument() async {
         var scriptingCallCount = 0
         let desktopDirectory = URL(
             fileURLWithPath: "/Users/example/Desktop",
@@ -54,10 +54,81 @@ final class FinderCurrentFolderResolverTests: XCTestCase {
             }
         )
 
-        let result = resolver.currentFolderURL(processIdentifier: 42)
+        let result = await resolver.currentFolderURL(processIdentifier: 42)
 
         XCTAssertEqual(result, desktopDirectory)
         XCTAssertEqual(scriptingCallCount, 0)
+    }
+
+    @MainActor
+    func testSuspendingScriptingDocumentAllowsMainActorToAdvance() async {
+        let scriptingStarted = expectation(description: "scripting started")
+        var releaseScripting: CheckedContinuation<Void, Never>?
+        var mainActorAdvanced = false
+        let resolver = SystemFinderCurrentFolderResolver(
+            desktopDirectory: URL(fileURLWithPath: "/Users/example/Desktop", isDirectory: true),
+            accessibilityDocument: { _ in .unavailable },
+            scriptingDocument: {
+                scriptingStarted.fulfill()
+                await withCheckedContinuation { continuation in
+                    releaseScripting = continuation
+                }
+                return "file:///Users/example/Project/"
+            }
+        )
+
+        let resolution = Task { @MainActor in
+            await resolver.currentFolderURL(processIdentifier: 42)
+        }
+        await fulfillment(of: [scriptingStarted], timeout: 1)
+
+        await Task { @MainActor in
+            mainActorAdvanced = true
+        }.value
+
+        XCTAssertTrue(mainActorAdvanced)
+        releaseScripting?.resume()
+        let result = await resolution.value
+        XCTAssertEqual(result?.standardizedFileURL.path, "/Users/example/Project")
+    }
+
+    func testSuccessfulEmptyFinderWindowsIsNoWindow() {
+        XCTAssertEqual(
+            FinderWindowLookupClassification.classify(error: .success, windowCount: 0),
+            .noWindow
+        )
+    }
+
+    func testCannotCompleteFinderWindowLookupIsUnavailable() {
+        XCTAssertEqual(
+            FinderWindowLookupClassification.classify(error: .cannotComplete, windowCount: 0),
+            .unavailable
+        )
+    }
+
+    func testAPIDisabledFinderWindowLookupIsUnavailable() {
+        XCTAssertEqual(
+            FinderWindowLookupClassification.classify(error: .apiDisabled, windowCount: 0),
+            .unavailable
+        )
+    }
+
+    func testSuccessfulPositiveFinderWindowCountIsAvailable() {
+        XCTAssertEqual(
+            FinderWindowLookupClassification.classify(error: .success, windowCount: 1),
+            .available
+        )
+    }
+
+    func testMissingOrInconsistentFinderWindowCountIsUnavailable() {
+        XCTAssertEqual(
+            FinderWindowLookupClassification.classify(error: .success, windowCount: nil),
+            .unavailable
+        )
+        XCTAssertEqual(
+            FinderWindowLookupClassification.classify(error: .success, windowCount: -1),
+            .unavailable
+        )
     }
 
     func testParsesPercentEncodedFinderDocumentURL() {

@@ -3,7 +3,7 @@ import ApplicationServices
 import Foundation
 
 public protocol FinderCurrentFolderResolving {
-    func currentFolderURL(processIdentifier: Int32?) -> URL?
+    func currentFolderURL(processIdentifier: Int32?) async -> URL?
 }
 
 public enum FinderDocumentURLParser {
@@ -31,10 +31,26 @@ enum FinderAccessibilityDocumentResult {
     case unavailable
 }
 
+enum FinderWindowLookupClassification: Equatable {
+    case available
+    case noWindow
+    case unavailable
+
+    static func classify(error: AXError, windowCount: Int?) -> Self {
+        guard error == .success,
+              let windowCount,
+              windowCount >= 0 else {
+            return .unavailable
+        }
+
+        return windowCount == 0 ? .noWindow : .available
+    }
+}
+
 public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolving {
     private let desktopDirectory: URL
     private let accessibilityDocument: (Int32) -> FinderAccessibilityDocumentResult
-    private let scriptingDocument: () -> String?
+    private let scriptingDocument: () async -> String?
 
     public init(
         desktopDirectory: URL = FileManager.default.urls(
@@ -50,14 +66,14 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
     init(
         desktopDirectory: URL,
         accessibilityDocument: @escaping (Int32) -> FinderAccessibilityDocumentResult,
-        scriptingDocument: @escaping () -> String?
+        scriptingDocument: @escaping () async -> String?
     ) {
         self.desktopDirectory = desktopDirectory
         self.accessibilityDocument = accessibilityDocument
         self.scriptingDocument = scriptingDocument
     }
 
-    public func currentFolderURL(processIdentifier: Int32?) -> URL? {
+    public func currentFolderURL(processIdentifier: Int32?) async -> URL? {
         guard let processIdentifier else {
             return nil
         }
@@ -66,9 +82,12 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
         case .noWindow:
             return desktopDirectory
         case .value(let value):
-            return fileURL(from: value) ?? scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
+            if let url = fileURL(from: value) {
+                return url
+            }
+            return await scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
         case .unavailable:
-            return scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
+            return await scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
         }
     }
 
@@ -90,70 +109,135 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
         processIdentifier: Int32
     ) -> FinderAccessibilityDocumentResult {
         let application = AXUIElementCreateApplication(processIdentifier)
-        guard let window = focusedWindow(in: application) else {
+        switch focusedWindow(in: application) {
+        case .available(let window):
+            let document = copyAttribute(kAXDocumentAttribute, from: window)
+            guard document.error == .success,
+                  let documentValue = document.value else {
+                return .unavailable
+            }
+            return .value(documentValue)
+        case .noWindow:
             return .noWindow
-        }
-        guard let documentValue = copyAttribute(kAXDocumentAttribute, from: window) else {
+        case .unavailable:
             return .unavailable
         }
-
-        return .value(documentValue)
     }
 
-    private static func systemScriptingDocument() -> String? {
+    private static func systemScriptingDocument() async -> String? {
         let source = """
         tell application "Finder"
-            if (count of Finder windows) is 0 then return ""
-            return URL of target of front Finder window
+            with timeout of 2 seconds
+                if (count of Finder windows) is 0 then return ""
+                return URL of target of front Finder window
+            end timeout
         end tell
         """
-        guard let script = NSAppleScript(source: source) else {
+
+        return await Task.detached(priority: .userInitiated) {
+            runScriptingProcess(source: source)
+        }.value
+    }
+
+    private static func runScriptingProcess(source: String) -> String? {
+        let process = Process()
+        let outputPipe = Pipe()
+        let processFinished = DispatchSemaphore(value: 0)
+
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", source]
+        process.standardOutput = outputPipe
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { _ in
+            processFinished.signal()
+        }
+
+        do {
+            try process.run()
+        } catch {
+            logScriptingFailure("launch error")
             return nil
         }
 
-        var errorInfo: NSDictionary?
-        let result = script.executeAndReturnError(&errorInfo)
-        guard errorInfo == nil,
-              let document = result.stringValue,
-              FinderDocumentURLParser.fileURL(from: document) != nil else {
+        guard processFinished.wait(timeout: .now() + 3) == .success else {
+            process.terminate()
+            logScriptingFailure("process timeout")
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else {
+            logScriptingFailure("nonzero status \(process.terminationStatus)")
+            return nil
+        }
+
+        let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        guard let rawDocument = String(data: output, encoding: .utf8) else {
+            logScriptingFailure("invalid stdout encoding")
+            return nil
+        }
+
+        let document = rawDocument.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !document.isEmpty else {
+            logScriptingFailure("empty output")
+            return nil
+        }
+        guard FinderDocumentURLParser.fileURL(from: document) != nil else {
+            logScriptingFailure("invalid URL")
             return nil
         }
 
         return document
     }
 
-    private static func focusedWindow(in application: AXUIElement) -> AXUIElement? {
-        if let window = copyElementAttribute(kAXFocusedWindowAttribute, from: application) {
-            return window
-        }
-
-        guard let windows = copyAttribute(kAXWindowsAttribute, from: application) as? [AXUIElement] else {
-            return nil
-        }
-        return windows.first
+    private enum FinderWindowLookupResult {
+        case available(AXUIElement)
+        case noWindow
+        case unavailable
     }
 
-    private static func copyElementAttribute(
-        _ attribute: String,
-        from element: AXUIElement
-    ) -> AXUIElement? {
-        guard let value = copyAttribute(attribute, from: element),
-              CFGetTypeID(value) == AXUIElementGetTypeID() else {
-            return nil
+    private static func focusedWindow(in application: AXUIElement) -> FinderWindowLookupResult {
+        let focusedWindow = copyAttribute(kAXFocusedWindowAttribute, from: application)
+        if focusedWindow.error == .success {
+            guard let value = focusedWindow.value,
+                  CFGetTypeID(value) == AXUIElementGetTypeID() else {
+                return .unavailable
+            }
+            return .available(value as! AXUIElement)
         }
 
-        return (value as! AXUIElement)
+        let windowsAttribute = copyAttribute(kAXWindowsAttribute, from: application)
+        let windows = windowsAttribute.value as? [AXUIElement]
+        switch FinderWindowLookupClassification.classify(
+            error: windowsAttribute.error,
+            windowCount: windows?.count
+        ) {
+        case .available:
+            guard let window = windows?.first else {
+                return .unavailable
+            }
+            return .available(window)
+        case .noWindow:
+            return .noWindow
+        case .unavailable:
+            return .unavailable
+        }
+    }
+
+    private struct FinderAttributeResult {
+        let error: AXError
+        let value: CFTypeRef?
     }
 
     private static func copyAttribute(
         _ attribute: String,
         from element: AXUIElement
-    ) -> CFTypeRef? {
+    ) -> FinderAttributeResult {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-        guard result == .success else {
-            return nil
-        }
-        return value
+        return FinderAttributeResult(error: result, value: value)
+    }
+
+    private static func logScriptingFailure(_ reason: String) {
+        NSLog("ERROR finder current folder scripting fallback failed: %@", reason)
     }
 }

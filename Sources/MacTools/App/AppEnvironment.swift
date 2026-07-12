@@ -402,7 +402,9 @@ final class AppEnvironment {
         case .fileSystem:
             contextPanel.show(item: result.item)
         case .finderCurrentFolder:
-            showFinderCurrentFolder(sourceApplication: result.sourceApplication)
+            Task { [weak self] in
+                await self?.showFinderCurrentFolder(sourceApplication: result.sourceApplication)
+            }
         case .windowLayoutOnly:
             contextPanel.showWindowLayoutOnly()
         }
@@ -410,8 +412,8 @@ final class AppEnvironment {
 
     private func showFinderCurrentFolder(
         sourceApplication: SuperRightClickSourceApplication?
-    ) {
-        guard let folderURL = finderCurrentFolderResolver.currentFolderURL(
+    ) async {
+        guard let folderURL = await finderCurrentFolderResolver.currentFolderURL(
             processIdentifier: sourceApplication?.processIdentifier
         ) else {
             logger.error("finder current folder unavailable; showing window layouts only")

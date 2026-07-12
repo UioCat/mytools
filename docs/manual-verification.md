@@ -32,6 +32,10 @@
 - Long right-click selected text; confirm the panel uses a compact 250 pt width, the header icon/text/accessory are smaller, and no window-layout section appears.
 - In a non-Finder app with no selected text or supported content, long right-click and confirm the 320 pt-wide panel shows only the configured window-layout list; the standard eight-layout list is fully visible without a scrollbar.
 - In Finder with no selected item, long right-click the current window background and confirm the 320 pt-wide panel shows `新建文件`, `复制当前路径`, `在终端打开`, then the configured window-layout list for the active Finder directory.
+- Build and relaunch with `scripts/rebuild_and_run_app.sh` (or launch the packaged app), then trigger Finder-current-folder fallback for the first time; grant the Automation request for Finder and confirm the active Finder directory actions appear.
+- Deny the first Finder Automation request, then revoke an existing Finder Automation grant in System Settings and repeat; confirm both cases safely show only the configured window-layout list without freezing, exposing a path, or reusing stale clipboard content.
+- After granting Finder Automation permission, long right-click a Finder window background whose accessibility document is unavailable and confirm the directory actions target that window's current folder.
+- Do not use `swift run MacTools` to verify Apple Events permission behavior because Automation consent is tied to the built app identity; use `scripts/rebuild_and_run_app.sh` or `build/MacTools.app`.
 - In Finder with a selected folder, file, or image file, long right-click and confirm the 320 pt-wide panel shows only `复制文件路径` followed by the window-layout list; the standard eight-layout list is fully visible without a scrollbar.
 - Configure an oversized custom window-layout list and confirm the super-right-click panel stops growing at the 620 pt safety cap and allows the overflow content to scroll.
 - Place the super-right-click panel over contrasting light and dark windows; confirm no gray outline, titlebar residue, rectangular system shadow, or backing layer appears outside its rounded Liquid Glass surface.
