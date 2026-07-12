@@ -96,14 +96,17 @@ final class SuperPanelContentTests: XCTestCase {
         XCTAssertFalse(content.actions.contains { $0.id.isWindowLayoutButton })
     }
 
-    func testFolderPanelUsesDirectoryActions() {
+    func testSelectedFolderPanelUsesTheSelectedFileActionSet() {
         let content = SuperPanelContent.fileSystem(
             item: .testItem(
                 kind: .folder,
                 displayTitle: "linux-6.10",
                 originalPath: "/Users/example/Downloads/linux-6.10",
                 sourceApp: "访达"
-            )
+            ),
+            windowLayoutButtons: [
+                WindowLayoutButton(id: "mode.leftHalf", title: "左半屏", modes: [.leftHalf])
+            ]
         )
 
         XCTAssertEqual(content.kind, .fileSystem)
@@ -114,11 +117,40 @@ final class SuperPanelContentTests: XCTestCase {
         ])
         XCTAssertEqual(
             content.actions.map(\.id),
-            [.createNewFile, .copyPath, .openTerminal]
+            [.copyPath, .windowLayoutButton("mode.leftHalf")]
         )
         XCTAssertEqual(
             content.actions.map(\.title),
-            ["新建文件", "复制当前路径", "在终端打开"]
+            ["复制文件路径", "左半屏"]
+        )
+    }
+
+    func testFinderCurrentDirectoryKeepsDirectoryActions() {
+        let content = SuperPanelContent.fileSystem(
+            item: .testItem(
+                kind: .folder,
+                displayTitle: "linux-6.10",
+                originalPath: "/Users/example/Downloads/linux-6.10",
+                sourceApp: "访达"
+            ),
+            windowLayoutButtons: [
+                WindowLayoutButton(id: "mode.leftHalf", title: "左半屏", modes: [.leftHalf])
+            ],
+            presentation: .finderCurrentDirectory
+        )
+
+        XCTAssertEqual(
+            content.actions.map(\.id),
+            [
+                .createNewFile,
+                .copyPath,
+                .openTerminal,
+                .windowLayoutButton("mode.leftHalf")
+            ]
+        )
+        XCTAssertEqual(
+            content.actions.map(\.title),
+            ["新建文件", "复制当前路径", "在终端打开", "左半屏"]
         )
     }
 

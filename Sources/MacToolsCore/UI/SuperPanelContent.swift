@@ -7,6 +7,11 @@ public enum SuperPanelKind: Equatable {
     case windowLayout
 }
 
+public enum SuperPanelFileSystemPresentation: Equatable {
+    case selectedItem
+    case finderCurrentDirectory
+}
+
 public enum SuperPanelActionID: Equatable, Hashable {
     case copyTranslatedText
     case textTransit
@@ -175,21 +180,23 @@ public struct SuperPanelContent: Equatable {
 
     public static func fileSystem(
         item: ClipboardItem,
-        windowLayoutButtons: [WindowLayoutButton] = []
+        windowLayoutButtons: [WindowLayoutButton] = [],
+        presentation: SuperPanelFileSystemPresentation = .selectedItem
     ) -> SuperPanelContent {
         let itemType = item.kind == .folder ? "文件夹" : "文件"
         let path = item.originalPath ?? item.displayTitle
         var actions: [SuperPanelActionDescriptor]
 
-        if item.kind == .folder {
+        switch presentation {
+        case .selectedItem:
+            actions = [
+                .init(id: .copyPath, title: "复制文件路径", systemImage: "doc.on.doc")
+            ]
+        case .finderCurrentDirectory:
             actions = [
                 .init(id: .createNewFile, title: "新建文件", systemImage: "plus.square.fill"),
                 .init(id: .copyPath, title: "复制当前路径", systemImage: "folder.fill"),
                 .init(id: .openTerminal, title: "在终端打开", systemImage: "terminal.fill")
-            ]
-        } else {
-            actions = [
-                .init(id: .copyPath, title: "复制文件路径", systemImage: "doc.on.doc")
             ]
         }
         actions.append(contentsOf: windowLayoutActionDescriptors(from: windowLayoutButtons))

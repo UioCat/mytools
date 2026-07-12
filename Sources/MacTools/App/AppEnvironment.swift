@@ -440,7 +440,7 @@ final class AppEnvironment {
             isFavorite: false
         )
 
-        contextPanel.show(item: item)
+        contextPanel.show(item: item, presentation: .finderCurrentDirectory)
     }
 
     private func showPostEventRequiredAlert() {

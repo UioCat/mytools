@@ -35,9 +35,16 @@ final class ContextPanelController {
         stopOutsideClickDismissMonitors()
     }
 
-    func show(item: ClipboardItem) {
+    func show(
+        item: ClipboardItem,
+        presentation: SuperPanelFileSystemPresentation = .selectedItem
+    ) {
         let layoutButtons = windowLayoutButtons()
-        let content = SuperPanelContent.fileSystem(item: item, windowLayoutButtons: layoutButtons)
+        let content = SuperPanelContent.fileSystem(
+            item: item,
+            windowLayoutButtons: layoutButtons,
+            presentation: presentation
+        )
         show(content: content) { [weak self] actionID in
             self?.performFileAction(actionID, item: item, windowLayoutButtons: layoutButtons) ?? .close
         }
