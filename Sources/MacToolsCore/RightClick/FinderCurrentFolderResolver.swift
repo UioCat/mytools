@@ -25,8 +25,16 @@ public enum FinderDocumentURLParser {
     }
 }
 
+enum FinderAccessibilityDocumentResult {
+    case noWindow
+    case value(CFTypeRef)
+    case unavailable
+}
+
 public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolving {
     private let desktopDirectory: URL
+    private let accessibilityDocument: (Int32) -> FinderAccessibilityDocumentResult
+    private let scriptingDocument: () -> String?
 
     public init(
         desktopDirectory: URL = FileManager.default.urls(
@@ -35,6 +43,18 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
         ).first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
     ) {
         self.desktopDirectory = desktopDirectory
+        accessibilityDocument = Self.systemAccessibilityDocument
+        scriptingDocument = Self.systemScriptingDocument
+    }
+
+    init(
+        desktopDirectory: URL,
+        accessibilityDocument: @escaping (Int32) -> FinderAccessibilityDocumentResult,
+        scriptingDocument: @escaping () -> String?
+    ) {
+        self.desktopDirectory = desktopDirectory
+        self.accessibilityDocument = accessibilityDocument
+        self.scriptingDocument = scriptingDocument
     }
 
     public func currentFolderURL(processIdentifier: Int32?) -> URL? {
@@ -42,14 +62,17 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
             return nil
         }
 
-        let application = AXUIElementCreateApplication(processIdentifier)
-        guard let window = focusedWindow(in: application) else {
+        switch accessibilityDocument(processIdentifier) {
+        case .noWindow:
             return desktopDirectory
+        case .value(let value):
+            return fileURL(from: value) ?? scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
+        case .unavailable:
+            return scriptingDocument().flatMap(FinderDocumentURLParser.fileURL)
         }
-        guard let documentValue = copyAttribute(kAXDocumentAttribute, from: window) else {
-            return nil
-        }
+    }
 
+    private func fileURL(from documentValue: CFTypeRef) -> URL? {
         if let documentURL = documentValue as? URL, documentURL.isFileURL {
             return URL(
                 fileURLWithPath: documentURL.path,
@@ -63,7 +86,43 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
         return FinderDocumentURLParser.fileURL(from: document)
     }
 
-    private func focusedWindow(in application: AXUIElement) -> AXUIElement? {
+    private static func systemAccessibilityDocument(
+        processIdentifier: Int32
+    ) -> FinderAccessibilityDocumentResult {
+        let application = AXUIElementCreateApplication(processIdentifier)
+        guard let window = focusedWindow(in: application) else {
+            return .noWindow
+        }
+        guard let documentValue = copyAttribute(kAXDocumentAttribute, from: window) else {
+            return .unavailable
+        }
+
+        return .value(documentValue)
+    }
+
+    private static func systemScriptingDocument() -> String? {
+        let source = """
+        tell application "Finder"
+            if (count of Finder windows) is 0 then return ""
+            return URL of target of front Finder window
+        end tell
+        """
+        guard let script = NSAppleScript(source: source) else {
+            return nil
+        }
+
+        var errorInfo: NSDictionary?
+        let result = script.executeAndReturnError(&errorInfo)
+        guard errorInfo == nil,
+              let document = result.stringValue,
+              FinderDocumentURLParser.fileURL(from: document) != nil else {
+            return nil
+        }
+
+        return document
+    }
+
+    private static func focusedWindow(in application: AXUIElement) -> AXUIElement? {
         if let window = copyElementAttribute(kAXFocusedWindowAttribute, from: application) {
             return window
         }
@@ -74,7 +133,7 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
         return windows.first
     }
 
-    private func copyElementAttribute(
+    private static func copyElementAttribute(
         _ attribute: String,
         from element: AXUIElement
     ) -> AXUIElement? {
@@ -86,7 +145,7 @@ public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolvi
         return (value as! AXUIElement)
     }
 
-    private func copyAttribute(
+    private static func copyAttribute(
         _ attribute: String,
         from element: AXUIElement
     ) -> CFTypeRef? {
