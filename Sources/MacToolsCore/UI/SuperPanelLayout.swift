@@ -27,12 +27,18 @@ public enum SuperPanelLayout {
             + estimatedExpandedTextHeight(for: content)
             + actionsHeight
             + 22
-        let cappedLegacyHeight = min(max(legacyHeight, 260), 620)
-        let legacyWidth: CGFloat = content.kind == .fileSystem ? 520 : 500
+        let isExpandedPanel = content.kind == .fileSystem || content.kind == .windowLayout
+
+        if isExpandedPanel {
+            return CGSize(
+                width: 320,
+                height: min(max(legacyHeight, 130), 620)
+            )
+        }
 
         return CGSize(
-            width: legacyWidth * scale,
-            height: cappedLegacyHeight * scale
+            width: 500 * scale,
+            height: min(max(legacyHeight, 260), 620) * scale
         )
     }
 

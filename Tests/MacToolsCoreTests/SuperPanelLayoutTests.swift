@@ -3,6 +3,10 @@ import XCTest
 @testable import MacToolsCore
 
 final class SuperPanelLayoutTests: XCTestCase {
+    private let eightLayoutButtons = (0..<8).map {
+        WindowLayoutButton(id: "layout.\($0)", title: "布局 \($0)", modes: [.maximize])
+    }
+
     func testTextPanelUsesHalfWidthAndHalfDynamicHeight() {
         let content = SuperPanelContent.text(
             originalText: "hello",
@@ -11,18 +15,82 @@ final class SuperPanelLayoutTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(SuperPanelLayout.panelSize(for: content).width, 250)
-        XCTAssertEqual(SuperPanelLayout.panelSize(for: content).height, 161)
+        XCTAssertEqual(
+            SuperPanelLayout.panelSize(for: content),
+            CGSize(width: 250, height: 161)
+        )
     }
 
-    func testEmptyLayoutPanelUsesHalfMinimumHeight() {
-        let content = SuperPanelContent.windowLayoutOnly(windowLayoutButtons: [])
+    func testStandardLayoutPanelExpandsToFitEightButtons() {
+        let content = SuperPanelContent.windowLayoutOnly(
+            windowLayoutButtons: eightLayoutButtons
+        )
 
-        XCTAssertEqual(SuperPanelLayout.panelSize(for: content).height, 130)
+        XCTAssertEqual(
+            SuperPanelLayout.panelSize(for: content),
+            CGSize(width: 320, height: 332)
+        )
     }
 
-    func testLargeFolderPanelUsesHalfMaximumHeight() {
-        let buttons = (0..<12).map {
+    func testSelectedItemPanelExpandsToFitEightLayoutButtons() {
+        let item = ClipboardItem(
+            id: UUID(),
+            kind: .folder,
+            displayTitle: "Project",
+            searchableText: "/tmp/Project",
+            text: nil,
+            originalPath: "/tmp/Project",
+            cachedFilePath: nil,
+            thumbnailPath: nil,
+            sourceApp: "访达",
+            createdAt: Date(timeIntervalSince1970: 0),
+            lastUsedAt: nil,
+            useCount: 0,
+            isPinned: false,
+            isFavorite: false
+        )
+        let content = SuperPanelContent.fileSystem(
+            item: item,
+            windowLayoutButtons: eightLayoutButtons
+        )
+
+        XCTAssertEqual(
+            SuperPanelLayout.panelSize(for: content),
+            CGSize(width: 320, height: 436)
+        )
+    }
+
+    func testFinderDirectoryPanelExpandsToFitActionsAndEightLayoutButtons() {
+        let item = ClipboardItem(
+            id: UUID(),
+            kind: .folder,
+            displayTitle: "Project",
+            searchableText: "/tmp/Project",
+            text: nil,
+            originalPath: "/tmp/Project",
+            cachedFilePath: nil,
+            thumbnailPath: nil,
+            sourceApp: "访达",
+            createdAt: Date(timeIntervalSince1970: 0),
+            lastUsedAt: nil,
+            useCount: 0,
+            isPinned: false,
+            isFavorite: false
+        )
+        let content = SuperPanelContent.fileSystem(
+            item: item,
+            windowLayoutButtons: eightLayoutButtons,
+            presentation: .finderCurrentDirectory
+        )
+
+        XCTAssertEqual(
+            SuperPanelLayout.panelSize(for: content),
+            CGSize(width: 320, height: 552)
+        )
+    }
+
+    func testOversizedFolderPanelUsesExpandedMaximumHeight() {
+        let twentyLayoutButtons = (0..<20).map {
             WindowLayoutButton(id: "layout.\($0)", title: "布局 \($0)", modes: [.maximize])
         }
         let item = ClipboardItem(
@@ -43,11 +111,13 @@ final class SuperPanelLayoutTests: XCTestCase {
         )
         let content = SuperPanelContent.fileSystem(
             item: item,
-            windowLayoutButtons: buttons
+            windowLayoutButtons: twentyLayoutButtons
         )
 
-        XCTAssertEqual(SuperPanelLayout.panelSize(for: content).width, 260)
-        XCTAssertEqual(SuperPanelLayout.panelSize(for: content).height, 310)
+        XCTAssertEqual(
+            SuperPanelLayout.panelSize(for: content),
+            CGSize(width: 320, height: 620)
+        )
     }
 
     func testHeaderUsesCompactMetrics() {
