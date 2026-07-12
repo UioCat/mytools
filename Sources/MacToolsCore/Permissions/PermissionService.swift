@@ -20,17 +20,25 @@ public enum AppPermission: String, Equatable {
     case accessibility
     case inputMonitoring
     case postEvent
+    case screenRecording
 }
 
 public struct PermissionSummary: Equatable {
     public var hasAccessibility: Bool
     public var hasInputMonitoring: Bool
     public var hasPostEvent: Bool
+    public var hasScreenRecording: Bool
 
-    public init(hasAccessibility: Bool, hasInputMonitoring: Bool, hasPostEvent: Bool = false) {
+    public init(
+        hasAccessibility: Bool,
+        hasInputMonitoring: Bool,
+        hasPostEvent: Bool = false,
+        hasScreenRecording: Bool = false
+    ) {
         self.hasAccessibility = hasAccessibility
         self.hasInputMonitoring = hasInputMonitoring
         self.hasPostEvent = hasPostEvent
+        self.hasScreenRecording = hasScreenRecording
     }
 
     public var canUseSuperRightClick: Bool {
@@ -67,6 +75,10 @@ public struct PermissionSummary: Equatable {
         hasPostEvent
     }
 
+    public var canCaptureScreen: Bool {
+        hasScreenRecording
+    }
+
     public var missingPermissions: [AppPermission] {
         var permissions: [AppPermission] = []
 
@@ -90,9 +102,11 @@ public protocol PermissionChecking {
     func hasAccessibilityPermission() -> Bool
     func hasInputMonitoringPermission() -> Bool
     func hasPostEventPermission() -> Bool
+    func hasScreenRecordingPermission() -> Bool
     func requestAccessibilityPermission() -> Bool
     func requestInputMonitoringPermission() -> Bool
     func requestPostEventPermission() -> Bool
+    func requestScreenRecordingPermission() -> Bool
 }
 
 public extension PermissionChecking {
@@ -107,6 +121,10 @@ public extension PermissionChecking {
     func requestPostEventPermission() -> Bool {
         hasPostEventPermission()
     }
+
+    func requestScreenRecordingPermission() -> Bool {
+        hasScreenRecordingPermission()
+    }
 }
 
 public final class PermissionService {
@@ -120,12 +138,17 @@ public final class PermissionService {
         PermissionSummary(
             hasAccessibility: checker.hasAccessibilityPermission(),
             hasInputMonitoring: checker.hasInputMonitoringPermission(),
-            hasPostEvent: checker.hasPostEventPermission()
+            hasPostEvent: checker.hasPostEventPermission(),
+            hasScreenRecording: checker.hasScreenRecordingPermission()
         )
     }
 
     public func requestPostEventPermission() -> Bool {
         checker.requestPostEventPermission()
+    }
+
+    public func requestScreenRecordingPermission() -> Bool {
+        checker.requestScreenRecordingPermission()
     }
 
     public func requestSuperRightClickPermissions() -> PermissionSummary {
@@ -169,6 +192,10 @@ public final class PermissionService {
         case .postEvent:
             return URL(
                 string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            )
+        case .screenRecording:
+            return URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
             )
         }
     }
@@ -222,6 +249,22 @@ public struct SystemPermissionChecker: PermissionChecking {
     public func requestPostEventPermission() -> Bool {
         #if canImport(CoreGraphics)
         return CGRequestPostEventAccess()
+        #else
+        return false
+        #endif
+    }
+
+    public func hasScreenRecordingPermission() -> Bool {
+        #if canImport(CoreGraphics)
+        return CGPreflightScreenCaptureAccess()
+        #else
+        return false
+        #endif
+    }
+
+    public func requestScreenRecordingPermission() -> Bool {
+        #if canImport(CoreGraphics)
+        return CGRequestScreenCaptureAccess()
         #else
         return false
         #endif

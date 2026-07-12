@@ -220,6 +220,12 @@ public struct SettingsView: View {
                 permission: .postEvent,
                 openPermissionSettings: openPermissionSettings
             )
+            PermissionStatusRow(
+                title: "屏幕与系统音频录制",
+                isEnabled: permissionSummary.canCaptureScreen,
+                permission: .screenRecording,
+                openPermissionSettings: openPermissionSettings
+            )
         }
     }
 
