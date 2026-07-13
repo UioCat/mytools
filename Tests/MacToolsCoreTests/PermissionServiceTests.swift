@@ -129,20 +129,43 @@ final class PermissionServiceTests: XCTestCase {
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         )
     }
+
+    func testScreenRecordingPermissionIsIncludedInSummaryAndSettingsURL() {
+        let summary = PermissionService(
+            checker: FakePermissionChecker(
+                hasAccessibility: true,
+                hasInputMonitoring: true,
+                hasPostEvent: true
+            )
+        ).summary()
+
+        XCTAssertFalse(summary.hasScreenRecording)
+        XCTAssertEqual(
+            PermissionService.systemSettingsURL(for: .screenRecording),
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        )
+    }
 }
 
 private final class FakePermissionChecker: PermissionChecking {
     var hasAccessibility: Bool
     var hasInputMonitoring: Bool
     var hasPostEvent: Bool
+    var hasScreenRecording: Bool
     private(set) var accessibilityRequestCount = 0
     private(set) var inputMonitoringRequestCount = 0
     private(set) var postEventRequestCount = 0
 
-    init(hasAccessibility: Bool, hasInputMonitoring: Bool, hasPostEvent: Bool) {
+    init(
+        hasAccessibility: Bool,
+        hasInputMonitoring: Bool,
+        hasPostEvent: Bool,
+        hasScreenRecording: Bool = false
+    ) {
         self.hasAccessibility = hasAccessibility
         self.hasInputMonitoring = hasInputMonitoring
         self.hasPostEvent = hasPostEvent
+        self.hasScreenRecording = hasScreenRecording
     }
 
     func hasAccessibilityPermission() -> Bool {
@@ -155,6 +178,10 @@ private final class FakePermissionChecker: PermissionChecking {
 
     func hasPostEventPermission() -> Bool {
         hasPostEvent
+    }
+
+    func hasScreenRecordingPermission() -> Bool {
+        hasScreenRecording
     }
 
     func requestAccessibilityPermission() -> Bool {
@@ -170,5 +197,9 @@ private final class FakePermissionChecker: PermissionChecking {
     func requestPostEventPermission() -> Bool {
         postEventRequestCount += 1
         return hasPostEvent
+    }
+
+    func requestScreenRecordingPermission() -> Bool {
+        hasScreenRecording
     }
 }

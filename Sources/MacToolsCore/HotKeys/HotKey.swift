@@ -4,7 +4,7 @@ public enum HotKeyTarget: Equatable {
     case mainPanel
     case clipboard
     case translation
-    case reservedTool3
+    case screenCapture
     case windowLayout(WindowLayoutMode)
 
     public var rawValue: String {
@@ -15,8 +15,8 @@ public enum HotKeyTarget: Equatable {
             return "clipboard"
         case .translation:
             return "translation"
-        case .reservedTool3:
-            return "reservedTool3"
+        case .screenCapture:
+            return "screenCapture"
         case .windowLayout(let mode):
             return "windowLayout.\(mode.rawValue)"
         }

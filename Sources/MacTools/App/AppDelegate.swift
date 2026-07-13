@@ -31,8 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             environment.openClipboard()
         case .translation:
             environment.openTranslation()
-        case .reservedTool3:
-            environment.logger.info("reserved hotkey selected: \(target.rawValue)")
+        case .screenCapture:
+            environment.openScreenCapture()
         case .windowLayout(let mode):
             environment.applyWindowLayout(mode)
         }

@@ -28,6 +28,10 @@ final class MenuBarController {
         let clipboardItem = NSMenuItem(title: "剪贴板", action: #selector(openClipboard), keyEquivalent: "")
         clipboardItem.target = self
         menu.addItem(clipboardItem)
+
+        let screenCaptureItem = NSMenuItem(title: "截图与录屏", action: #selector(openScreenCapture), keyEquivalent: "")
+        screenCaptureItem.target = self
+        menu.addItem(screenCaptureItem)
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -51,5 +55,10 @@ final class MenuBarController {
     @objc func openClipboard() {
         environment.logger.info("menu clipboard selected")
         environment.openClipboard()
+    }
+
+    @objc func openScreenCapture() {
+        environment.logger.info("menu screen capture selected")
+        environment.openScreenCapture()
     }
 }

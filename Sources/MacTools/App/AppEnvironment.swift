@@ -21,6 +21,10 @@ final class AppEnvironment {
     private let finderFolderResolutionCoordinator = FinderFolderResolutionCoordinator()
     private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
+    private lazy var screenCaptureCoordinator = ScreenCaptureCoordinator(
+        permissionService: permissionService,
+        logger: logger
+    )
     private var clipboardTimer: Timer?
     private var superRightClickMonitor: SuperRightClickMonitor?
     private var appBeforePanel: NSRunningApplication?
@@ -168,6 +172,10 @@ final class AppEnvironment {
 
     func openSettings() {
         openMainPanel()
+    }
+
+    func openScreenCapture() {
+        screenCaptureCoordinator.start()
     }
 
     func applyWindowLayout(_ mode: WindowLayoutMode) {
