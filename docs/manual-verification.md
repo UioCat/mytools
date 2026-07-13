@@ -36,7 +36,9 @@
 - Configure an oversized custom window-layout list and confirm the super-right-click panel stops growing at the 620 pt safety cap and allows the overflow content to scroll.
 - Place the super-right-click panel over contrasting light and dark windows; confirm no gray outline, titlebar residue, rectangular system shadow, or backing layer appears outside its rounded Liquid Glass surface.
 - Long right-click a selected folder; confirm only the MacTools context action window appears and the system menu does not appear.
-- Open settings and confirm the window layout section shows compact rows with preview icons; hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row.
+- Open Settings on a wide window and confirm the two top setting columns stretch across the usable content width; the Window Layout section spans the full width below them with no large unused right-hand area.
+- In Window Layout, confirm every preview has a visible neutral screen frame and blue inset target region. Verify left/right halves, one-third, two-thirds, centered, and maximized layouts are distinguishable before reading their labels; narrow the window and confirm sections stack without clipping controls.
+- Hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row.
 - Open settings and confirm the clipboard section can choose a custom cache storage folder, restore the default folder, and switch cache size between `200M`, `500M`, `1024M`, and `2048M`.
 - Long right-click selected text or a Finder item, click a window layout button, and confirm the frontmost app window moves to the selected visible-screen region.
 - Press a configured window layout shortcut while another app is frontmost and confirm its focused window moves to the matching visible-screen region.

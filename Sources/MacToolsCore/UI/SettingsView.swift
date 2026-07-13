@@ -78,15 +78,19 @@ public struct SettingsView: View {
     }
 
     private var content: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
+        GeometryReader { geometry in
+            let innerWidth = max(0, geometry.size.width - 44)
 
-                settingsColumns
-                    .liquidGlassGroup(spacing: 14)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+
+                    settingsColumns(availableWidth: innerWidth)
+                        .liquidGlassGroup(spacing: 14)
+                }
+                .padding(22)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(22)
-            .frame(maxWidth: 900, alignment: .topLeading)
         }
     }
 
@@ -94,26 +98,35 @@ public struct SettingsView: View {
         MainWorkspaceModuleHeader(module: .settings)
     }
 
-    private var settingsColumns: some View {
-        ViewThatFits(in: .horizontal) {
+    @ViewBuilder
+    private func settingsColumns(availableWidth: CGFloat) -> some View {
+        switch SettingsPageLayout.columnArrangement(for: availableWidth) {
+        case .twoColumns:
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 14) {
+                HStack(alignment: .top, spacing: SettingsPageLayout.columnSpacing) {
                     primarySettingsColumn
-                        .frame(width: 320, alignment: .topLeading)
+                        .frame(
+                            minWidth: SettingsPageLayout.primaryColumnMinimumWidth,
+                            maxWidth: .infinity,
+                            alignment: .topLeading
+                        )
                     secondarySettingsColumn
-                        .frame(width: 440, alignment: .topLeading)
+                        .frame(
+                            minWidth: SettingsPageLayout.secondaryColumnMinimumWidth,
+                            maxWidth: .infinity,
+                            alignment: .topLeading
+                        )
                 }
 
                 windowLayoutSection
-                    .frame(width: 774, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-
+        case .stacked:
             VStack(alignment: .leading, spacing: 14) {
                 primarySettingsColumn
                 secondarySettingsColumn
                 windowLayoutSection
             }
-            .frame(maxWidth: 440, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -750,7 +763,7 @@ private struct WindowLayoutModeActionCell: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 WindowLayoutModePreviewIcon(mode: mode)
-                    .frame(width: 32, height: 22)
+                    .frame(width: 36, height: 24)
 
                 Text(mode.title)
                     .font(.system(size: 13, weight: .semibold))
@@ -1027,39 +1040,41 @@ private struct WindowLayoutPreviewIcon: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let size = proxy.size
+            let bounds = CGRect(origin: .zero, size: proxy.size)
+            let screen = WindowLayoutPreviewGeometry.screenFrame(in: bounds)
+
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color.white.opacity(0.09))
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(width: screen.width, height: screen.height)
+                    .offset(x: screen.minX, y: screen.minY)
+
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.26), lineWidth: 0.8)
+                    .strokeBorder(Color.primary.opacity(0.34), lineWidth: 1)
+                    .frame(width: screen.width, height: screen.height)
+                    .offset(x: screen.minX, y: screen.minY)
 
                 ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                    let target = WindowLayoutPreviewGeometry.targetFrame(for: segment, in: bounds)
+
                     RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(MacToolsGlassTheme.activeBlue.opacity(segmentOpacity(at: index)))
+                        .fill(MacToolsGlassTheme.activeBlue.opacity(index == 0 ? 0.82 : 0.58))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                                .strokeBorder(MacToolsGlassTheme.activeBlue.opacity(0.88), lineWidth: 0.8)
+                        )
                         .frame(
-                            width: max(2, size.width * segment.width),
-                            height: max(2, size.height * segment.height)
+                            width: target.width,
+                            height: target.height
                         )
                         .offset(
-                            x: size.width * segment.x,
-                            y: size.height * segment.y
+                            x: target.minX,
+                            y: target.minY
                         )
                 }
             }
         }
         .aspectRatio(1.42, contentMode: .fit)
-    }
-
-    private func segmentOpacity(at index: Int) -> Double {
-        switch index {
-        case 0:
-            return 0.52
-        case 1:
-            return 0.38
-        default:
-            return 0.28
-        }
     }
 }
 
