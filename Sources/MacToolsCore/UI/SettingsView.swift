@@ -100,32 +100,34 @@ public struct SettingsView: View {
 
     @ViewBuilder
     private func settingsColumns(availableWidth: CGFloat) -> some View {
-        switch SettingsPageLayout.columnArrangement(for: availableWidth) {
-        case .twoColumns:
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: SettingsPageLayout.columnSpacing) {
-                    primarySettingsColumn
-                        .frame(
-                            minWidth: SettingsPageLayout.primaryColumnMinimumWidth,
-                            maxWidth: .infinity,
-                            alignment: .topLeading
-                        )
-                    secondarySettingsColumn
-                        .frame(
-                            minWidth: SettingsPageLayout.secondaryColumnMinimumWidth,
-                            maxWidth: .infinity,
-                            alignment: .topLeading
-                        )
-                }
+        Group {
+            switch SettingsPageLayout.columnArrangement(for: availableWidth) {
+            case .twoColumns:
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: SettingsPageLayout.columnSpacing) {
+                        primarySettingsColumn
+                            .frame(
+                                minWidth: SettingsPageLayout.primaryColumnMinimumWidth,
+                                maxWidth: .infinity,
+                                alignment: .topLeading
+                            )
+                        secondarySettingsColumn
+                            .frame(
+                                minWidth: SettingsPageLayout.secondaryColumnMinimumWidth,
+                                maxWidth: .infinity,
+                                alignment: .topLeading
+                            )
+                    }
 
-                windowLayoutSection
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-        case .stacked:
-            VStack(alignment: .leading, spacing: 14) {
-                primarySettingsColumn
-                secondarySettingsColumn
-                windowLayoutSection
+                    windowLayoutSection
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            case .stacked:
+                VStack(alignment: .leading, spacing: 14) {
+                    primarySettingsColumn
+                    secondarySettingsColumn
+                    windowLayoutSection
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

@@ -19,7 +19,7 @@ final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStre
     private var destination: URL?
     private var startedSession = false
 
-    init(captureService: SystemScreenCaptureService = SystemScreenCaptureService()) {
+    init(captureService: SystemScreenCaptureService) {
         self.captureService = captureService
     }
 

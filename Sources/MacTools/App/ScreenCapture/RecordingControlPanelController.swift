@@ -56,17 +56,13 @@ final class RecordingControlPanelController {
             stack.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
         ])
 
-        let size = NSSize(width: 228, height: 48)
-        let x = min(
-            max(selection.frame.maxX - size.width, selection.displayFrame.minX + 12),
-            selection.displayFrame.maxX - size.width - 12
-        )
-        let y = min(
-            max(selection.frame.maxY + 12, selection.displayFrame.minY + 12),
-            selection.displayFrame.maxY - size.height - 12
-        )
+        let visibleFrame = NSScreen.screens.first(where: { screen in
+            let key = NSDeviceDescriptionKey("NSScreenNumber")
+            return (screen.deviceDescription[key] as? NSNumber)?.uint32Value == selection.displayID
+        })?.visibleFrame ?? selection.displayFrame
+        let panelFrame = ScreenCaptureOverlayLayout.recordingControlFrame(visibleFrame: visibleFrame)
         let panel = RecordingControlPanel(
-            contentRect: NSRect(origin: NSPoint(x: x, y: y), size: size),
+            contentRect: panelFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -74,7 +70,7 @@ final class RecordingControlPanelController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .floating
+        panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = effectView
         panel.orderFrontRegardless()

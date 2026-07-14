@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import MacToolsCore
 import SwiftUI
 
 @MainActor
@@ -8,13 +9,30 @@ final class ScreenshotEditorPanelController {
 
     func present(
         image: CGImage,
+        selection: ScreenCaptureSelection,
+        settings: ScreenCaptureSettings,
+        onSettingsChange: @escaping (ScreenCaptureSettings) -> Bool,
         onCopy: @escaping (Data) -> Void,
         onCancel: @escaping () -> Void
     ) {
         dismiss()
 
+        let displayBounds = CGRect(origin: .zero, size: selection.displayFrame.size)
+        let selectionFrame = selection.frame.offsetBy(
+            dx: -selection.displayFrame.minX,
+            dy: -selection.displayFrame.minY
+        )
+        let toolbarFrame = ScreenCaptureOverlayLayout.editorToolbarFrame(
+            selectionFrame: selectionFrame,
+            displayBounds: displayBounds
+        )
+
         let rootView = ScreenshotEditorView(
             image: image,
+            imageFrame: Self.swiftUIFrame(from: selectionFrame, in: displayBounds),
+            toolbarFrame: Self.swiftUIFrame(from: toolbarFrame, in: displayBounds),
+            settings: settings,
+            onSettingsChange: onSettingsChange,
             onCopy: { [weak self] data in
                 self?.dismiss()
                 onCopy(data)
@@ -24,9 +42,9 @@ final class ScreenshotEditorPanelController {
                 onCancel()
             }
         )
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
-            styleMask: [.borderless, .resizable],
+        let panel = ScreenshotEditorPanel(
+            contentRect: selection.displayFrame,
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -34,14 +52,11 @@ final class ScreenshotEditorPanelController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .floating
-        panel.isMovableByWindowBackground = true
+        panel.level = .screenSaver
+        panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: rootView)
-        panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.cornerRadius = 24
-        panel.contentView?.layer?.masksToBounds = true
-        panel.center()
+        panel.setFrame(selection.displayFrame, display: true)
         panel.makeKeyAndOrderFront(nil)
         self.panel = panel
     }
@@ -50,4 +65,18 @@ final class ScreenshotEditorPanelController {
         panel?.orderOut(nil)
         panel = nil
     }
+
+    private static func swiftUIFrame(from appKitFrame: CGRect, in displayBounds: CGRect) -> CGRect {
+        CGRect(
+            x: appKitFrame.minX,
+            y: displayBounds.height - appKitFrame.maxY,
+            width: appKitFrame.width,
+            height: appKitFrame.height
+        )
+    }
+}
+
+private final class ScreenshotEditorPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }

@@ -20,15 +20,15 @@ final class WindowLayoutSettingsPresentationTests: XCTestCase {
             CGRect(x: 1, y: 1, width: 34, height: 22)
         )
         XCTAssertEqual(
-            WindowLayoutPreviewGeometry.targetFrame(for: .leftHalf.previewSegment, in: bounds),
+            WindowLayoutPreviewGeometry.targetFrame(for: WindowLayoutMode.leftHalf.previewSegment, in: bounds),
             CGRect(x: 3, y: 3, width: 15, height: 18)
         )
         XCTAssertEqual(
-            WindowLayoutPreviewGeometry.targetFrame(for: .rightThird.previewSegment, in: bounds),
-            CGRect(x: 25, y: 3, width: 10, height: 18)
+            WindowLayoutPreviewGeometry.targetFrame(for: WindowLayoutMode.rightThird.previewSegment, in: bounds),
+            CGRect(x: 23, y: 3, width: 10, height: 18)
         )
         XCTAssertEqual(
-            WindowLayoutPreviewGeometry.targetFrame(for: .maximize.previewSegment, in: bounds),
+            WindowLayoutPreviewGeometry.targetFrame(for: WindowLayoutMode.maximize.previewSegment, in: bounds),
             CGRect(x: 3, y: 3, width: 30, height: 18)
         )
     }
@@ -36,7 +36,10 @@ final class WindowLayoutSettingsPresentationTests: XCTestCase {
     func testMaximizedPreviewLeavesVisibleSpaceInsideScreenFrame() {
         let bounds = CGRect(x: 0, y: 0, width: 36, height: 24)
         let screen = WindowLayoutPreviewGeometry.screenFrame(in: bounds)
-        let target = WindowLayoutPreviewGeometry.targetFrame(for: .maximize.previewSegment, in: bounds)
+        let target = WindowLayoutPreviewGeometry.targetFrame(
+            for: WindowLayoutMode.maximize.previewSegment,
+            in: bounds
+        )
 
         XCTAssertGreaterThan(target.minX, screen.minX)
         XCTAssertGreaterThan(target.minY, screen.minY)

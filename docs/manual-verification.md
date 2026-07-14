@@ -22,11 +22,11 @@
 - Confirm text, URL, file, folder, and image results use a two-line title/metadata layout; images should render as compact leading thumbnails instead of large cards.
 - Use `Option + 2` to open the translation tool.
 - Use `Option + 3`, or select `截图与录屏` from the MacTools menu bar menu, to start Screenshot and Recording. If the permission is absent, confirm the alert opens the Screen Recording privacy pane.
-- Confirm the dimmed selector accepts only a manually dragged rectangle within the display where the drag began; press Escape and confirm that it writes no clipboard item and creates no file.
-- After selection, confirm the floating action bar offers exactly `截图` and `录屏`.
-- Choose `截图`; draw a line, an arrow, a rectangle, and a mosaic region, then confirm `完成并复制` writes the edited PNG to the system clipboard.
-- In the screenshot editor, confirm Cmd+Z removes only the most recent annotation, Cmd+Return copies the PNG, and Escape cancels editing.
-- Choose `录屏`; confirm the red floating control shows elapsed time and a labeled `停止` action, and does not appear in the recorded video.
+- Confirm the dimmed selector shows one top-centered `截图 / 录屏` mode control, defaults to `截图`, and moves to the display where selection begins.
+- Confirm the selector accepts only a manually dragged rectangle within the display where the drag began; press Escape and confirm that it writes no clipboard item and creates no file.
+- Keep `截图` selected and drag a region; confirm the captured image appears in the original region without a separate centered editor or a second confirmation click.
+- In the in-place editor, draw a line, an arrow, a rectangle, a circle, and a mosaic region. Confirm the eight preset colors, custom color picker, and thin/standard/thick controls change both the live annotation and the PNG copied by `完成`. Close and reopen capture and confirm the last selected color and line width remain selected. Confirm mosaic shows a boundary only while dragging, then keeps the pixelation without a colored frame; the copied PNG must retain only the pixelation. Confirm Cmd+Z removes only the most recent annotation, Cmd+Return copies the PNG, and Escape cancels editing.
+- Switch the top control to `录屏` and drag a region; confirm recording starts immediately, the red floating control is pinned at the top center of the selected display, shows elapsed time and a labeled `停止` action, and does not appear in the recorded video.
 - Stop a recording and confirm a playable H.264 MP4 named `MacTools Recording …` is created in Downloads and selected in Finder.
 - While recording, press `Option + 3` again and confirm the existing recording remains active without opening a second selector.
 - Place the selection overlay, editor, and recording control over both light and dark content; confirm no titlebar residue, rectangular system shadow, gray outline, or backing layer appears outside the intended rounded surfaces.

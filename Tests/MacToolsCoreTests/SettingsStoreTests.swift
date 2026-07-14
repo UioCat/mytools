@@ -22,6 +22,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.translation.apiKey, "")
         XCTAssertFalse(settings.translation.isConfigured)
         XCTAssertEqual(settings.translation.displayAPIKey(isRevealed: false), "")
+        XCTAssertEqual(settings.screenCapture.annotationColor, .blue)
+        XCTAssertEqual(settings.screenCapture.annotationLineWidth, .medium)
         XCTAssertTrue(settings.windowLayout.isEnabled)
         XCTAssertEqual(settings.windowLayout.enabledModes, WindowLayoutMode.allCases)
         XCTAssertEqual(settings.windowLayout.modeShortcuts.map(\.mode), WindowLayoutMode.allCases)
@@ -72,6 +74,10 @@ final class SettingsStoreTests: XCTestCase {
         settings.clipboard.maxCacheMegabytes = 2048
         settings.clipboard.cacheStoragePath = "/tmp/MacToolsClipboardCache"
         settings.translation.apiKey = "sk-test-key"
+        settings.screenCapture = ScreenCaptureSettings(
+            annotationColor: ScreenshotAnnotationColor(red: 0.2, green: 0.4, blue: 0.6),
+            annotationLineWidth: .thick
+        )
         settings.windowLayout.modeShortcuts = [
             WindowLayoutModeShortcuts(
                 mode: .leftHalf,
@@ -91,6 +97,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(loaded.clipboard.maxCacheMegabytes, 2048)
         XCTAssertEqual(loaded.clipboard.cacheStoragePath, "/tmp/MacToolsClipboardCache")
         XCTAssertEqual(loaded.translation.apiKey, "sk-test-key")
+        XCTAssertEqual(loaded.screenCapture, settings.screenCapture)
         XCTAssertEqual(loaded.windowLayout.shortcuts(for: .leftHalf).map(\.displayValue), [
             "Option+Command+Left",
             "Control+Option+1"
@@ -235,6 +242,35 @@ final class SettingsStoreTests: XCTestCase {
         let loaded = try SettingsStore(fileURL: url).load()
 
         XCTAssertEqual(loaded.windowLayout, .defaults)
+        XCTAssertEqual(loaded.screenCapture, .defaults)
+    }
+
+    func testPartialOrUnknownScreenCaptureSettingsUseFieldDefaults() throws {
+        let colorOnlyJSON = """
+        {
+          "annotationColor": { "red": 0.2, "green": 0.4, "blue": 0.6, "alpha": 1 }
+        }
+        """
+        let unknownWidthJSON = """
+        {
+          "annotationColor": { "red": 0.8, "green": 0.1, "blue": 0.2, "alpha": 1 },
+          "annotationLineWidth": "extra-thick"
+        }
+        """
+
+        let colorOnly = try JSONDecoder().decode(
+            ScreenCaptureSettings.self,
+            from: try XCTUnwrap(colorOnlyJSON.data(using: .utf8))
+        )
+        let unknownWidth = try JSONDecoder().decode(
+            ScreenCaptureSettings.self,
+            from: try XCTUnwrap(unknownWidthJSON.data(using: .utf8))
+        )
+
+        XCTAssertEqual(colorOnly.annotationColor, .init(red: 0.2, green: 0.4, blue: 0.6))
+        XCTAssertEqual(colorOnly.annotationLineWidth, .medium)
+        XCTAssertEqual(unknownWidth.annotationColor, .init(red: 0.8, green: 0.1, blue: 0.2))
+        XCTAssertEqual(unknownWidth.annotationLineWidth, .medium)
     }
 
     func testLegacyWindowLayoutCustomButtonsAreNotVisibleButtons() {

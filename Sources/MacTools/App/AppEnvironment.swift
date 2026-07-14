@@ -23,7 +23,13 @@ final class AppEnvironment {
     private let mainPanelDismissHandler = PanelDismissHandler()
     private lazy var screenCaptureCoordinator = ScreenCaptureCoordinator(
         permissionService: permissionService,
-        logger: logger
+        logger: logger,
+        settingsProvider: { [weak self] in
+            self?.settings.screenCapture ?? .defaults
+        },
+        onSettingsChange: { [weak self] screenCaptureSettings in
+            self?.saveScreenCaptureSettings(screenCaptureSettings) ?? false
+        }
     )
     private var clipboardTimer: Timer?
     private var superRightClickMonitor: SuperRightClickMonitor?
@@ -234,6 +240,20 @@ final class AppEnvironment {
         onSettingsChanged(updated)
 
         return updated
+    }
+
+    private func saveScreenCaptureSettings(_ screenCaptureSettings: ScreenCaptureSettings) -> Bool {
+        var updated = settings
+        updated.screenCapture = screenCaptureSettings
+
+        do {
+            try settingsStore.save(updated)
+            settings = updated
+            return true
+        } catch {
+            logger.error("screen capture settings save failed: \(error)")
+            return false
+        }
     }
 
     private func startSuperRightClickMonitor() {

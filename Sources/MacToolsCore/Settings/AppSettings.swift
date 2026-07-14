@@ -347,6 +347,41 @@ public struct TranslationSettings: Codable, Equatable {
     }
 }
 
+public struct ScreenCaptureSettings: Codable, Equatable {
+    public var annotationColor: ScreenshotAnnotationColor
+    public var annotationLineWidth: ScreenshotAnnotationLineWidth
+
+    public static let defaults = ScreenCaptureSettings(
+        annotationColor: .blue,
+        annotationLineWidth: .medium
+    )
+
+    public init(
+        annotationColor: ScreenshotAnnotationColor = .blue,
+        annotationLineWidth: ScreenshotAnnotationLineWidth = .medium
+    ) {
+        self.annotationColor = annotationColor
+        self.annotationLineWidth = annotationLineWidth
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case annotationColor
+        case annotationLineWidth
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.annotationColor = (try? container.decodeIfPresent(
+            ScreenshotAnnotationColor.self,
+            forKey: .annotationColor
+        )) ?? Self.defaults.annotationColor
+        self.annotationLineWidth = (try? container.decodeIfPresent(
+            ScreenshotAnnotationLineWidth.self,
+            forKey: .annotationLineWidth
+        )) ?? Self.defaults.annotationLineWidth
+    }
+}
+
 public struct AppSettings: Codable, Equatable {
     public var mainPanelShortcut: HotKeyBinding
     public var clipboardShortcut: HotKeyBinding
@@ -356,6 +391,7 @@ public struct AppSettings: Codable, Equatable {
     public var superRightClick: SuperRightClickSettings
     public var translation: TranslationSettings
     public var windowLayout: WindowLayoutSettings
+    public var screenCapture: ScreenCaptureSettings
 
     public static let defaults = AppSettings(
         mainPanelShortcut: HotKeyBinding(key: "Space", modifiers: ["Option"]),
@@ -372,7 +408,8 @@ public struct AppSettings: Codable, Equatable {
             longPressMilliseconds: SuperRightClickResponseSpeed.minimumMilliseconds
         ),
         translation: TranslationSettings(),
-        windowLayout: .defaults
+        windowLayout: .defaults,
+        screenCapture: .defaults
     )
 
     public init(
@@ -383,7 +420,8 @@ public struct AppSettings: Codable, Equatable {
         clipboard: ClipboardSettings,
         superRightClick: SuperRightClickSettings,
         translation: TranslationSettings,
-        windowLayout: WindowLayoutSettings
+        windowLayout: WindowLayoutSettings,
+        screenCapture: ScreenCaptureSettings = .defaults
     ) {
         self.mainPanelShortcut = mainPanelShortcut
         self.clipboardShortcut = clipboardShortcut
@@ -393,6 +431,7 @@ public struct AppSettings: Codable, Equatable {
         self.superRightClick = superRightClick
         self.translation = translation
         self.windowLayout = windowLayout
+        self.screenCapture = screenCapture
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -404,6 +443,7 @@ public struct AppSettings: Codable, Equatable {
         case superRightClick
         case translation
         case windowLayout
+        case screenCapture
     }
 
     public init(from decoder: Decoder) throws {
@@ -424,6 +464,8 @@ public struct AppSettings: Codable, Equatable {
             ?? Self.defaults.translation
         self.windowLayout = try container.decodeIfPresent(WindowLayoutSettings.self, forKey: .windowLayout)
             ?? Self.defaults.windowLayout
+        self.screenCapture = try container.decodeIfPresent(ScreenCaptureSettings.self, forKey: .screenCapture)
+            ?? Self.defaults.screenCapture
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -436,5 +478,6 @@ public struct AppSettings: Codable, Equatable {
         try container.encode(superRightClick, forKey: .superRightClick)
         try container.encode(translation, forKey: .translation)
         try container.encode(windowLayout, forKey: .windowLayout)
+        try container.encode(screenCapture, forKey: .screenCapture)
     }
 }

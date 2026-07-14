@@ -12,8 +12,16 @@ enum ScreenCaptureError: Error, Equatable {
     case downloadsDirectoryUnavailable
 }
 
+@MainActor
 protocol ScreenStillCapturing {
+    func prepare() async throws
     func captureStill(for selection: ScreenCaptureSelection) async throws -> CGImage
+    func invalidatePreparation()
+}
+
+extension ScreenStillCapturing {
+    func prepare() async throws {}
+    func invalidatePreparation() {}
 }
 
 struct ScreenCaptureSource {
@@ -21,7 +29,19 @@ struct ScreenCaptureSource {
     let configuration: SCStreamConfiguration
 }
 
+@MainActor
 final class SystemScreenCaptureService: ScreenStillCapturing {
+    private let shareableContentCache = ScreenCapturePreparationCache<SCShareableContent> {
+        try await SCShareableContent.excludingDesktopWindows(
+            false,
+            onScreenWindowsOnly: true
+        )
+    }
+
+    func prepare() async throws {
+        _ = try await shareableContent()
+    }
+
     func captureStill(for selection: ScreenCaptureSelection) async throws -> CGImage {
         let source = try await source(for: selection, purpose: .screenshot)
         return try await SCScreenshotManager.captureImage(
@@ -34,10 +54,7 @@ final class SystemScreenCaptureService: ScreenStillCapturing {
         for selection: ScreenCaptureSelection,
         purpose: ScreenCaptureMode
     ) async throws -> ScreenCaptureSource {
-        let content = try await SCShareableContent.excludingDesktopWindows(
-            false,
-            onScreenWindowsOnly: true
-        )
+        let content = try await shareableContent()
         guard let display = content.displays.first(where: { $0.displayID == selection.displayID }) else {
             throw ScreenCaptureError.displayUnavailable
         }
@@ -68,5 +85,13 @@ final class SystemScreenCaptureService: ScreenStillCapturing {
         configuration.showsCursor = true
 
         return ScreenCaptureSource(filter: filter, configuration: configuration)
+    }
+
+    func invalidatePreparation() {
+        shareableContentCache.invalidate()
+    }
+
+    private func shareableContent() async throws -> SCShareableContent {
+        try await shareableContentCache.value()
     }
 }

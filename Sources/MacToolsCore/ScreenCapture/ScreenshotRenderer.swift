@@ -11,10 +11,8 @@ public enum ScreenshotRendererError: Error, Equatable {
 }
 
 public enum ScreenshotRenderer {
-    private static let strokeColor = CGColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
-    private static let strokeWidth: CGFloat = 3
-    private static let arrowHeadLength: CGFloat = 10
     private static let mosaicScale: CGFloat = 12
+    private static let ciContext = CIContext(options: nil)
 
     public static func pngData(image: CGImage, annotations: [ScreenshotAnnotation]) throws -> Data {
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
@@ -32,17 +30,24 @@ public enum ScreenshotRenderer {
 
         context.interpolationQuality = .high
         context.draw(image, in: bounds)
+        let mosaicImage = try annotations.contains(where: isMosaic)
+            ? mosaicImage(image: image)
+            : nil
 
         for annotation in annotations {
             switch annotation {
-            case let .line(start, end):
-                drawLine(in: context, start: start, end: end)
-            case let .arrow(start, end):
-                drawArrow(in: context, start: start, end: end)
-            case let .rectangle(rect):
-                drawRectangle(in: context, rect: rect)
+            case let .line(start, end, color, lineWidth):
+                drawLine(in: context, start: start, end: end, color: color, lineWidth: lineWidth)
+            case let .arrow(start, end, color, lineWidth):
+                drawArrow(in: context, start: start, end: end, color: color, lineWidth: lineWidth)
+            case let .rectangle(rect, color, lineWidth):
+                drawRectangle(in: context, rect: rect, color: color, lineWidth: lineWidth)
+            case let .circle(rect, color, lineWidth):
+                drawCircle(in: context, rect: rect, color: color, lineWidth: lineWidth)
             case let .mosaic(rect):
-                try drawMosaic(in: context, sourceImage: image, rect: rect, bounds: bounds)
+                if let mosaicImage {
+                    drawMosaic(in: context, mosaicImage: mosaicImage, rect: rect, bounds: bounds)
+                }
             }
         }
 
@@ -68,10 +73,23 @@ public enum ScreenshotRenderer {
         return data as Data
     }
 
-    private static func drawLine(in context: CGContext, start: CGPoint, end: CGPoint) {
+    public static func mosaicImage(image: CGImage) throws -> CGImage {
+        try makeMosaicImage(
+            sourceImage: image,
+            bounds: CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        )
+    }
+
+    private static func drawLine(
+        in context: CGContext,
+        start: CGPoint,
+        end: CGPoint,
+        color: ScreenshotAnnotationColor,
+        lineWidth: CGFloat
+    ) {
         context.saveGState()
-        context.setStrokeColor(strokeColor)
-        context.setLineWidth(strokeWidth)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(lineWidth)
         context.setLineCap(.round)
         context.move(to: start)
         context.addLine(to: end)
@@ -79,8 +97,15 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
-    private static func drawArrow(in context: CGContext, start: CGPoint, end: CGPoint) {
+    private static func drawArrow(
+        in context: CGContext,
+        start: CGPoint,
+        end: CGPoint,
+        color: ScreenshotAnnotationColor,
+        lineWidth: CGFloat
+    ) {
         let angle = atan2(end.y - start.y, end.x - start.x)
+        let arrowHeadLength = ScreenshotAnnotationArrowStyle.headLength(forLineWidth: lineWidth)
         let headLeft = CGPoint(
             x: end.x - arrowHeadLength * cos(angle - .pi / 6),
             y: end.y - arrowHeadLength * sin(angle - .pi / 6)
@@ -91,8 +116,8 @@ public enum ScreenshotRenderer {
         )
 
         context.saveGState()
-        context.setStrokeColor(strokeColor)
-        context.setLineWidth(strokeWidth)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(lineWidth)
         context.setLineCap(.round)
         context.setLineJoin(.round)
         context.move(to: start)
@@ -104,25 +129,33 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
-    private static func drawRectangle(in context: CGContext, rect: CGRect) {
+    private static func drawRectangle(
+        in context: CGContext,
+        rect: CGRect,
+        color: ScreenshotAnnotationColor,
+        lineWidth: CGFloat
+    ) {
         context.saveGState()
-        context.setStrokeColor(strokeColor)
-        context.setLineWidth(strokeWidth)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(lineWidth)
         context.stroke(rect.standardized)
         context.restoreGState()
     }
 
-    private static func drawMosaic(
+    private static func drawCircle(
         in context: CGContext,
-        sourceImage: CGImage,
         rect: CGRect,
-        bounds: CGRect
-    ) throws {
-        let mosaicRect = rect.standardized.intersection(bounds).integral
-        guard !mosaicRect.isEmpty else {
-            return
-        }
+        color: ScreenshotAnnotationColor,
+        lineWidth: CGFloat
+    ) {
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(lineWidth)
+        context.strokeEllipse(in: rect.standardized)
+        context.restoreGState()
+    }
 
+    private static func makeMosaicImage(sourceImage: CGImage, bounds: CGRect) throws -> CGImage {
         guard let filter = CIFilter(name: "CIPixellate") else {
             throw ScreenshotRendererError.mosaicFilterUnavailable
         }
@@ -133,14 +166,37 @@ public enum ScreenshotRenderer {
             throw ScreenshotRendererError.mosaicFilterUnavailable
         }
 
-        let ciContext = CIContext(options: nil)
         guard let mosaicImage = ciContext.createCGImage(
-            outputImage.cropped(to: mosaicRect),
-            from: mosaicRect
+            outputImage.cropped(to: bounds),
+            from: bounds
         ) else {
             throw ScreenshotRendererError.contextCreationFailed
         }
 
-        context.draw(mosaicImage, in: mosaicRect)
+        return mosaicImage
+    }
+
+    private static func drawMosaic(
+        in context: CGContext,
+        mosaicImage: CGImage,
+        rect: CGRect,
+        bounds: CGRect
+    ) {
+        let mosaicRect = rect.standardized.intersection(bounds).integral
+        guard !mosaicRect.isEmpty else {
+            return
+        }
+
+        context.saveGState()
+        context.clip(to: mosaicRect)
+        context.draw(mosaicImage, in: bounds)
+        context.restoreGState()
+    }
+
+    private static func isMosaic(_ annotation: ScreenshotAnnotation) -> Bool {
+        if case .mosaic = annotation {
+            return true
+        }
+        return false
     }
 }

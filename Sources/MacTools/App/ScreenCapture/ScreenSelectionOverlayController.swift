@@ -5,18 +5,20 @@ import MacToolsCore
 final class ScreenSelectionOverlayController {
     private var panels: [ScreenSelectionPanel] = []
     private weak var modeToolbar: NSView?
-    private var pendingSelection: ScreenCaptureSelection?
-    private var onMode: ((ScreenCaptureSelection, ScreenCaptureMode) -> Void)?
+    private weak var modeControl: NSSegmentedControl?
+    private var selectedMode: ScreenCaptureMode = .default
+    private var onSelection: ((ScreenCaptureSelection, ScreenCaptureMode) -> Void)?
     private var onCancel: (() -> Void)?
     private var escapeEventMonitor: Any?
     private var globalEscapeEventMonitor: Any?
 
     func present(
-        onMode: @escaping (ScreenCaptureSelection, ScreenCaptureMode) -> Void,
+        onSelection: @escaping (ScreenCaptureSelection, ScreenCaptureMode) -> Void,
         onCancel: @escaping () -> Void
     ) {
         dismiss()
-        self.onMode = onMode
+        selectedMode = .default
+        self.onSelection = onSelection
         self.onCancel = onCancel
 
         for screen in NSScreen.screens {
@@ -31,11 +33,13 @@ final class ScreenSelectionOverlayController {
                 }
                 self.prepareForNewSelection(from: selectionView)
             }
-            selectionView.onDragFinished = { [weak self, weak selectionView] selection, localFrame in
-                guard let self, let selectionView else {
+            selectionView.onDragFinished = { [weak self] selection, _ in
+                guard let self, let handler = self.onSelection else {
                     return
                 }
-                self.showModeToolbar(for: selection, in: selectionView, selectionFrame: localFrame)
+                let mode = self.selectedMode
+                self.dismiss()
+                handler(selection, mode)
             }
 
             let panel = ScreenSelectionPanel(
@@ -53,6 +57,15 @@ final class ScreenSelectionOverlayController {
             panel.contentView = selectionView
             panel.orderFrontRegardless()
             panels.append(panel)
+        }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let preferredView = panels
+            .compactMap { $0.contentView as? ScreenSelectionView }
+            .first(where: { $0.displayFrame.contains(mouseLocation) })
+            ?? panels.first?.contentView as? ScreenSelectionView
+        if let preferredView {
+            showModeToolbar(in: preferredView)
         }
 
         escapeEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -78,7 +91,6 @@ final class ScreenSelectionOverlayController {
             panel.orderOut(nil)
         }
         panels.removeAll()
-        pendingSelection = nil
         if let escapeEventMonitor {
             NSEvent.removeMonitor(escapeEventMonitor)
         }
@@ -87,25 +99,20 @@ final class ScreenSelectionOverlayController {
             NSEvent.removeMonitor(globalEscapeEventMonitor)
         }
         globalEscapeEventMonitor = nil
-        onMode = nil
+        onSelection = nil
         onCancel = nil
     }
 
     private func prepareForNewSelection(from sourceView: ScreenSelectionView) {
         removeModeToolbar()
-        pendingSelection = nil
+        showModeToolbar(in: sourceView)
         for panel in panels where panel.contentView !== sourceView {
             (panel.contentView as? ScreenSelectionView)?.clearSelection()
         }
     }
 
-    private func showModeToolbar(
-        for selection: ScreenCaptureSelection,
-        in selectionView: ScreenSelectionView,
-        selectionFrame: CGRect
-    ) {
+    private func showModeToolbar(in selectionView: ScreenSelectionView) {
         removeModeToolbar()
-        pendingSelection = selection
 
         let effectView = NSVisualEffectView()
         effectView.material = .hudWindow
@@ -115,69 +122,47 @@ final class ScreenSelectionOverlayController {
         effectView.layer?.cornerRadius = 14
         effectView.layer?.masksToBounds = true
 
-        let screenshotButton = makeToolbarButton(
-            title: "截图",
-            imageName: "camera",
-            action: #selector(selectScreenshot)
+        let modeControl = NSSegmentedControl(
+            labels: ["截图", "录屏"],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(changeMode(_:))
         )
-        let recordingButton = makeToolbarButton(
-            title: "录屏",
-            imageName: "record.circle",
-            action: #selector(selectRecording)
+        modeControl.selectedSegment = selectedMode == .screenshot ? 0 : 1
+        modeControl.setImage(
+            NSImage(systemSymbolName: "camera", accessibilityDescription: "截图"),
+            forSegment: 0
         )
-        let stack = NSStackView(views: [screenshotButton, recordingButton])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
-        effectView.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        modeControl.setImage(
+            NSImage(systemSymbolName: "record.circle", accessibilityDescription: "录屏"),
+            forSegment: 1
+        )
+        modeControl.setWidth(88, forSegment: 0)
+        modeControl.setWidth(88, forSegment: 1)
+        modeControl.setAccessibilityLabel("截图或录屏")
+        effectView.addSubview(modeControl)
+        modeControl.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: effectView.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
+            modeControl.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 10),
+            modeControl.trailingAnchor.constraint(equalTo: effectView.trailingAnchor, constant: -10),
+            modeControl.topAnchor.constraint(equalTo: effectView.topAnchor, constant: 7),
+            modeControl.bottomAnchor.constraint(equalTo: effectView.bottomAnchor, constant: -7)
         ])
 
-        let size = NSSize(width: 168, height: 44)
-        let x = min(max(selectionFrame.maxX - size.width, 12), selectionView.bounds.maxX - size.width - 12)
-        let preferredY = selectionFrame.minY - size.height - 10
-        let y = preferredY >= 12 ? preferredY : min(selectionFrame.maxY + 10, selectionView.bounds.maxY - size.height - 12)
-        effectView.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+        effectView.frame = ScreenCaptureOverlayLayout.modeToolbarFrame(displayBounds: selectionView.bounds)
         selectionView.addSubview(effectView)
         modeToolbar = effectView
-    }
-
-    private func makeToolbarButton(title: String, imageName: String, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
-        button.image = NSImage(systemSymbolName: imageName, accessibilityDescription: title)
-        button.imagePosition = .imageLeading
-        button.bezelStyle = .texturedRounded
-        button.font = .systemFont(ofSize: 13, weight: .semibold)
-        button.contentTintColor = .labelColor
-        button.setAccessibilityLabel(title)
-        return button
+        self.modeControl = modeControl
     }
 
     private func removeModeToolbar() {
         modeToolbar?.removeFromSuperview()
         modeToolbar = nil
+        modeControl = nil
     }
 
-    @objc private func selectScreenshot() {
-        select(mode: .screenshot)
-    }
-
-    @objc private func selectRecording() {
-        select(mode: .recording)
-    }
-
-    private func select(mode: ScreenCaptureMode) {
-        guard let selection = pendingSelection, let handler = onMode else {
-            return
-        }
-        dismiss()
-        handler(selection, mode)
+    @objc private func changeMode(_ sender: NSSegmentedControl) {
+        selectedMode = sender.selectedSegment == 1 ? .recording : .screenshot
     }
 
     private func cancel() {

@@ -10,6 +10,8 @@ final class ScreenCaptureCoordinator {
     private let overlay = ScreenSelectionOverlayController()
     private let stillCapture: ScreenStillCapturing
     private let recorder: ScreenRecording
+    private let settingsProvider: () -> ScreenCaptureSettings
+    private let onSettingsChange: (ScreenCaptureSettings) -> Bool
     private let editor = ScreenshotEditorPanelController()
     private let recordingControl = RecordingControlPanelController()
     private let pasteboard: WritablePasteboard
@@ -18,15 +20,21 @@ final class ScreenCaptureCoordinator {
     init(
         permissionService: PermissionService,
         logger: Logger,
-        stillCapture: ScreenStillCapturing = SystemScreenCaptureService(),
-        recorder: ScreenRecording = MP4ScreenRecorder(),
-        pasteboard: WritablePasteboard = SystemWritablePasteboard()
+        captureService: SystemScreenCaptureService? = nil,
+        stillCapture: ScreenStillCapturing? = nil,
+        recorder: ScreenRecording? = nil,
+        pasteboard: WritablePasteboard = SystemWritablePasteboard(),
+        settingsProvider: @escaping () -> ScreenCaptureSettings = { .defaults },
+        onSettingsChange: @escaping (ScreenCaptureSettings) -> Bool = { _ in true }
     ) {
+        let captureService = captureService ?? SystemScreenCaptureService()
         self.permissionService = permissionService
         self.logger = logger
-        self.stillCapture = stillCapture
-        self.recorder = recorder
+        self.stillCapture = stillCapture ?? captureService
+        self.recorder = recorder ?? MP4ScreenRecorder(captureService: captureService)
         self.pasteboard = pasteboard
+        self.settingsProvider = settingsProvider
+        self.onSettingsChange = onSettingsChange
     }
 
     func start() {
@@ -41,12 +49,29 @@ final class ScreenCaptureCoordinator {
         }
 
         state.beginSelection()
+        stillCapture.invalidatePreparation()
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let startedAt = Date()
+            do {
+                try await stillCapture.prepare()
+                let milliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
+                logger.info("screen capture source prepared in \(milliseconds) ms")
+            } catch is CancellationError {
+                return
+            } catch {
+                logger.error("screen capture source preparation failed: \(error)")
+            }
+        }
         overlay.present(
-            onMode: { [weak self] selection, mode in
+            onSelection: { [weak self] selection, mode in
                 self?.beginCapture(selection: selection, mode: mode)
             },
             onCancel: { [weak self] in
                 self?.state.cancel()
+                self?.stillCapture.invalidatePreparation()
             }
         )
     }
@@ -83,17 +108,24 @@ final class ScreenCaptureCoordinator {
                 return
             }
             do {
+                let startedAt = Date()
                 let image = try await stillCapture.captureStill(for: selection)
+                let milliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
+                logger.info("screen capture still image ready in \(milliseconds) ms")
                 guard state.beginEditingScreenshot() else {
                     return
                 }
                 editor.present(
                     image: image,
+                    selection: selection,
+                    settings: settingsProvider(),
+                    onSettingsChange: onSettingsChange,
                     onCopy: { [weak self] data in
                         self?.completeScreenshot(with: data)
                     },
                     onCancel: { [weak self] in
                         self?.state.cancel()
+                        self?.stillCapture.invalidatePreparation()
                     }
                 )
             } catch {
@@ -106,6 +138,7 @@ final class ScreenCaptureCoordinator {
         do {
             try pasteboard.writeImageData(data)
             state.finish()
+            stillCapture.invalidatePreparation()
             logger.info("annotated screenshot copied to pasteboard")
         } catch {
             fail(message: "截图复制失败，请重试", error: error)
@@ -124,6 +157,7 @@ final class ScreenCaptureCoordinator {
             do {
                 let destination = try recordingDestination()
                 try await recorder.start(selection: selection, destination: destination)
+                stillCapture.invalidatePreparation()
                 recordingControl.show(selection: selection, onStop: { [weak self] in
                     self?.stopRecording()
                 })
@@ -143,6 +177,7 @@ final class ScreenCaptureCoordinator {
             do {
                 let destination = try await recorder.stop()
                 state.finish()
+                stillCapture.invalidatePreparation()
                 NSWorkspace.shared.activateFileViewerSelecting([destination])
                 logger.info("screen recording saved: \(destination.path)")
             } catch {
@@ -166,6 +201,7 @@ final class ScreenCaptureCoordinator {
         editor.dismiss()
         recordingControl.hide()
         state.fail()
+        stillCapture.invalidatePreparation()
         logger.error("screen capture failed: \(error)")
         let alert = NSAlert()
         alert.messageText = "屏幕采集失败"
