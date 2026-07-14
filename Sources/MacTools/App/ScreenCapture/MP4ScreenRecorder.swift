@@ -32,7 +32,7 @@ final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStre
             throw ScreenCaptureError.captureAlreadyRunning
         }
 
-        let source = try await captureService.source(for: selection)
+        let source = try await captureService.source(for: selection, purpose: .recording)
         source.configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
 
         let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
