@@ -2,9 +2,12 @@ import Foundation
 
 public final class Logger {
     private static let fileLock = NSLock()
+    private let configuredDebugLogDirectory: URL?
     public private(set) var messages: [String] = []
 
-    public init() {}
+    public init(debugLogDirectory: URL? = nil) {
+        self.configuredDebugLogDirectory = debugLogDirectory
+    }
 
     public func info(_ message: String) {
         record(level: "INFO", message: message)
@@ -30,13 +33,14 @@ public final class Logger {
         defer { Self.fileLock.unlock() }
 
         do {
-            let directory = try Self.debugLogDirectory()
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let directory = try configuredDebugLogDirectory ?? Self.defaultDebugLogDirectory()
+            try SensitiveFilePermissions.prepareDirectory(at: directory)
             let fileURL = directory.appendingPathComponent("debug.log")
 
             if !FileManager.default.fileExists(atPath: fileURL.path) {
                 FileManager.default.createFile(atPath: fileURL.path, contents: nil)
             }
+            try SensitiveFilePermissions.secureFile(at: fileURL)
 
             let handle = try FileHandle(forWritingTo: fileURL)
             try handle.seekToEnd()
@@ -47,7 +51,7 @@ public final class Logger {
         }
     }
 
-    private static func debugLogDirectory() throws -> URL {
+    private static func defaultDebugLogDirectory() throws -> URL {
         try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,

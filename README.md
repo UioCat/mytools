@@ -1,93 +1,75 @@
 # MacTools
 
-MacTools 是一个原生 macOS 菜单栏效率工具，目标是做一个轻量、常驻、可扩展的本地工具箱。它当前围绕剪贴板历史、快捷键主面板、超级右键、文件快捷操作、翻译、截图与录屏和权限检查来构建，整体体验参考 uTools，但实现上优先保证原生 macOS 稳定性和可调试性。
+MacTools 是一个基于 SwiftPM 的原生 macOS 菜单栏效率工具。应用以常驻菜单栏的方式提供剪贴板历史、翻译、超级右键、截图与录屏、窗口布局和文件快捷操作；界面使用 SwiftUI，系统集成由 AppKit、Accessibility、Carbon Hot Key 和 ScreenCaptureKit 完成。
 
-## 核心能力
+## 当前能力
 
-### 菜单栏常驻
+| 模块 | 当前实现 |
+| --- | --- |
+| 剪贴板 | 记录文本、URL、文件、文件夹和图片；支持搜索、分类、收藏、删除、清空未收藏记录、复制和复制后自动粘贴 |
+| 翻译 | 接入阿里云百炼 OpenAI 兼容接口，默认模型为 `qwen-mt-turbo`；中文自动译为英文，其他语言自动译为中文 |
+| 超级右键 | 短按保留系统右键菜单；长按根据选中文本、Finder 项目或当前目录展示翻译、文本中转、路径和窗口布局动作 |
+| 截图与录屏 | 顶部切换截图或录屏并框选单个显示器内的区域；截图支持线条、箭头、长方形、圆形、颜色、线宽和马赛克标注后复制 PNG；录屏输出 H.264 MP4 |
+| 窗口布局 | 支持左/右半屏、左/右 1/3、左/右 2/3、居中和满屏，可控制面板入口及各模式快捷键 |
+| 设置与权限 | 管理快捷键、剪贴板缓存、超级右键响应速度、百炼配置、窗口布局和系统权限状态 |
 
-- 以菜单栏应用方式运行，默认不显示 Dock 图标。
-- 通过全局快捷键打开主面板。
-- 默认快捷键：
-  - `Option + Space`：打开设置/主面板。
-  - `Option + 1`：打开剪贴板历史。
-  - `Option + 2`：打开翻译工具。
-  - `Option + 3`：启动截图与录屏。
+### 默认快捷键
+
+工具快捷键可在设置中修改。
+
+| 快捷键 | 动作 |
+| --- | --- |
+| `Option + Space` | 打开主面板的设置页 |
+| `Option + 1` | 打开剪贴板历史 |
+| `Option + 2` | 打开翻译工具 |
+| `Option + 3` | 启动截图与录屏框选 |
+
+窗口布局也有默认快捷键：半屏使用 `Control + Command + ←/→`，1/3 使用 `Control + Option + ←/→`，2/3 使用 `Option + Command + ←/→`，居中和满屏分别使用 `Control + Option + 0`、`Control + Command + 0`。
 
 ### 剪贴板历史
 
-- 监听系统剪贴板变化并记录历史。
-- 支持内容类型：
-  - 文本。
-  - URL 文本。
-  - 文件。
-  - 文件夹。
-  - 图片文件。
-  - 直接复制的图片数据。
-- 支持搜索、收藏、置顶、复制、复制并自动粘贴。
-- 元数据使用 SQLite 保存，图片等较大内容缓存到用户 Application Support 目录。
+- 应用每 `0.75` 秒轮询一次系统剪贴板，默认最多展示 `500` 条记录。
+- `全部 / 文本 / 图像 / 收藏` 四个分类支持鼠标和键盘切换。
+- 元数据保存在 SQLite；直接复制的图片数据进入独立缓存目录。
+- 缓存位置可自定义，容量档位为 `200 / 500 / 1024 / 2048 MB`，默认 `1024 MB`。
+- 收藏记录不会被“清空未收藏记录”删除。
 
-### 超级右键
+### 超级右键与文件动作
 
-- 短按右键保留系统默认菜单。
-- 长按右键触发 MacTools 超级右键流程。
-- 文本场景：
-  - 捕获选中文本。
-  - 展示类似 uTools 超级面板的浮层。
-  - 显示原文、译文或翻译未配置提示。
-  - 支持复制译文、文本中转、百度搜索、Bing 搜索等动作。
-- 文件/文件夹场景：
-  - 复制当前路径。
-  - 新建文件。
-  - 终端中打开。
-  - 在访达中显示。
-  - 尝试通过外部应用打开，例如 Claude Code。
+长按右键的默认阈值为 `250 ms`，可在 `250 / 300 / 350 ms` 之间调整。当前动作按场景区分：
 
-### 翻译
+| 场景 | 动作 |
+| --- | --- |
+| 选中文本 | 查看自动翻译状态或译文、复制译文、打开文本悬浮中转 |
+| Finder 已选文件或文件夹 | 复制文件路径，并显示已启用的窗口布局按钮 |
+| Finder 当前目录背景 | 新建文本文件、复制当前路径、在终端打开，并显示窗口布局按钮 |
+| 其他无选中内容场景 | 仅显示已启用的窗口布局按钮 |
 
-- 翻译能力通过 `TranslationProvider` 协议抽象。
-- 当前实现接入阿里云百炼 OpenAI 兼容接口，默认模型为 `qwen-mt-turbo`。
-- 未配置 API Key 时，超级右键文本面板会给出提示，不会用阻塞弹窗打断操作。
+Finder 当前目录解析会优先使用辅助功能信息，必要时通过 Automation 查询 Finder。短按右键仍交给系统菜单处理。
 
 ### 截图与录屏
 
-- 屏幕顶部模式按钮默认选择截图，也可在框选前切换为录屏；框选完成后直接执行当前模式。
-- 截图在原选区内编辑，支持线条、箭头、长方形、圆形、八种常用颜色、自定义颜色、细/标准/粗三档线宽、马赛克和撤销。
-- 最后选择的颜色与线宽会保留到下次使用；马赛克完成后只显示像素化效果，不保留彩色边框。
-- 截图完成后复制 PNG 到系统剪贴板；无声录屏保存到 Downloads，停止按钮吸附在所选屏幕顶部中央。
+- 从菜单栏的“截图与录屏”或 `Option + 3` 进入框选。
+- 顶部模式按钮默认选择截图，也可在框选前切换为录屏；框选完成后直接执行当前模式。
+- 截图在原选区内编辑，支持线条、箭头、长方形、圆形、八种常用颜色、自定义颜色、三档线宽、马赛克和撤销；颜色与线宽保留到下次使用，马赛克完成后不显示彩色边框。
+- 截图完成后写入系统剪贴板，不额外落盘；录屏停止按钮吸附在所选屏幕顶部中央，视频不包含音频，文件保存到 `~/Downloads/`。
+- 同一时间只允许一个截图或录屏会话。
 
-### 权限与诊断
+## 技术结构
 
-- 权限检查覆盖：
-  - 辅助功能，用于全局事件和选区捕获。
-  - 输入监控，用于右键事件监听。
-  - 自动粘贴相关键盘事件权限。
-- 设置页会展示权限状态并提供跳转系统设置的入口。
-- `scripts/diagnose_super_right_click.sh` 可检查超级右键的签名、权限、运行进程和日志。
+项目包含一个可执行 target 和一个可复用核心库：
 
-## 设计说明
-
-项目使用 Swift Package Manager 管理，分为可执行应用和核心库两个 target：
-
-- `MacTools`：AppKit 应用入口、菜单栏控制、窗口/面板控制、全局事件监听和运行时装配。
-- `MacToolsCore`：剪贴板、存储、快捷键、权限、右键状态机、文件动作、翻译、SwiftUI 视图和可测试业务逻辑。
-
-整体设计原则：
-
-- SwiftUI 负责主要界面：主面板、设置、剪贴板列表、超级右键浮层。
-- AppKit 负责系统集成：菜单栏、全局热键、`NSPanel`、剪贴板、系统权限、事件监听。
-- 核心逻辑放在 `MacToolsCore`，尽量通过协议注入系统服务，方便单元测试。
-- 超级右键按可观测链路拆分：事件触发、权限预检、选区捕获、内容分类、动作匹配、浮层展示。
-- 本地用户数据不进入仓库。剪贴板数据库、缓存文件、设置和密钥都应视为敏感本地数据。
-
-## 目录结构
+- `MacTools`：应用入口、菜单栏、运行时装配、全局右键监听、窗口控制、Finder 集成和 ScreenCaptureKit 采集。
+- `MacToolsCore`：剪贴板、SQLite 存储、设置、快捷键、权限、右键状态机、翻译、窗口布局算法、截图状态/渲染和 SwiftUI 组件。
 
 ```text
 .
 ├── Package.swift
 ├── Sources
 │   ├── MacTools
-│   │   └── App
+│   │   ├── App
+│   │   │   └── ScreenCapture
+│   │   └── MacToolsMain.swift
 │   └── MacToolsCore
 │       ├── Clipboard
 │       ├── FileActions
@@ -96,128 +78,116 @@ MacTools 是一个原生 macOS 菜单栏效率工具，目标是做一个轻量�
 │       ├── Paste
 │       ├── Permissions
 │       ├── RightClick
+│       ├── ScreenCapture
 │       ├── Settings
 │       ├── Storage
 │       ├── Translation
 │       ├── UI
-│       └── Utilities
-├── Tests
-│   └── MacToolsCoreTests
+│       ├── Utilities
+│       └── WindowLayout
+├── Tests/MacToolsCoreTests
 ├── docs
 └── scripts
 ```
 
+详细架构图见 [docs/architecture/mac-tools-architecture.html](docs/architecture/mac-tools-architecture.html)，macOS 行为验收清单见 [docs/manual-verification.md](docs/manual-verification.md)。
+
 ## 环境要求
 
-- macOS 26 或更高版本（界面使用系统原生 Liquid Glass）。
-- Xcode 或 Xcode Command Line Tools。
-- Swift 5.10。
-
-检查 Swift 版本：
+- macOS 26 或更高版本。
+- Xcode 或 Xcode Command Line Tools，Swift 工具链需兼容 SwiftPM tools version `5.10`。
+- 首次构建需要网络访问以解析 [GRDB.swift](https://github.com/groue/GRDB.swift) 依赖。
 
 ```sh
 swift --version
 ```
 
-## 如何运行
+## 构建与运行
 
-### 运行测试
+### 单元测试
 
 ```sh
 swift test
 ```
 
-### 开发模式启动
+### SwiftPM 开发运行
 
 ```sh
 swift run MacTools
 ```
 
-启动后：
+该方式适合常规开发，但 Finder Automation 授权与签名身份绑定，不适合验证相关 TCC 行为。
 
-1. 菜单栏会出现 MacTools 图标。
-2. 使用 `Option + Space` 打开主面板。
-3. 使用 `Option + 1` 打开剪贴板历史。
+### 构建并启动本地 App
 
-### 构建本地 App Bundle
+```sh
+scripts/rebuild_and_run_app.sh
+```
+
+仅构建并签名 App Bundle：
 
 ```sh
 scripts/package_app.sh
-```
-
-构建完成后启动：
-
-```sh
 open build/MacTools.app
 ```
 
-`package_app.sh` 会优先使用 `MACOS_CODESIGN_IDENTITY` 指定的签名身份；如果没有指定，会尝试使用钥匙串里的 Apple/Developer 代码签名身份。没有可用身份时会退回 ad-hoc 签名，但超级右键相关 TCC 权限可能不稳定。
-
-指定签名身份示例：
+`package_app.sh` 优先使用 `MACOS_CODESIGN_IDENTITY`，否则尝试从钥匙串选择 Apple/Developer 签名身份；找不到时退回 ad-hoc 签名。ad-hoc 签名可能导致辅助功能、输入监控和屏幕录制授权无法稳定继承。
 
 ```sh
 MACOS_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/package_app.sh
 ```
 
-## 权限配置
+## 权限
 
-超级右键和自动粘贴依赖 macOS 隐私权限。首次运行或更换签名身份后，可能需要重新授权。
+| 系统权限 | 使用场景 |
+| --- | --- |
+| 辅助功能 | 选区捕获、自动粘贴、读取/移动当前窗口 |
+| 输入监控 | 监听全局右键按下与抬起事件 |
+| 屏幕录制 | 区域截图和区域录屏 |
+| Finder Automation | Finder 当前目录辅助解析，仅在需要回退查询时触发 |
 
-建议在系统设置中确认：
-
-- 隐私与安全性 > 辅助功能：允许 `MacTools.app`。
-- 隐私与安全性 > 输入监控：允许 `MacTools.app`。
-
-如果授权状态异常，可以重置后重新授权：
+权限与签名身份关联。首次运行、签名变化或权限异常时，应从 `build/MacTools.app` 启动并在“系统设置 → 隐私与安全性”中重新授权。辅助功能和输入监控可按需重置：
 
 ```sh
 tccutil reset Accessibility local.mactools.mvp
 tccutil reset ListenEvent local.mactools.mvp
-scripts/package_app.sh
-open build/MacTools.app
+scripts/rebuild_and_run_app.sh
 ```
 
-## 超级右键排障
+## 本地数据与安全边界
 
-运行诊断脚本：
+运行数据默认位于 `~/Library/Application Support/MacTools/`：
+
+| 路径 | 内容 |
+| --- | --- |
+| `settings.json` | 快捷键、功能设置及百炼 API Key，文件权限设置为当前用户可读写的 `0600` |
+| `Clipboard.sqlite` | 剪贴板历史元数据 |
+| `ClipboardCache/` | 图片等缓存内容；可在设置中改为其他目录 |
+| `debug.log` | 运行诊断日志 |
+
+当前百炼 API Key 尚未存入 Keychain。不要把 `settings.json`、数据库、缓存、日志、录屏文件或真实剪贴板内容复制到仓库、测试夹具和问题报告中。
+
+## 排障与验收
+
+超级右键诊断：
 
 ```sh
 scripts/diagnose_super_right_click.sh
-```
-
-清理日志并发送一次合成右键探测：
-
-```sh
 scripts/diagnose_super_right_click.sh --clear-log --probe
 ```
 
-排查思路：
+常见定位边界：
 
-- 没有 `right mouse down`：事件监听层失败，优先检查输入监控和签名。
-- 有 `long press triggered`，但捕获为空：选区捕获失败，优先检查辅助功能权限和目标应用是否支持选区读取/复制。
-- 捕获到了内容但没有动作：内容分类或动作匹配有问题。
-- 有动作但没有 UI：浮层展示层有问题。
+- 没有 `right mouse down`：检查输入监控、进程和签名。
+- 有 `long press triggered` 但捕获为空：检查辅助功能和目标应用是否支持选区读取。
+- 已捕获内容但没有预期动作：检查内容分类、Finder 当前目录解析和窗口布局配置。
+- 已生成动作但没有浮层：检查 `NSPanel` 展示与透明圆角配置。
 
-更多细节见 [docs/super-right-click-debuggable-design.md](docs/super-right-click-debuggable-design.md)。
-
-## 手动验收
-
-常用手动检查清单见 [docs/manual-verification.md](docs/manual-verification.md)。
-
-建议至少验证：
-
-- `Option + Space` 能打开主面板。
-- `Option + 1` 能打开剪贴板历史。
-- 复制文本、文件、文件夹、图片后，历史列表能出现对应记录。
-- 剪贴板条目可以复制或复制并粘贴。
-- 短按右键仍显示系统菜单。
-- 长按选中文本、文件夹或文件时出现超级右键浮层。
-- 翻译未配置时，文本浮层显示提示而不是卡死或弹阻塞窗口。
+详细链路见 [docs/super-right-click-debuggable-design.md](docs/super-right-click-debuggable-design.md)。涉及 UI、TCC、Finder Automation、截图录屏或签名的改动，除 `swift test` 外还应执行 [docs/manual-verification.md](docs/manual-verification.md) 中对应场景。
 
 ## 开发约定
 
-- 优先把可测试逻辑放入 `MacToolsCore`。
-- AppKit 系统集成放在 `Sources/MacTools/App`。
-- 新增行为尽量补充 `Tests/MacToolsCoreTests`。
-- 不提交本地凭证、剪贴板缓存、数据库、`.env*`、`.idea/`、`build/` 等本地文件。
-- 涉及权限、签名、超级右键时，除了单元测试，也要做实际运行验证。
+- AppKit 系统集成保留在 `Sources/MacTools/App`，可测试业务逻辑优先放入 `MacToolsCore`。
+- 系统服务通过协议或闭包注入，行为变化补充 `Tests/MacToolsCoreTests` 中的聚焦测试。
+- UI 改动必须运行 `scripts/rebuild_and_run_app.sh`，并在明暗背景检查所有受影响面板的圆角、阴影、标题栏残留和外层 backing layer。
+- 不提交 `.env*`、凭证、`.idea/`、`build/`、`.build/`、SQLite、剪贴板缓存、运行日志和本地用户数据。

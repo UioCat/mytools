@@ -15,8 +15,20 @@ public final class ClipboardDatabase {
 
     public static func at(_ url: URL) throws -> ClipboardDatabase {
         let directoryURL = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        return try ClipboardDatabase(writer: DatabaseQueue(path: url.path))
+        try SensitiveFilePermissions.prepareDirectory(at: directoryURL)
+        let database = try ClipboardDatabase(writer: DatabaseQueue(path: url.path))
+        try secureDatabaseFiles(at: url)
+        return database
+    }
+
+    private static func secureDatabaseFiles(at url: URL) throws {
+        for suffix in ["", "-shm", "-wal", "-journal"] {
+            let fileURL = URL(fileURLWithPath: url.path + suffix)
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                continue
+            }
+            try SensitiveFilePermissions.secureFile(at: fileURL)
+        }
     }
 
     private static var migrator: DatabaseMigrator {

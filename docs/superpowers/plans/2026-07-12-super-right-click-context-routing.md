@@ -180,12 +180,12 @@ git commit -m "feat: tailor super panel actions by item type"
 
 ```swift
 XCTAssertEqual(
-    FinderDocumentURLParser.fileURL(from: "file:///Users/example/My%20Project/"),
-    URL(fileURLWithPath: "/Users/example/My Project", isDirectory: true)
+    FinderDocumentURLParser.fileURL(from: "fixtures/My%20Project/"),
+    URL(fileURLWithPath: "fixtures/My Project", isDirectory: true)
 )
 XCTAssertEqual(
-    FinderDocumentURLParser.fileURL(from: "/Users/example/Project"),
-    URL(fileURLWithPath: "/Users/example/Project", isDirectory: true)
+    FinderDocumentURLParser.fileURL(from: "fixtures/Project"),
+    URL(fileURLWithPath: "fixtures/Project", isDirectory: true)
 )
 XCTAssertNil(FinderDocumentURLParser.fileURL(from: "https://example.com"))
 ```

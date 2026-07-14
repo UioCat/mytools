@@ -21,13 +21,10 @@ public final class SettingsStore {
 
     public func save(_ settings: AppSettings) throws {
         let directoryURL = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try SensitiveFilePermissions.prepareDirectory(at: directoryURL)
 
         let data = try encoder.encode(settings)
         try data.write(to: fileURL, options: [.atomic])
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: fileURL.path
-        )
+        try SensitiveFilePermissions.secureFile(at: fileURL)
     }
 }

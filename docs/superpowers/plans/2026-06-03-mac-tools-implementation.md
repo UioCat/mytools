@@ -25,7 +25,7 @@ sudo xcodebuild -license
 Create a SwiftPM workspace instead of hand-authoring an Xcode project first. The executable runs as a menu bar app through AppKit, and the core library stays testable through `swift test`.
 
 ```text
-/Users/bytedance/Documents/mytools/
+./
   Package.swift
   Sources/
     MacTools/
@@ -100,13 +100,13 @@ Create a SwiftPM workspace instead of hand-authoring an Xcode project first. The
 ## Task 1: SwiftPM Scaffold And App Shell
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Package.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacTools/main.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacTools/App/AppDelegate.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacTools/App/MenuBarController.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacTools/App/AppEnvironment.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Utilities/Logger.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/ScaffoldTests.swift`
+- Create: `./Package.swift`
+- Create: `./Sources/MacTools/main.swift`
+- Create: `./Sources/MacTools/App/AppDelegate.swift`
+- Create: `./Sources/MacTools/App/MenuBarController.swift`
+- Create: `./Sources/MacTools/App/AppEnvironment.swift`
+- Create: `./Sources/MacToolsCore/Utilities/Logger.swift`
+- Test: `./Tests/MacToolsCoreTests/ScaffoldTests.swift`
 
 - [ ] **Step 1: Write the scaffold test**
 
@@ -269,9 +269,9 @@ git commit -m "chore: scaffold mac tools app"
 ## Task 2: Settings Model And Persistence
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Settings/AppSettings.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Settings/SettingsStore.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/SettingsStoreTests.swift`
+- Create: `./Sources/MacToolsCore/Settings/AppSettings.swift`
+- Create: `./Sources/MacToolsCore/Settings/SettingsStore.swift`
+- Test: `./Tests/MacToolsCoreTests/SettingsStoreTests.swift`
 
 - [ ] **Step 1: Write settings tests**
 
@@ -414,10 +414,10 @@ git commit -m "feat: add settings persistence"
 ## Task 3: Clipboard Domain And Classification
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Clipboard/ClipboardItem.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Clipboard/ClipboardPayload.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Clipboard/ClipboardClassifier.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/ClipboardClassifierTests.swift`
+- Create: `./Sources/MacToolsCore/Clipboard/ClipboardItem.swift`
+- Create: `./Sources/MacToolsCore/Clipboard/ClipboardPayload.swift`
+- Create: `./Sources/MacToolsCore/Clipboard/ClipboardClassifier.swift`
+- Test: `./Tests/MacToolsCoreTests/ClipboardClassifierTests.swift`
 
 - [ ] **Step 1: Write classifier tests**
 
@@ -435,11 +435,11 @@ final class ClipboardClassifierTests: XCTestCase {
     }
 
     func testClassifiesFolderPath() {
-        let url = URL(fileURLWithPath: "/Users/bytedance/Documents")
+        let url = URL(fileURLWithPath: "fixtures/Documents")
         let payload = ClipboardPayload(fileURLs: [url])
         let item = ClipboardClassifier().classify(payload: payload, sourceApp: "Finder")
         XCTAssertEqual(item.kind, .folder)
-        XCTAssertEqual(item.originalPath, "/Users/bytedance/Documents")
+        XCTAssertEqual(item.originalPath, "fixtures/Documents")
         XCTAssertEqual(item.displayTitle, "Documents")
     }
 
@@ -609,9 +609,9 @@ git commit -m "feat: classify clipboard payloads"
 ## Task 4: SQLite Clipboard Repository
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Storage/ClipboardDatabase.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Storage/ClipboardRepository.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/ClipboardRepositoryTests.swift`
+- Create: `./Sources/MacToolsCore/Storage/ClipboardDatabase.swift`
+- Create: `./Sources/MacToolsCore/Storage/ClipboardRepository.swift`
+- Test: `./Tests/MacToolsCoreTests/ClipboardRepositoryTests.swift`
 
 - [ ] **Step 1: Write repository tests**
 
@@ -810,8 +810,8 @@ git commit -m "feat: persist clipboard history"
 ## Task 5: File Cache For Images And Large Clipboard Data
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Storage/FileCache.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/FileCacheTests.swift`
+- Create: `./Sources/MacToolsCore/Storage/FileCache.swift`
+- Test: `./Tests/MacToolsCoreTests/FileCacheTests.swift`
 
 - [ ] **Step 1: Write file cache tests**
 
@@ -904,9 +904,9 @@ git commit -m "feat: add clipboard file cache"
 ## Task 6: Pasteboard Client And Clipboard Recording Service
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Clipboard/PasteboardClient.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Clipboard/ClipboardService.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/ClipboardServiceTests.swift`
+- Create: `./Sources/MacToolsCore/Clipboard/PasteboardClient.swift`
+- Create: `./Sources/MacToolsCore/Clipboard/ClipboardService.swift`
+- Test: `./Tests/MacToolsCoreTests/ClipboardServiceTests.swift`
 
 - [ ] **Step 1: Write service tests with fake pasteboard**
 
@@ -1061,12 +1061,12 @@ git commit -m "feat: record clipboard changes"
 ## Task 7: Main Panel And Clipboard Search View
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Panels/MainPanelController.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/UI/MainPanelView.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/UI/ClipboardListView.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/UI/ClipboardRowView.swift`
-- Modify: `/Users/bytedance/Documents/mytools/Sources/MacTools/App/AppEnvironment.swift`
-- Modify: `/Users/bytedance/Documents/mytools/Sources/MacTools/App/MenuBarController.swift`
+- Create: `./Sources/MacToolsCore/Panels/MainPanelController.swift`
+- Create: `./Sources/MacToolsCore/UI/MainPanelView.swift`
+- Create: `./Sources/MacToolsCore/UI/ClipboardListView.swift`
+- Create: `./Sources/MacToolsCore/UI/ClipboardRowView.swift`
+- Modify: `./Sources/MacTools/App/AppEnvironment.swift`
+- Modify: `./Sources/MacTools/App/MenuBarController.swift`
 
 - [ ] **Step 1: Create panel controller**
 
@@ -1251,10 +1251,10 @@ git commit -m "feat: add main panel shell"
 ## Task 8: Global Hotkeys
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/HotKeys/HotKey.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/HotKeys/HotKeyService.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/HotKeyServiceTests.swift`
-- Modify: `/Users/bytedance/Documents/mytools/Sources/MacTools/App/AppDelegate.swift`
+- Create: `./Sources/MacToolsCore/HotKeys/HotKey.swift`
+- Create: `./Sources/MacToolsCore/HotKeys/HotKeyService.swift`
+- Test: `./Tests/MacToolsCoreTests/HotKeyServiceTests.swift`
+- Modify: `./Sources/MacTools/App/AppDelegate.swift`
 
 - [ ] **Step 1: Write hotkey mapping tests**
 
@@ -1379,8 +1379,8 @@ git commit -m "feat: register global hotkeys"
 ## Task 9: Paste Action Service
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Paste/PasteActionService.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/PasteActionServiceTests.swift`
+- Create: `./Sources/MacToolsCore/Paste/PasteActionService.swift`
+- Test: `./Tests/MacToolsCoreTests/PasteActionServiceTests.swift`
 
 - [ ] **Step 1: Write paste action tests**
 
@@ -1514,9 +1514,9 @@ git commit -m "feat: restore clipboard items for paste"
 ## Task 10: Permissions Service And Settings UI
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Permissions/PermissionService.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/UI/SettingsView.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/PermissionServiceTests.swift`
+- Create: `./Sources/MacToolsCore/Permissions/PermissionService.swift`
+- Create: `./Sources/MacToolsCore/UI/SettingsView.swift`
+- Test: `./Tests/MacToolsCoreTests/PermissionServiceTests.swift`
 
 - [ ] **Step 1: Write permission model tests**
 
@@ -1659,10 +1659,10 @@ git commit -m "feat: add permission status and settings view"
 ## Task 11: Translation SPI And Baidu Stub
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Translation/TranslationProvider.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Translation/BaiduTranslationProvider.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/Translation/TranslationService.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/TranslationServiceTests.swift`
+- Create: `./Sources/MacToolsCore/Translation/TranslationProvider.swift`
+- Create: `./Sources/MacToolsCore/Translation/BaiduTranslationProvider.swift`
+- Create: `./Sources/MacToolsCore/Translation/TranslationService.swift`
+- Test: `./Tests/MacToolsCoreTests/TranslationServiceTests.swift`
 
 - [ ] **Step 1: Write translation tests**
 
@@ -1770,11 +1770,11 @@ git commit -m "feat: add translation provider spi"
 ## Task 12: Right-Click State Machine And Selection Capture
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/RightClick/RightClickEvent.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/RightClick/RightClickStateMachine.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/RightClick/SelectionCaptureService.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/RightClick/SuperRightClickService.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/RightClickStateMachineTests.swift`
+- Create: `./Sources/MacToolsCore/RightClick/RightClickEvent.swift`
+- Create: `./Sources/MacToolsCore/RightClick/RightClickStateMachine.swift`
+- Create: `./Sources/MacToolsCore/RightClick/SelectionCaptureService.swift`
+- Create: `./Sources/MacToolsCore/RightClick/SuperRightClickService.swift`
+- Test: `./Tests/MacToolsCoreTests/RightClickStateMachineTests.swift`
 
 - [ ] **Step 1: Write state machine tests**
 
@@ -1932,9 +1932,9 @@ git commit -m "feat: add super right click state machine"
 ## Task 13: File And Terminal Actions
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/FileActions/FileActionService.swift`
-- Create: `/Users/bytedance/Documents/mytools/Sources/MacToolsCore/UI/ContextActionView.swift`
-- Test: `/Users/bytedance/Documents/mytools/Tests/MacToolsCoreTests/FileActionServiceTests.swift`
+- Create: `./Sources/MacToolsCore/FileActions/FileActionService.swift`
+- Create: `./Sources/MacToolsCore/UI/ContextActionView.swift`
+- Test: `./Tests/MacToolsCoreTests/FileActionServiceTests.swift`
 
 - [ ] **Step 1: Write file action tests**
 
@@ -1945,9 +1945,9 @@ import XCTest
 final class FileActionServiceTests: XCTestCase {
     func testTerminalCommandUsesBuiltInTerminal() {
         let service = FileActionService(workspace: FakeWorkspace())
-        let command = service.terminalOpenCommand(for: URL(fileURLWithPath: "/Users/bytedance/Documents"))
+        let command = service.terminalOpenCommand(for: URL(fileURLWithPath: "fixtures/Documents"))
 
-        XCTAssertEqual(command, "open -a Terminal /Users/bytedance/Documents")
+        XCTAssertEqual(command, "open -a Terminal fixtures/Documents")
     }
 }
 ```
@@ -2070,8 +2070,8 @@ git commit -m "feat: add file context actions"
 ## Task 14: Packaging Script And Manual Verification Checklist
 
 **Files:**
-- Create: `/Users/bytedance/Documents/mytools/scripts/package_app.sh`
-- Create: `/Users/bytedance/Documents/mytools/docs/manual-verification.md`
+- Create: `./scripts/package_app.sh`
+- Create: `./docs/manual-verification.md`
 
 - [ ] **Step 1: Create packaging script**
 
@@ -2163,7 +2163,7 @@ Run:
 scripts/package_app.sh
 ```
 
-Expected: prints `/Users/bytedance/Documents/mytools/build/MacTools.app`.
+Expected: prints `./build/MacTools.app`.
 
 - [ ] **Step 6: Commit**
 

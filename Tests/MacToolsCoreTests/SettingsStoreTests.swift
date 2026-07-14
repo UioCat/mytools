@@ -381,5 +381,11 @@ final class SettingsStoreTests: XCTestCase {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
         XCTAssertEqual(permissions.intValue & 0o777, 0o600)
+
+        let directoryAttributes = try FileManager.default.attributesOfItem(
+            atPath: url.deletingLastPathComponent().path
+        )
+        let directoryPermissions = try XCTUnwrap(directoryAttributes[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(directoryPermissions.intValue & 0o777, 0o700)
     }
 }

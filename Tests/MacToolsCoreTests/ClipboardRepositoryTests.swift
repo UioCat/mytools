@@ -165,10 +165,31 @@ final class ClipboardRepositoryTests: XCTestCase {
         let databaseURL = directory
             .appendingPathComponent("nested", isDirectory: true)
             .appendingPathComponent("clipboard.sqlite")
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data().write(to: databaseURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: databaseURL.deletingLastPathComponent().path
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644],
+            ofItemAtPath: databaseURL.path
+        )
 
         _ = try ClipboardDatabase.at(databaseURL)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: databaseURL.deletingLastPathComponent().path))
+        XCTAssertEqual(try permissions(at: databaseURL.deletingLastPathComponent()), 0o700)
+        XCTAssertEqual(try permissions(at: databaseURL), 0o600)
+    }
+
+    private func permissions(at url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
+        return permissions.intValue & 0o777
     }
 }
 

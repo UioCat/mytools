@@ -19,7 +19,10 @@ out/
 secrets/
 
 # Runtime data can contain clipboard contents or user files.
+*.log
+log/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sqlite-journal
 ClipboardCache/

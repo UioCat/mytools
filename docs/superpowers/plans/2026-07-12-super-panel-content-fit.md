@@ -249,7 +249,7 @@ pgrep -x MacTools
 ps -p "$(pgrep -x MacTools | head -n 1)" -o pid=,command=
 ```
 
-Expected: the executable path is `/Users/hanxun/code/mytools/build/MacTools.app/Contents/MacOS/MacTools`.
+Expected: the executable path is `./build/MacTools.app/Contents/MacOS/MacTools`.
 
 - [ ] **Step 4: Inspect real super-right-click panels**
 

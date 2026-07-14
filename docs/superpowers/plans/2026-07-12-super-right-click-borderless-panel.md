@@ -117,7 +117,7 @@ git commit -m "fix: remove super panel window chrome"
 **Files:**
 - Modify: `AGENTS.md`
 - Modify: `docs/manual-verification.md`
-- Create: `/Users/hanxun/.codex/memories/extensions/ad_hoc/notes/<timestamp>-mactools-ui-gray-border-check.md`
+- Create: `~/.codex/memories/extensions/ad_hoc/notes/<timestamp>-mactools-ui-gray-border-check.md`
 
 **Interfaces:**
 - Produces: a project rule and long-term user preference requiring gray-edge inspection after every UI change.

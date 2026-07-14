@@ -12,7 +12,7 @@ public final class FileCache {
     }
 
     public func store(data: Data, preferredExtension: String, maxBytes: Int? = nil) throws -> CachedFile {
-        try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+        try prepareStorage()
 
         let normalizedExtension = preferredExtension.hasPrefix(".")
             ? String(preferredExtension.dropFirst())
@@ -23,6 +23,7 @@ public final class FileCache {
         }
 
         try data.write(to: fileURL, options: [.atomic])
+        try SensitiveFilePermissions.secureFile(at: fileURL)
         if let maxBytes {
             try prune(toMaxBytes: maxBytes, preserving: fileURL)
         }
@@ -31,6 +32,10 @@ public final class FileCache {
     }
 
     public func prune(toMaxBytes maxBytes: Int) throws {
+        guard FileManager.default.fileExists(atPath: rootDirectory.path) else {
+            return
+        }
+        try prepareStorage()
         try prune(toMaxBytes: maxBytes, preserving: nil)
     }
 
@@ -38,6 +43,7 @@ public final class FileCache {
         guard FileManager.default.fileExists(atPath: rootDirectory.path) else {
             return 0
         }
+        try prepareStorage()
 
         let fileURLs = try FileManager.default.contentsOfDirectory(
             at: rootDirectory,
@@ -87,6 +93,11 @@ public final class FileCache {
             try FileManager.default.removeItem(at: entry.fileURL)
             totalBytes -= entry.byteCount
         }
+    }
+
+    private func prepareStorage() throws {
+        try SensitiveFilePermissions.prepareDirectory(at: rootDirectory)
+        try SensitiveFilePermissions.secureRegularFiles(in: rootDirectory)
     }
 
     private func cachedFileEntries() throws -> [CachedFileEntry] {

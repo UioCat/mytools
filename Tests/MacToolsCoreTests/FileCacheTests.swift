@@ -16,6 +16,33 @@ final class FileCacheTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: result.fileURL), data)
     }
 
+    func testStoreUsesOwnerOnlyPermissionsForDirectoryAndFile() throws {
+        let root = makeTemporaryRoot()
+        defer { removeTemporaryRoot(root) }
+        let cache = FileCache(rootDirectory: root)
+
+        let result = try cache.store(data: Data([1, 2, 3]), preferredExtension: "png")
+
+        XCTAssertEqual(try permissions(at: root), 0o700)
+        XCTAssertEqual(try permissions(at: result.fileURL), 0o600)
+    }
+
+    func testStoreRepairsPermissionsForExistingCacheFiles() throws {
+        let root = makeTemporaryRoot()
+        defer { removeTemporaryRoot(root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let existingFile = root.appendingPathComponent("existing.png")
+        try Data([9, 8, 7]).write(to: existingFile)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: existingFile.path)
+        let cache = FileCache(rootDirectory: root)
+
+        _ = try cache.store(data: Data([1]), preferredExtension: "png")
+
+        XCTAssertEqual(try permissions(at: root), 0o700)
+        XCTAssertEqual(try permissions(at: existingFile), 0o600)
+    }
+
     func testStoreNormalizesLeadingDotExtension() throws {
         let root = makeTemporaryRoot()
         defer { removeTemporaryRoot(root) }
@@ -85,5 +112,11 @@ final class FileCacheTests: XCTestCase {
 
     private func removeTemporaryRoot(_ root: URL) {
         try? FileManager.default.removeItem(at: root)
+    }
+
+    private func permissions(at url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
+        return permissions.intValue & 0o777
     }
 }

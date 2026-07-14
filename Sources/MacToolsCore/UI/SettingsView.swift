@@ -391,7 +391,7 @@ private struct ClipboardSettingsEditor: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
         }
-        .onChange(of: currentSettings) { settings in
+        .onChange(of: currentSettings) { _, settings in
             cacheStoragePath = settings.cacheStoragePath
             maxCacheMegabytes = settings.maxCacheMegabytes
         }
@@ -545,7 +545,7 @@ private struct SuperRightClickSettingsEditor: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
         }
-        .onChange(of: longPressMilliseconds) { _ in
+        .onChange(of: longPressMilliseconds) {
             guard !isCommittingLongPressMilliseconds else {
                 isCommittingLongPressMilliseconds = false
                 return
@@ -643,7 +643,7 @@ private struct WindowLayoutSettingsEditor: View {
             }
             .disabled(!isEnabled)
         }
-        .onChange(of: currentSettings) { settings in
+        .onChange(of: currentSettings) { _, settings in
             isEnabled = settings.isEnabled
             enabledModes = Set(settings.enabledModes)
             modeShortcuts = settings.modeShortcuts
