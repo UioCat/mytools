@@ -66,9 +66,9 @@ public struct ClipboardRowView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.displayTitle)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: ClipboardRowTextPresentation.fontSize, weight: .medium))
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(ClipboardRowTextPresentation.lineLimit)
 
                 Text(metadata.pasteTime)
                     .font(.system(size: 13, weight: .medium))
@@ -265,6 +265,11 @@ public struct ClipboardRowView: View {
         }
     }
 
+}
+
+enum ClipboardRowTextPresentation {
+    static let fontSize: CGFloat = 16 * 2 / 3
+    static let lineLimit = 3
 }
 
 enum ClipboardRowContentStyle: Equatable {

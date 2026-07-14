@@ -19,7 +19,7 @@
 - Confirm the panel has continuous system-style outer corners with no square transparent residue, and the selected row keeps a concentric inner curve.
 - Resize the panel and confirm no rectangular system shadow appears outside its rounded glass edge.
 - Place the panel over both light and dark windows; confirm all four corners outside the glass arc remain fully transparent with no rectangular backdrop tint.
-- Confirm text, URL, file, folder, and image results use a two-line title/metadata layout; images should render as compact leading thumbnails instead of large cards.
+- Confirm standard clipboard rows render content at two-thirds of the previous font size, wrap it to at most three lines, and keep metadata on one line; image rows should retain their large centered preview layout.
 - Use `Option + 2` to open the translation tool.
 - Use `Option + 3`, or select `截图与录屏` from the MacTools menu bar menu, to start Screenshot and Recording. If the permission is absent, confirm the alert opens the Screen Recording privacy pane.
 - Confirm the dimmed selector shows one top-centered `截图 / 录屏` mode control, defaults to `截图`, and moves to the display where selection begins.

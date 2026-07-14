@@ -1,5 +1,7 @@
+import AppKit
 import CoreGraphics
 import ImageIO
+import SwiftUI
 import UniformTypeIdentifiers
 import XCTest
 @testable import MacToolsCore
@@ -83,6 +85,37 @@ final class ClipboardListViewTests: XCTestCase {
         XCTAssertEqual(ClipboardRowContentStyle.style(for: .imageFile), .expandedImagePreview)
         XCTAssertEqual(ClipboardRowContentStyle.style(for: .text), .standard)
         XCTAssertEqual(ClipboardRowContentStyle.style(for: .file), .standard)
+    }
+
+    func testClipboardTextUsesTwoThirdsFontSizeAndAtMostThreeLines() {
+        XCTAssertEqual(ClipboardRowTextPresentation.fontSize, 16 * 2 / 3, accuracy: 0.001)
+        XCTAssertEqual(ClipboardRowTextPresentation.lineLimit, 3)
+    }
+
+    @MainActor
+    func testWriteClipboardRowSnapshotsWhenRequested() throws {
+        guard let outputDirectoryPath = ProcessInfo.processInfo.environment["MACTOOLS_CLIPBOARD_SNAPSHOT_DIR"] else {
+            return
+        }
+
+        let outputDirectory = URL(fileURLWithPath: outputDirectoryPath, isDirectory: true)
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        let item = makeItem(
+            text: "第一行：这是用于验证剪贴板展示的较长内容。\n第二行：正文应该缩小到原字号的三分之二。\n第三行：这是允许展示的最后一行。\n第四行：这一行应该被截断。\n第五行：不应继续展示。"
+        )
+
+        try writeClipboardRowSnapshot(
+            item: item,
+            colorScheme: .light,
+            background: Color(white: 0.92),
+            to: outputDirectory.appendingPathComponent("clipboard-row-light.png")
+        )
+        try writeClipboardRowSnapshot(
+            item: item,
+            colorScheme: .dark,
+            background: Color(white: 0.08),
+            to: outputDirectory.appendingPathComponent("clipboard-row-dark.png")
+        )
     }
 
     func testRowMetadataSeparatesPasteTimeFromTextCharacterCount() {
@@ -397,6 +430,48 @@ final class ClipboardListViewTests: XCTestCase {
             .appendingPathComponent("MacToolsTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    @MainActor
+    private func writeClipboardRowSnapshot(
+        item: ClipboardItem,
+        colorScheme: ColorScheme,
+        background: Color,
+        to url: URL
+    ) throws {
+        let renderedSize = CGSize(width: 720, height: 160)
+        let renderer = ImageRenderer(
+            content: ClipboardRowView(
+                item: item,
+                index: 1,
+                isSelected: true,
+                showsBackground: false,
+                onFavoriteToggle: {}
+            )
+            .frame(width: 680)
+            .padding(20)
+            .background(background)
+            .environment(\.colorScheme, colorScheme)
+        )
+        renderer.scale = 2
+        renderer.proposedSize = ProposedViewSize(
+            width: renderedSize.width,
+            height: nil
+        )
+
+        guard let image = renderer.nsImage,
+              let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            XCTFail("Could not render clipboard row snapshot: \(url.path)")
+            return
+        }
+
+        try pngData.write(to: url)
+        XCTAssertEqual(bitmap.pixelsWide, Int(renderedSize.width * renderer.scale))
+        XCTAssertGreaterThan(bitmap.pixelsHigh, 180)
+        XCTAssertLessThan(bitmap.pixelsHigh, Int(renderedSize.height * renderer.scale))
+        XCTAssertGreaterThan(pngData.count, 1_000)
     }
 
     private func writeTestPNG(to url: URL, width: Int, height: Int) throws {
