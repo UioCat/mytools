@@ -23,14 +23,17 @@ struct ScreenCaptureSource {
 
 final class SystemScreenCaptureService: ScreenStillCapturing {
     func captureStill(for selection: ScreenCaptureSelection) async throws -> CGImage {
-        let source = try await source(for: selection)
+        let source = try await source(for: selection, purpose: .screenshot)
         return try await SCScreenshotManager.captureImage(
             contentFilter: source.filter,
             configuration: source.configuration
         )
     }
 
-    func source(for selection: ScreenCaptureSelection) async throws -> ScreenCaptureSource {
+    func source(
+        for selection: ScreenCaptureSelection,
+        purpose: ScreenCaptureMode
+    ) async throws -> ScreenCaptureSource {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false,
             onScreenWindowsOnly: true
@@ -53,12 +56,15 @@ final class SystemScreenCaptureService: ScreenStillCapturing {
             exceptingWindows: []
         )
         let sourceRect = selection.displayRelativeFrame
-        let horizontalScale = CGFloat(display.width) / selection.displayFrame.width
-        let verticalScale = CGFloat(display.height) / selection.displayFrame.height
+        let outputPixelSize = ScreenCaptureResolutionPolicy.outputPixelSize(
+            for: sourceRect.size,
+            pointPixelScale: CGFloat(filter.pointPixelScale),
+            purpose: purpose
+        )
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = sourceRect
-        configuration.width = max(1, Int((sourceRect.width * horizontalScale).rounded()))
-        configuration.height = max(1, Int((sourceRect.height * verticalScale).rounded()))
+        configuration.width = Int(outputPixelSize.width)
+        configuration.height = Int(outputPixelSize.height)
         configuration.showsCursor = true
 
         return ScreenCaptureSource(filter: filter, configuration: configuration)
