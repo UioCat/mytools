@@ -97,7 +97,7 @@ Round expected rendered pixel dimensions upward before converting them to intege
 
 **Logged**: 2026-07-15T19:00:06+08:00
 **Priority**: medium
-**Status**: pending
+**Status**: resolved
 **Area**: infra
 
 ### Summary
@@ -118,6 +118,10 @@ Use the connected GitHub integration when it exposes release operations, install
 ### Metadata
 - Reproducible: yes
 - Related Files: scripts/package_app.sh
+
+### Resolution
+- **Resolved**: 2026-07-15T19:25:00+08:00
+- **Notes**: Added a tag-triggered GitHub Actions release workflow that uses the runner-provided authenticated GitHub CLI.
 
 ---
 
@@ -183,5 +187,39 @@ Capture PlistBuddy output in a named variable before comparing it.
 ### Resolution
 - **Resolved**: 2026-07-15T19:18:00+08:00
 - **Notes**: Replaced the nested comparison with a mounted-version variable in the verification command.
+
+---
+
+## [ERR-20260715-004] Anonymous GitHub Actions status rate limit
+
+**Logged**: 2026-07-15T19:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The unauthenticated GitHub REST fallback could not query the tag-triggered workflow because the shared egress IP exhausted its anonymous core API quota.
+
+### Error
+```
+HTTP/2 403
+x-ratelimit-remaining: 0
+```
+
+### Context
+- Queried public workflow runs after pushing `v0.1.0` because the local environment has no GitHub CLI.
+- GitHub returned an anonymous limit of 60 requests with zero remaining.
+- The authenticated GitHub connector also timed out on its first workflow-job lookup, so monitoring fell back to the public Actions HTML page.
+
+### Suggested Fix
+Use the authenticated GitHub connector, GitHub web status, or a locally authenticated CLI instead of anonymous REST for release monitoring.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .github/workflows/release.yml
+
+### Resolution
+- **Resolved**: 2026-07-15T19:25:00+08:00
+- **Notes**: Monitored the run through the authenticated connector after the transient timeout, then downloaded and verified both public Release assets directly.
 
 ---
