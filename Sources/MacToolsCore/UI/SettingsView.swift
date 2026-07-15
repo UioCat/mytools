@@ -511,15 +511,12 @@ private struct ClipboardSettingsEditor: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        panel.prompt = "选择"
+        panel.prompt = "保存"
         panel.message = "选择剪贴板图片缓存的存储位置"
-        let currentPath = cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !currentPath.isEmpty {
-            panel.directoryURL = URL(
-                fileURLWithPath: NSString(string: currentPath).expandingTildeInPath,
-                isDirectory: true
-            )
-        }
+        panel.directoryURL = ClipboardCacheStorageDisplay.directoryURL(
+            configuredPath: cacheStoragePath,
+            defaultDirectory: defaultCacheDirectory
+        )
 
         guard panel.runModal() == .OK, let selectedURL = panel.url else {
             return
@@ -941,7 +938,7 @@ private struct WindowLayoutShortcutCaptureField: NSViewRepresentable {
     }
 }
 
-private final class WindowLayoutShortcutCaptureTextField: NSTextField {
+final class WindowLayoutShortcutCaptureTextField: NSTextField {
     private var currentShortcut: HotKeyBinding?
     private var onShortcutChange: (HotKeyBinding?) -> Bool = { _ in true }
 
@@ -1104,7 +1101,8 @@ private final class VerticallyCenteredTextFieldCell: NSTextFieldCell {
 
     private func centeredRect(_ textRect: NSRect, in bounds: NSRect) -> NSRect {
         var rect = textRect
-        rect.origin.y = bounds.origin.y + floor((bounds.height - rect.height) / 2)
+        rect.size.height = min(bounds.height, ceil(cellSize(forBounds: bounds).height))
+        rect.origin.y = bounds.origin.y + (bounds.height - rect.height) / 2
         return rect
     }
 }

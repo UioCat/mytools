@@ -14,7 +14,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "MacTools",
-            dependencies: ["MacToolsCore"]
+            dependencies: ["MacToolsCore"],
+            resources: [.process("Resources")]
         ),
         .target(
             name: "MacToolsCore",

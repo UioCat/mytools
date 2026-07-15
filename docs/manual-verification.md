@@ -1,7 +1,7 @@
 # Manual Verification
 
 - Launch with `swift run MacTools`.
-- Confirm menu bar item appears as `MT`.
+- Confirm the menu bar item shows only the full-color ribbon mark, with no dark square or edge artifacts, on both light and dark menu bars.
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
@@ -27,7 +27,7 @@
 - Confirm the dimmed selector shows one top-centered `截图 / 录屏` mode control, defaults to `截图`, and moves to the display where selection begins.
 - Confirm the selector accepts only a manually dragged rectangle within the display where the drag began; press Escape and confirm that it writes no clipboard item and creates no file.
 - Keep `截图` selected and drag a region; confirm the captured image appears in the original region without a separate centered editor or a second confirmation click.
-- Repeat a large-region screenshot several times while another app is active; confirm the captured image fills the whole selected region without a horizontal split, stale dimming layer, or duplicated blue selection border, and confirm the editor appears every time even when MacTools is not the active app.
+- Repeat a large-region screenshot several times while another app is active; confirm the captured image fills the whole selected region, its content stays aligned with the original screen at all four edges, and no top or bottom content disappears. Confirm there is no horizontal split, stale dimming layer, or duplicated blue selection border, and that the editor appears every time even when MacTools is not the active app.
 - In the in-place editor, draw a line, a closed or multi-turn freehand stroke, an arrow, a rectangle, and a mosaic region. Release one freehand stroke just outside the image and confirm the accumulated in-bounds path remains. Confirm only the eight preset colors are shown and the curved thin/standard/thick stroke samples change both the live annotation and the PNG copied by `完成`. Select a non-default tool, color, and line width, close and reopen capture, and confirm all three choices remain selected. Confirm mosaic shows a boundary only while dragging, then keeps the pixelation without a colored frame; the copied PNG must retain only the pixelation. Confirm Cmd+Z removes only the most recent annotation, Cmd+Return copies the PNG, and Escape cancels editing.
 - Switch the top control to `录屏` and drag a region; confirm recording starts immediately, the compact floating control is pinned at the top center of the selected display, has no leading red block or unused trailing blank area, shows `正在录制`, elapsed time, and a labeled `停止` action, and does not appear in the recorded video.
 - Start a recording over a static window, leave the screen unchanged for at least five seconds, then stop and confirm a playable H.264 MP4 named `MacTools Recording …` is created in Downloads and selected in Finder without a delayed save-failure alert.
@@ -56,8 +56,8 @@
 - Long right-click a selected folder; confirm only the MacTools context action window appears and the system menu does not appear.
 - Open Settings on a wide window and confirm the two top setting columns stretch across the usable content width; the Window Layout section spans the full width below them with no large unused right-hand area.
 - In Window Layout, confirm every preview has a visible neutral screen frame and blue inset target region. Verify left/right halves, one-third, two-thirds, centered, and maximized layouts are distinguishable before reading their labels; narrow the window and confirm sections stack without clipping controls.
-- Hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row.
-- Open settings and confirm the clipboard section can choose a custom cache storage folder, restore the default folder, and switch cache size between `200M`, `500M`, `1024M`, and `2048M`.
+- Hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row; confirm each shortcut label is horizontally and vertically centered inside its field.
+- Open settings and click the clipboard cache folder button; confirm the picker opens at the currently displayed folder. Navigate to another folder, click `保存`, confirm the displayed path updates, then restore the default folder and switch cache size between `200M`, `500M`, `1024M`, and `2048M`.
 - Open settings and switch appearance among `跟随系统`, `浅色模式`, and `深色模式`; confirm every open MacTools panel updates immediately, the choice survives relaunch, and `跟随系统` reacts to the macOS appearance.
 - Long right-click selected text or a Finder item, click a window layout button, and confirm the frontmost app window moves to the selected visible-screen region.
 - Press a configured window layout shortcut while another app is frontmost and confirm its focused window moves to the matching visible-screen region.

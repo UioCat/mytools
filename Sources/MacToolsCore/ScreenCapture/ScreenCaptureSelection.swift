@@ -24,4 +24,14 @@ public struct ScreenCaptureSelection: Equatable {
     public var displayRelativeFrame: CGRect {
         frame.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
     }
+
+    public var screenCaptureKitSourceFrame: CGRect {
+        let appKitFrame = displayRelativeFrame
+        return CGRect(
+            x: appKitFrame.minX,
+            y: displayFrame.height - appKitFrame.maxY,
+            width: appKitFrame.width,
+            height: appKitFrame.height
+        )
+    }
 }

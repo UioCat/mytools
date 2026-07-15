@@ -71,7 +71,7 @@ final class SystemScreenCaptureService: ScreenStillCapturing {
             excludingApplications: excludedApplications,
             exceptingWindows: []
         )
-        let sourceRect = selection.displayRelativeFrame
+        let sourceRect = selection.screenCaptureKitSourceFrame
         let outputPixelSize = ScreenCaptureResolutionPolicy.outputPixelSize(
             for: sourceRect.size,
             pointPixelScale: CGFloat(filter.pointPixelScale),

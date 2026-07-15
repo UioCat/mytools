@@ -137,14 +137,9 @@ public struct ClipboardSettings: Codable, Equatable {
     }
 
     public func cacheDirectory(defaultDirectory: URL) -> URL {
-        let trimmedPath = cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPath.isEmpty else {
-            return defaultDirectory
-        }
-
-        return URL(
-            fileURLWithPath: NSString(string: trimmedPath).expandingTildeInPath,
-            isDirectory: true
+        ClipboardCacheStorageDisplay.directoryURL(
+            configuredPath: cacheStoragePath,
+            defaultDirectory: defaultDirectory
         )
     }
 
@@ -188,12 +183,24 @@ public enum ClipboardCacheStorageDisplay {
     }
 
     public static func displayPath(configuredPath: String, defaultDirectory: URL) -> String {
-        let trimmedPath = configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedPath = trimmedPath.isEmpty
-            ? defaultDirectory.path
-            : NSString(string: trimmedPath).expandingTildeInPath
+        NSString(
+            string: directoryURL(
+                configuredPath: configuredPath,
+                defaultDirectory: defaultDirectory
+            ).path
+        ).abbreviatingWithTildeInPath
+    }
 
-        return NSString(string: resolvedPath).abbreviatingWithTildeInPath
+    static func directoryURL(configuredPath: String, defaultDirectory: URL) -> URL {
+        let trimmedPath = configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            return defaultDirectory
+        }
+
+        return URL(
+            fileURLWithPath: NSString(string: trimmedPath).expandingTildeInPath,
+            isDirectory: true
+        )
     }
 }
 

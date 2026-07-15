@@ -10,6 +10,15 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         XCTAssertTrue(source.contains("application.processID == ProcessInfo.processInfo.processIdentifier"))
     }
 
+    func testScreenCaptureUsesTopLeftDisplaySourceCoordinates() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/ScreenCapture/SystemScreenCaptureService.swift"
+        )
+
+        XCTAssertTrue(source.contains("selection.screenCaptureKitSourceFrame"))
+        XCTAssertFalse(source.contains("selection.displayRelativeFrame"))
+    }
+
     func testScreenshotEditorActivatesAccessoryAppBeforeOrderingPanelFront() throws {
         let controllerSource = try sourceFile(
             "Sources/MacTools/App/ScreenCapture/ScreenshotEditorPanelController.swift"

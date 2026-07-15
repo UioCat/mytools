@@ -193,6 +193,30 @@ final class SettingsStoreTests: XCTestCase {
         )
     }
 
+    func testClipboardCacheStorageDirectoryUsesDefaultWhenConfiguredPathIsEmpty() {
+        let defaultDirectory = URL(fileURLWithPath: "/tmp/default-cache", isDirectory: true)
+
+        XCTAssertEqual(
+            ClipboardCacheStorageDisplay.directoryURL(
+                configuredPath: "  ",
+                defaultDirectory: defaultDirectory
+            ),
+            defaultDirectory
+        )
+    }
+
+    func testClipboardCacheStorageDirectoryUsesConfiguredPath() {
+        let defaultDirectory = URL(fileURLWithPath: "/tmp/default-cache", isDirectory: true)
+
+        XCTAssertEqual(
+            ClipboardCacheStorageDisplay.directoryURL(
+                configuredPath: " ~/MacToolsClipboard ",
+                defaultDirectory: defaultDirectory
+            ).path,
+            NSString(string: "~/MacToolsClipboard").expandingTildeInPath
+        )
+    }
+
     func testLegacySuperRightClickDelayIsClampedToSliderRangeWhenLoaded() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
