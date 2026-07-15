@@ -1,0 +1,108 @@
+name: Release macOS DMG
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build ad-hoc signed app
+        env:
+          MACOS_APP_VERSION: ${{ github.ref_name }}
+          MACOS_BUILD_NUMBER: ${{ github.run_number }}
+          MACOS_FORCE_ADHOC_SIGNING: "1"
+        run: |
+          MACOS_APP_VERSION="${MACOS_APP_VERSION#v}" scripts/package_app.sh
+
+      - name: Verify app bundle
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/MacTools.app
+          codesign -dv --verbose=4 build/MacTools.app 2>&1 | grep -q '^Signature=adhoc$'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/MacTools.app/Contents/Info.plist)" = "${GITHUB_REF_NAME#v}"
+          test "$(lipo -archs build/MacTools.app/Contents/MacOS/MacTools)" = "arm64"
+
+      - name: Create and verify DMG
+        run: |
+          scripts/create_dmg.sh "${GITHUB_REF_NAME#v}" arm64
+          hdiutil verify dist/*.dmg
+          cd dist
+          shasum -a 256 -c *.sha256
+
+      - name: Inspect mounted DMG
+        run: |
+          MOUNT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mactools-release.XXXXXX")"
+          DISK_DEVICE=""
+          cleanup() {
+            if [[ -n "$DISK_DEVICE" ]]; then
+              hdiutil detach "$DISK_DEVICE" >/dev/null 2>&1 || true
+            fi
+            rmdir "$MOUNT_DIR" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          ATTACH_OUTPUT="$(hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_DIR" dist/*.dmg)"
+          DISK_DEVICE="$(printf '%s\n' "$ATTACH_OUTPUT" | awk '/^\/dev\/disk/ { print $1; exit }')"
+          test -n "$DISK_DEVICE"
+          test -d "$MOUNT_DIR/MacTools.app"
+          test -L "$MOUNT_DIR/Applications"
+          codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/MacTools.app"
+          codesign -dv --verbose=4 "$MOUNT_DIR/MacTools.app" 2>&1 | grep -q '^Signature=adhoc$'
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: |
+            MacTools 是 macOS 26+ 的 Apple Silicon 菜单栏效率工具。
+
+            安装说明：
+            1. 下载 DMG，将 MacTools.app 拖入 Applications。
+            2. 首次尝试打开后，前往“系统设置 → 隐私与安全性”，点击“仍要打开”。
+            3. 按功能需要授予辅助功能、输入监控、屏幕录制和 Finder Automation 权限。
+
+            注意：此版本使用 ad-hoc 签名，未经过 Apple Developer ID 签名或公证，仅建议可信的小范围开发者使用。更新版本后，部分系统权限可能需要重新授权。SHA-256 校验值见随附的 .sha256 文件。
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_NAME="MacTools-v$VERSION-arm64-macos26.dmg"
+          CHECKSUM_NAME="$DMG_NAME.sha256"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')"
+            if [[ "$IS_DRAFT" != "true" ]]; then
+              VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mactools-release-assets.XXXXXX")"
+              trap 'rm -rf "$VERIFY_DIR"' EXIT
+              gh release download "$GITHUB_REF_NAME" \
+                --dir "$VERIFY_DIR" \
+                --pattern "$DMG_NAME" \
+                --pattern "$CHECKSUM_NAME"
+              (
+                cd "$VERIFY_DIR"
+                shasum -a 256 -c "$CHECKSUM_NAME"
+              )
+              exit 0
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --draft \
+              --title "MacTools $GITHUB_REF_NAME" \
+              --notes "$RELEASE_NOTES" \
+              --verify-tag
+          fi
+
+          gh release upload "$GITHUB_REF_NAME" \
+            dist/*.dmg \
+            dist/*.sha256 \
+            --clobber
+
+          gh release edit "$GITHUB_REF_NAME" \
+            --title "MacTools $GITHUB_REF_NAME" \
+            --notes "$RELEASE_NOTES" \
+            --draft=false
