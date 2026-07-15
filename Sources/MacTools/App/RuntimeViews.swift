@@ -28,6 +28,7 @@ struct RuntimeMainWorkspaceView: View {
     let onSaveTranslationSettings: (TranslationSettings) throws -> AppSettings
     let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> AppSettings
     let onSaveWindowLayoutSettings: (WindowLayoutSettings) throws -> AppSettings
+    let onSaveAppearanceMode: (AppAppearanceMode) throws -> AppSettings
     let onCopy: (ClipboardItem) -> Void
     let onCopyAndPaste: (ClipboardItem) -> Void
     let onDismiss: () -> Void
@@ -44,6 +45,7 @@ struct RuntimeMainWorkspaceView: View {
         onSaveTranslationSettings: @escaping (TranslationSettings) throws -> AppSettings,
         onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> AppSettings,
         onSaveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> AppSettings,
+        onSaveAppearanceMode: @escaping (AppAppearanceMode) throws -> AppSettings,
         onCopy: @escaping (ClipboardItem) -> Void,
         onCopyAndPaste: @escaping (ClipboardItem) -> Void,
         onDismiss: @escaping () -> Void
@@ -56,6 +58,7 @@ struct RuntimeMainWorkspaceView: View {
         self.onSaveTranslationSettings = onSaveTranslationSettings
         self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
         self.onSaveWindowLayoutSettings = onSaveWindowLayoutSettings
+        self.onSaveAppearanceMode = onSaveAppearanceMode
         self.onCopy = onCopy
         self.onCopyAndPaste = onCopyAndPaste
         self.onDismiss = onDismiss
@@ -79,6 +82,9 @@ struct RuntimeMainWorkspaceView: View {
                 },
                 onSaveWindowLayoutSettings: { windowLayoutSettings in
                     currentSettings = try onSaveWindowLayoutSettings(windowLayoutSettings)
+                },
+                onSaveAppearanceMode: { appearanceMode in
+                    currentSettings = try onSaveAppearanceMode(appearanceMode)
                 },
                 presentation: .embedded
             )
@@ -161,6 +167,7 @@ struct RuntimeSettingsView: View {
     let onSaveTranslationSettings: (TranslationSettings) throws -> Void
     let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
     let onSaveWindowLayoutSettings: (WindowLayoutSettings) throws -> Void
+    let onSaveAppearanceMode: (AppAppearanceMode) throws -> Void
     let presentation: ToolModulePresentation
     @State private var permissionSummary: PermissionSummary
 
@@ -172,6 +179,7 @@ struct RuntimeSettingsView: View {
         onSaveTranslationSettings: @escaping (TranslationSettings) throws -> Void,
         onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void,
         onSaveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> Void,
+        onSaveAppearanceMode: @escaping (AppAppearanceMode) throws -> Void,
         presentation: ToolModulePresentation = .window
     ) {
         self.settings = settings
@@ -181,6 +189,7 @@ struct RuntimeSettingsView: View {
         self.onSaveTranslationSettings = onSaveTranslationSettings
         self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
         self.onSaveWindowLayoutSettings = onSaveWindowLayoutSettings
+        self.onSaveAppearanceMode = onSaveAppearanceMode
         self.presentation = presentation
         self._permissionSummary = State(initialValue: permissionService.summary())
     }
@@ -195,6 +204,7 @@ struct RuntimeSettingsView: View {
             saveTranslationSettings: onSaveTranslationSettings,
             saveSuperRightClickSettings: onSaveSuperRightClickSettings,
             saveWindowLayoutSettings: onSaveWindowLayoutSettings,
+            saveAppearanceMode: onSaveAppearanceMode,
             defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
             presentation: presentation
         )
@@ -215,6 +225,7 @@ struct RuntimeTranslationModuleView: View {
     }
 
     private let inputEditorLayout = TranslationInputEditorLayout.standard
+    private let workspaceLayout = TranslationWorkspaceLayout.standard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -235,8 +246,6 @@ struct RuntimeTranslationModuleView: View {
                 translationOutputSection
             }
             .frame(maxHeight: .infinity, alignment: .top)
-
-            Spacer()
         }
         .liquidGlassGroup(spacing: 12)
         .padding(18)
@@ -269,7 +278,10 @@ struct RuntimeTranslationModuleView: View {
                     translateInputText()
                 }
             }
-            .frame(minHeight: 180)
+            .frame(
+                minHeight: workspaceLayout.inputEditorMinimumHeight,
+                maxHeight: .infinity
+            )
             .padding(10)
             .liquidGlassModule(cornerRadius: 16)
 
@@ -325,7 +337,10 @@ struct RuntimeTranslationModuleView: View {
                 text: content.outputText,
                 isPlaceholder: content.isOutputPlaceholder
             )
-            .frame(minHeight: 218, maxHeight: .infinity)
+            .frame(
+                minHeight: workspaceLayout.outputEditorMinimumHeight,
+                maxHeight: .infinity
+            )
             .padding(14)
             .liquidGlassModule(cornerRadius: 16)
         }
@@ -395,7 +410,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onMarkedTextStateChange = context.coordinator.setComposingText(_:)
         textView.font = .systemFont(ofSize: 14, weight: .medium)
-        textView.textColor = NSColor.white.withAlphaComponent(0.90)
+        textView.textColor = .labelColor
         textView.drawsBackground = false
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -432,7 +447,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
 
         textView.onSubmit = onSubmit
         textView.onMarkedTextStateChange = context.coordinator.setComposingText(_:)
-        textView.textColor = NSColor.white.withAlphaComponent(0.90)
+        textView.textColor = .labelColor
         textView.textContainerInset = NSSize(
             width: layout.textContainerWidthInset,
             height: layout.textContainerHeightInset
@@ -574,7 +589,7 @@ private struct TranslationOutputTextView: NSViewRepresentable {
     }
 
     private func configure(_ textView: TranslationOutputNSTextView) {
-        textView.textColor = isPlaceholder ? NSColor.white.withAlphaComponent(0.42) : NSColor.white.withAlphaComponent(0.88)
+        textView.textColor = isPlaceholder ? .secondaryLabelColor : .labelColor
         if textView.string != text {
             textView.string = text
         }

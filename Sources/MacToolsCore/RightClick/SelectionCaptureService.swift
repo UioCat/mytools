@@ -35,11 +35,13 @@ public final class SelectionCaptureService: SelectionCapturing {
     }
 
     public func captureSelection() -> ClipboardPayload {
-        if let selectedText = selectedTextReader.readSelectedText()?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !selectedText.isEmpty {
+        let accessibilityValue = selectedTextReader.readSelectedText()
+        if let selectedText = Self.normalizedAccessibilityText(accessibilityValue) {
             logger?.info("selection capture read selected text via accessibility")
             return ClipboardPayload(text: selectedText)
+        }
+        if accessibilityValue != nil {
+            logger?.info("selection capture ignored unusable accessibility text")
         }
 
         let changeCountBeforeCopy = pasteboard.changeCount
@@ -54,6 +56,15 @@ public final class SelectionCaptureService: SelectionCapturing {
 
         logger?.info("selection capture read payload from pasteboard after copy")
         return pasteboard.readPayload()
+    }
+
+    private static func normalizedAccessibilityText(_ value: String?) -> String? {
+        guard let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalized.isEmpty,
+              !normalized.unicodeScalars.contains(where: { $0.value == 0xFFFC }) else {
+            return nil
+        }
+        return normalized
     }
 }
 

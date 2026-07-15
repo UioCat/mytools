@@ -90,11 +90,13 @@ public struct ContextActionView: View {
     private var scrollableBody: some View {
         ScrollView {
             VStack(spacing: 0) {
-                previewSection
+                if !content.previewRows.isEmpty {
+                    previewSection
 
-                Divider()
-                    .overlay(MacToolsGlassTheme.divider)
-                    .opacity(usesTextLayout ? 0.9 : 0.55)
+                    Divider()
+                        .overlay(MacToolsGlassTheme.divider)
+                        .opacity(usesTextLayout ? 0.9 : 0.55)
+                }
 
                 actionSection
             }
@@ -104,7 +106,11 @@ public struct ContextActionView: View {
     private var actionSection: some View {
         VStack(spacing: 0) {
             ForEach(Array(primaryActions.enumerated()), id: \.element.id) { index, action in
-                SuperPanelActionRow(action: action, performAction: performAction)
+                SuperPanelActionRow(
+                    action: action,
+                    isCompact: content.kind == .text,
+                    performAction: performAction
+                )
 
                 if index < primaryActions.count - 1 {
                     Divider()
@@ -228,6 +234,7 @@ public struct ContextActionView: View {
 
 private struct SuperPanelActionRow: View {
     let action: SuperPanelActionDescriptor
+    let isCompact: Bool
     let performAction: (SuperPanelActionID) -> Void
 
     @State private var isHovering = false
@@ -236,27 +243,28 @@ private struct SuperPanelActionRow: View {
         Button {
             performAction(action.id)
         } label: {
-            HStack(spacing: 16) {
+            HStack(spacing: rowSpacing) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(iconBackground)
 
                     Image(systemName: action.systemImage)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: iconFontSize, weight: .semibold))
                         .foregroundStyle(iconForeground)
                 }
-                .frame(width: 34, height: 34)
+                .frame(width: iconSize, height: iconSize)
 
                 Text(action.title)
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: titleFontSize, weight: .medium))
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
 
                 Spacer(minLength: 12)
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 11)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
+            .frame(minHeight: rowHeight)
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 0)
@@ -265,6 +273,36 @@ private struct SuperPanelActionRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+    }
+
+    private var rowHeight: CGFloat {
+        isCompact
+            ? SuperPanelLayout.translationActionRowHeight
+            : SuperPanelLayout.standardPrimaryActionRowHeight
+    }
+
+    private var iconSize: CGFloat {
+        isCompact ? SuperPanelLayout.translationActionIconSize : 34
+    }
+
+    private var iconFontSize: CGFloat {
+        isCompact ? SuperPanelLayout.translationActionIconFontSize : 18
+    }
+
+    private var titleFontSize: CGFloat {
+        isCompact ? SuperPanelLayout.translationActionTitleFontSize : 20
+    }
+
+    private var rowSpacing: CGFloat {
+        isCompact ? SuperPanelLayout.translationActionSpacing : 16
+    }
+
+    private var horizontalPadding: CGFloat {
+        isCompact ? SuperPanelLayout.translationActionHorizontalPadding : 22
+    }
+
+    private var verticalPadding: CGFloat {
+        isCompact ? SuperPanelLayout.translationActionVerticalPadding : 11
     }
 
     private var iconBackground: Color {

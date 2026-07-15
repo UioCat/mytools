@@ -94,6 +94,26 @@ final class SelectionCaptureServiceTests: XCTestCase {
         XCTAssertEqual(pasteboard.readCount, 1)
     }
 
+    func testCaptureSelectionFallsBackToCopyForAccessibilityObjectReplacementCharacter() {
+        let pasteboard = FakePasteboardClient(payload: ClipboardPayload(text: "Extreme Possible Agent"))
+        let sender = FakePasteEventSender {
+            pasteboard.changeCount += 1
+        }
+        let reader = FakeSelectedTextReader(selectedText: "\u{FFFC}")
+        let service = SelectionCaptureService(
+            pasteboard: pasteboard,
+            eventSender: sender,
+            selectedTextReader: reader
+        )
+
+        let payload = service.captureSelection()
+
+        XCTAssertEqual(payload, ClipboardPayload(text: "Extreme Possible Agent"))
+        XCTAssertEqual(reader.readCount, 1)
+        XCTAssertEqual(sender.sendCopyCount, 1)
+        XCTAssertEqual(pasteboard.readCount, 1)
+    }
+
     func testCaptureSelectionReturnsEmptyPayloadWhenCopyFallbackDoesNotChangePasteboard() {
         let pasteboard = FakePasteboardClient(payload: ClipboardPayload(imageData: Data([1, 2, 3])))
         let sender = FakePasteEventSender()

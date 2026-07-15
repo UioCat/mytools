@@ -22,11 +22,6 @@ final class RecordingControlPanelController {
         effectView.layer?.cornerRadius = 16
         effectView.layer?.masksToBounds = true
 
-        let indicator = NSView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
-        indicator.wantsLayer = true
-        indicator.layer?.backgroundColor = NSColor.systemRed.cgColor
-        indicator.layer?.cornerRadius = 5
-
         let title = NSTextField(labelWithString: "正在录制")
         title.font = .systemFont(ofSize: 13, weight: .semibold)
         title.textColor = .labelColor
@@ -42,7 +37,7 @@ final class RecordingControlPanelController {
         stopButton.font = .systemFont(ofSize: 13, weight: .semibold)
         stopButton.setAccessibilityLabel("停止录屏")
 
-        let stack = NSStackView(views: [indicator, title, elapsedLabel, stopButton])
+        let stack = NSStackView(views: [title, elapsedLabel, stopButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 8

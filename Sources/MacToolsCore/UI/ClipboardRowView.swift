@@ -268,7 +268,7 @@ public struct ClipboardRowView: View {
 }
 
 enum ClipboardRowTextPresentation {
-    static let fontSize: CGFloat = 16 * 2 / 3
+    static let fontSize: CGFloat = 12
     static let lineLimit = 3
 }
 

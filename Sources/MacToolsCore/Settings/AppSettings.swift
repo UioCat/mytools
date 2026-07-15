@@ -348,37 +348,64 @@ public struct TranslationSettings: Codable, Equatable {
 }
 
 public struct ScreenCaptureSettings: Codable, Equatable {
+    public var annotationTool: ScreenshotAnnotationTool
     public var annotationColor: ScreenshotAnnotationColor
     public var annotationLineWidth: ScreenshotAnnotationLineWidth
 
     public static let defaults = ScreenCaptureSettings(
+        annotationTool: .line,
         annotationColor: .blue,
         annotationLineWidth: .medium
     )
 
     public init(
+        annotationTool: ScreenshotAnnotationTool = .line,
         annotationColor: ScreenshotAnnotationColor = .blue,
         annotationLineWidth: ScreenshotAnnotationLineWidth = .medium
     ) {
-        self.annotationColor = annotationColor
+        self.annotationTool = annotationTool
+        self.annotationColor = annotationColor.nearestPreset
         self.annotationLineWidth = annotationLineWidth
     }
 
     private enum CodingKeys: String, CodingKey {
+        case annotationTool
         case annotationColor
         case annotationLineWidth
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.annotationColor = (try? container.decodeIfPresent(
+        self.annotationTool = (try? container.decodeIfPresent(
+            ScreenshotAnnotationTool.self,
+            forKey: .annotationTool
+        )) ?? Self.defaults.annotationTool
+        let decodedColor = (try? container.decodeIfPresent(
             ScreenshotAnnotationColor.self,
             forKey: .annotationColor
         )) ?? Self.defaults.annotationColor
+        self.annotationColor = decodedColor.nearestPreset
         self.annotationLineWidth = (try? container.decodeIfPresent(
             ScreenshotAnnotationLineWidth.self,
             forKey: .annotationLineWidth
         )) ?? Self.defaults.annotationLineWidth
+    }
+}
+
+public enum AppAppearanceMode: String, Codable, CaseIterable, Equatable, Sendable {
+    case followSystem
+    case light
+    case dark
+
+    public var displayName: String {
+        switch self {
+        case .followSystem:
+            return "跟随系统"
+        case .light:
+            return "浅色模式"
+        case .dark:
+            return "深色模式"
+        }
     }
 }
 
@@ -392,6 +419,7 @@ public struct AppSettings: Codable, Equatable {
     public var translation: TranslationSettings
     public var windowLayout: WindowLayoutSettings
     public var screenCapture: ScreenCaptureSettings
+    public var appearanceMode: AppAppearanceMode
 
     public static let defaults = AppSettings(
         mainPanelShortcut: HotKeyBinding(key: "Space", modifiers: ["Option"]),
@@ -409,7 +437,8 @@ public struct AppSettings: Codable, Equatable {
         ),
         translation: TranslationSettings(),
         windowLayout: .defaults,
-        screenCapture: .defaults
+        screenCapture: .defaults,
+        appearanceMode: .followSystem
     )
 
     public init(
@@ -421,7 +450,8 @@ public struct AppSettings: Codable, Equatable {
         superRightClick: SuperRightClickSettings,
         translation: TranslationSettings,
         windowLayout: WindowLayoutSettings,
-        screenCapture: ScreenCaptureSettings = .defaults
+        screenCapture: ScreenCaptureSettings = .defaults,
+        appearanceMode: AppAppearanceMode = .followSystem
     ) {
         self.mainPanelShortcut = mainPanelShortcut
         self.clipboardShortcut = clipboardShortcut
@@ -432,6 +462,7 @@ public struct AppSettings: Codable, Equatable {
         self.translation = translation
         self.windowLayout = windowLayout
         self.screenCapture = screenCapture
+        self.appearanceMode = appearanceMode
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -444,6 +475,7 @@ public struct AppSettings: Codable, Equatable {
         case translation
         case windowLayout
         case screenCapture
+        case appearanceMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -466,6 +498,8 @@ public struct AppSettings: Codable, Equatable {
             ?? Self.defaults.windowLayout
         self.screenCapture = try container.decodeIfPresent(ScreenCaptureSettings.self, forKey: .screenCapture)
             ?? Self.defaults.screenCapture
+        self.appearanceMode = (try? container.decodeIfPresent(AppAppearanceMode.self, forKey: .appearanceMode))
+            ?? Self.defaults.appearanceMode
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -479,5 +513,6 @@ public struct AppSettings: Codable, Equatable {
         try container.encode(translation, forKey: .translation)
         try container.encode(windowLayout, forKey: .windowLayout)
         try container.encode(screenCapture, forKey: .screenCapture)
+        try container.encode(appearanceMode, forKey: .appearanceMode)
     }
 }

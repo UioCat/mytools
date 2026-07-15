@@ -37,3 +37,21 @@ public struct TranslationInputEditorLayout: Equatable {
         placeholderLeadingPadding
     }
 }
+
+public struct TranslationWorkspaceLayout: Equatable {
+    public let inputEditorMinimumHeight: CGFloat
+    public let outputEditorMinimumHeight: CGFloat
+
+    public init(
+        inputEditorMinimumHeight: CGFloat,
+        outputEditorMinimumHeight: CGFloat
+    ) {
+        self.inputEditorMinimumHeight = inputEditorMinimumHeight
+        self.outputEditorMinimumHeight = outputEditorMinimumHeight
+    }
+
+    public static let standard = TranslationWorkspaceLayout(
+        inputEditorMinimumHeight: 120,
+        outputEditorMinimumHeight: 150
+    )
+}

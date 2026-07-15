@@ -10,6 +10,7 @@ public struct SettingsView: View {
     public let saveTranslationSettings: (TranslationSettings) throws -> Void
     public let saveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
     public let saveWindowLayoutSettings: (WindowLayoutSettings) throws -> Void
+    public let saveAppearanceMode: (AppAppearanceMode) throws -> Void
     private let defaultClipboardCacheDirectory: URL
     private let presentation: ToolModulePresentation
     @State private var clipboardCacheStoragePath: String
@@ -26,6 +27,8 @@ public struct SettingsView: View {
     @State private var windowLayoutEnabledModes: Set<WindowLayoutMode>
     @State private var windowLayoutModeShortcuts: [WindowLayoutModeShortcuts]
     @State private var windowLayoutSaveMessage: String?
+    @State private var appearanceMode: AppAppearanceMode
+    @State private var appearanceSaveMessage: String?
 
     public init(
         settings: AppSettings,
@@ -36,6 +39,7 @@ public struct SettingsView: View {
         saveTranslationSettings: @escaping (TranslationSettings) throws -> Void = { _ in },
         saveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void = { _ in },
         saveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> Void = { _ in },
+        saveAppearanceMode: @escaping (AppAppearanceMode) throws -> Void = { _ in },
         defaultClipboardCacheDirectory: URL = ClipboardCacheStorageDisplay.defaultDirectory,
         presentation: ToolModulePresentation = .window
     ) {
@@ -47,6 +51,7 @@ public struct SettingsView: View {
         self.saveTranslationSettings = saveTranslationSettings
         self.saveSuperRightClickSettings = saveSuperRightClickSettings
         self.saveWindowLayoutSettings = saveWindowLayoutSettings
+        self.saveAppearanceMode = saveAppearanceMode
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.presentation = presentation
         self._clipboardCacheStoragePath = State(initialValue: settings.clipboard.cacheStoragePath)
@@ -65,6 +70,8 @@ public struct SettingsView: View {
         self._windowLayoutEnabledModes = State(initialValue: Set(settings.windowLayout.enabledModes))
         self._windowLayoutModeShortcuts = State(initialValue: settings.windowLayout.modeShortcuts)
         self._windowLayoutSaveMessage = State(initialValue: nil)
+        self._appearanceMode = State(initialValue: settings.appearanceMode)
+        self._appearanceSaveMessage = State(initialValue: nil)
     }
 
     @ViewBuilder
@@ -246,6 +253,17 @@ public struct SettingsView: View {
 
     private var systemSection: some View {
         SettingsSection(title: "系统", iconName: "gearshape") {
+            AppearanceSettingsEditor(
+                currentMode: settings.appearanceMode,
+                selectedMode: $appearanceMode,
+                saveMessage: $appearanceSaveMessage,
+                saveAppearanceMode: saveAppearanceMode
+            )
+
+            Divider()
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
+
             Button(action: openSystemSettings) {
                 Label("打开系统设置", systemImage: "arrow.up.forward.app")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -256,6 +274,62 @@ public struct SettingsView: View {
             .foregroundStyle(MacToolsGlassTheme.textPrimary)
             .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: false)
         }
+    }
+}
+
+private struct AppearanceSettingsEditor: View {
+    let currentMode: AppAppearanceMode
+    @Binding var selectedMode: AppAppearanceMode
+    @Binding var saveMessage: String?
+    let saveAppearanceMode: (AppAppearanceMode) throws -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                Text("外观")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                Spacer(minLength: 10)
+
+                if let saveMessage {
+                    Text(saveMessage)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Picker("外观", selection: selectionBinding) {
+                ForEach(AppAppearanceMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .accessibilityLabel(Text("外观模式"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .onChange(of: currentMode) { _, mode in
+            selectedMode = mode
+        }
+    }
+
+    private var selectionBinding: Binding<AppAppearanceMode> {
+        Binding(
+            get: { selectedMode },
+            set: { mode in
+                selectedMode = mode
+                do {
+                    try saveAppearanceMode(mode)
+                    saveMessage = "已保存"
+                } catch {
+                    selectedMode = currentMode
+                    saveMessage = "保存失败"
+                }
+            }
+        )
     }
 }
 

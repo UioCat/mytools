@@ -24,6 +24,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.translation.displayAPIKey(isRevealed: false), "")
         XCTAssertEqual(settings.screenCapture.annotationColor, .blue)
         XCTAssertEqual(settings.screenCapture.annotationLineWidth, .medium)
+        XCTAssertEqual(settings.screenCapture.annotationTool, .line)
+        XCTAssertEqual(settings.appearanceMode, .followSystem)
         XCTAssertTrue(settings.windowLayout.isEnabled)
         XCTAssertEqual(settings.windowLayout.enabledModes, WindowLayoutMode.allCases)
         XCTAssertEqual(settings.windowLayout.modeShortcuts.map(\.mode), WindowLayoutMode.allCases)
@@ -70,12 +72,14 @@ final class SettingsStoreTests: XCTestCase {
             .appendingPathComponent("settings.json")
         let store = SettingsStore(fileURL: url)
         var settings = AppSettings.defaults
+        settings.appearanceMode = .dark
         settings.clipboard.maxHistoryCount = 250
         settings.clipboard.maxCacheMegabytes = 2048
         settings.clipboard.cacheStoragePath = "/tmp/MacToolsClipboardCache"
         settings.translation.apiKey = "sk-test-key"
         settings.screenCapture = ScreenCaptureSettings(
-            annotationColor: ScreenshotAnnotationColor(red: 0.2, green: 0.4, blue: 0.6),
+            annotationTool: .freehand,
+            annotationColor: .purple,
             annotationLineWidth: .thick
         )
         settings.windowLayout.modeShortcuts = [
@@ -93,6 +97,7 @@ final class SettingsStoreTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         XCTAssertEqual(loaded, settings)
+        XCTAssertEqual(loaded.appearanceMode, .dark)
         XCTAssertEqual(loaded.mainPanelShortcut.displayValue, "Option+Space")
         XCTAssertEqual(loaded.clipboard.maxCacheMegabytes, 2048)
         XCTAssertEqual(loaded.clipboard.cacheStoragePath, "/tmp/MacToolsClipboardCache")
@@ -243,6 +248,29 @@ final class SettingsStoreTests: XCTestCase {
 
         XCTAssertEqual(loaded.windowLayout, .defaults)
         XCTAssertEqual(loaded.screenCapture, .defaults)
+        XCTAssertEqual(loaded.appearanceMode, .followSystem)
+    }
+
+    func testAppearanceModesUseUserFacingNames() {
+        XCTAssertEqual(AppAppearanceMode.allCases, [.followSystem, .light, .dark])
+        XCTAssertEqual(AppAppearanceMode.followSystem.displayName, "跟随系统")
+        XCTAssertEqual(AppAppearanceMode.light.displayName, "浅色模式")
+        XCTAssertEqual(AppAppearanceMode.dark.displayName, "深色模式")
+    }
+
+    func testUnknownAppearanceModeFallsBackToFollowSystem() throws {
+        let json = """
+        {
+          "appearanceMode": "sepia"
+        }
+        """
+
+        let loaded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: try XCTUnwrap(json.data(using: .utf8))
+        )
+
+        XCTAssertEqual(loaded.appearanceMode, .followSystem)
     }
 
     func testPartialOrUnknownScreenCaptureSettingsUseFieldDefaults() throws {
@@ -254,7 +282,8 @@ final class SettingsStoreTests: XCTestCase {
         let unknownWidthJSON = """
         {
           "annotationColor": { "red": 0.8, "green": 0.1, "blue": 0.2, "alpha": 1 },
-          "annotationLineWidth": "extra-thick"
+          "annotationLineWidth": "extra-thick",
+          "annotationTool": "ellipse"
         }
         """
 
@@ -267,10 +296,12 @@ final class SettingsStoreTests: XCTestCase {
             from: try XCTUnwrap(unknownWidthJSON.data(using: .utf8))
         )
 
-        XCTAssertEqual(colorOnly.annotationColor, .init(red: 0.2, green: 0.4, blue: 0.6))
+        XCTAssertEqual(colorOnly.annotationColor, .green)
         XCTAssertEqual(colorOnly.annotationLineWidth, .medium)
-        XCTAssertEqual(unknownWidth.annotationColor, .init(red: 0.8, green: 0.1, blue: 0.2))
+        XCTAssertEqual(colorOnly.annotationTool, .line)
+        XCTAssertEqual(unknownWidth.annotationColor, .red)
         XCTAssertEqual(unknownWidth.annotationLineWidth, .medium)
+        XCTAssertEqual(unknownWidth.annotationTool, .line)
     }
 
     func testLegacyWindowLayoutCustomButtonsAreNotVisibleButtons() {

@@ -38,12 +38,12 @@ public enum ScreenshotRenderer {
             switch annotation {
             case let .line(start, end, color, lineWidth):
                 drawLine(in: context, start: start, end: end, color: color, lineWidth: lineWidth)
+            case let .freehand(points, color, lineWidth):
+                drawFreehand(in: context, points: points, color: color, lineWidth: lineWidth)
             case let .arrow(start, end, color, lineWidth):
                 drawArrow(in: context, start: start, end: end, color: color, lineWidth: lineWidth)
             case let .rectangle(rect, color, lineWidth):
                 drawRectangle(in: context, rect: rect, color: color, lineWidth: lineWidth)
-            case let .circle(rect, color, lineWidth):
-                drawCircle(in: context, rect: rect, color: color, lineWidth: lineWidth)
             case let .mosaic(rect):
                 if let mosaicImage {
                     drawMosaic(in: context, mosaicImage: mosaicImage, rect: rect, bounds: bounds)
@@ -129,6 +129,42 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
+    private static func drawFreehand(
+        in context: CGContext,
+        points: [CGPoint],
+        color: ScreenshotAnnotationColor,
+        lineWidth: CGFloat
+    ) {
+        guard let firstPoint = points.first else {
+            return
+        }
+
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setFillColor(color.cgColor)
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+
+        if points.count == 1 {
+            let radius = lineWidth / 2
+            context.fillEllipse(
+                in: CGRect(
+                    x: firstPoint.x - radius,
+                    y: firstPoint.y - radius,
+                    width: lineWidth,
+                    height: lineWidth
+                )
+            )
+        } else {
+            context.move(to: firstPoint)
+            points.dropFirst().forEach(context.addLine)
+            context.strokePath()
+        }
+
+        context.restoreGState()
+    }
+
     private static func drawRectangle(
         in context: CGContext,
         rect: CGRect,
@@ -139,19 +175,6 @@ public enum ScreenshotRenderer {
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
         context.stroke(rect.standardized)
-        context.restoreGState()
-    }
-
-    private static func drawCircle(
-        in context: CGContext,
-        rect: CGRect,
-        color: ScreenshotAnnotationColor,
-        lineWidth: CGFloat
-    ) {
-        context.saveGState()
-        context.setStrokeColor(color.cgColor)
-        context.setLineWidth(lineWidth)
-        context.strokeEllipse(in: rect.standardized)
         context.restoreGState()
     }
 

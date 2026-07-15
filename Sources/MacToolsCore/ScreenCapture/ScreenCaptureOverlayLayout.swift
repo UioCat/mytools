@@ -3,7 +3,7 @@ import CoreGraphics
 public enum ScreenCaptureOverlayLayout {
     public static let modeToolbarSize = CGSize(width: 196, height: 44)
     public static let editorToolbarSize = CGSize(width: 720, height: 92)
-    public static let recordingControlSize = CGSize(width: 228, height: 48)
+    public static let recordingControlSize = CGSize(width: 176, height: 48)
 
     private static let edgeInset: CGFloat = 12
     private static let topInset: CGFloat = 16

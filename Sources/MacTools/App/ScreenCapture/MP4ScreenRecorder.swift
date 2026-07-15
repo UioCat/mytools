@@ -13,14 +13,18 @@ protocol ScreenRecording: AnyObject {
 final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStreamDelegate {
     private let captureService: SystemScreenCaptureService
     private let outputQueue = DispatchQueue(label: "com.mactools.screen-recording")
+    private let outputQueueKey = DispatchSpecificKey<Void>()
     private var stream: SCStream?
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var destination: URL?
     private var startedSession = false
+    private var streamFailure: Error?
 
     init(captureService: SystemScreenCaptureService) {
         self.captureService = captureService
+        super.init()
+        outputQueue.setSpecific(key: outputQueueKey, value: ())
     }
 
     var isRecording: Bool {
@@ -54,20 +58,22 @@ final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStre
         }
 
         let stream = SCStream(filter: source.filter, configuration: source.configuration, delegate: self)
+        self.stream = stream
+        self.writer = writer
+        self.input = input
+        self.destination = destination
+        self.startedSession = false
+        self.streamFailure = nil
+
         do {
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
             try await stream.startCapture()
         } catch {
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: destination)
+            resetState()
             throw error
         }
-
-        self.stream = stream
-        self.writer = writer
-        self.input = input
-        self.destination = destination
-        self.startedSession = false
     }
 
     func stop() async throws -> URL {
@@ -75,25 +81,39 @@ final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStre
             throw ScreenCaptureError.recorderNotRunning
         }
 
-        try await stream.stopCapture()
-        outputQueue.sync {
-            input.markAsFinished()
+        var captureStopError: Error?
+        do {
+            try await stream.stopCapture()
+        } catch {
+            captureStopError = error
         }
-        await withCheckedContinuation { continuation in
-            writer.finishWriting {
-                continuation.resume()
+
+        let recordedStreamFailure = outputQueue.sync { () -> Error? in
+            if writer.status == .writing {
+                input.markAsFinished()
+            }
+            return streamFailure
+        }
+
+        if writer.status == .writing {
+            await withCheckedContinuation { continuation in
+                writer.finishWriting {
+                    continuation.resume()
+                }
             }
         }
 
-        self.stream = nil
-        self.writer = nil
-        self.input = nil
-        self.destination = nil
-        self.startedSession = false
+        let writingError = writer.error ?? recordedStreamFailure ?? captureStopError
+        let completedSuccessfully = ScreenRecordingCompletionPolicy.isSuccessful(
+            writerCompleted: writer.status == .completed,
+            hasRecordedFailure: recordedStreamFailure != nil,
+            hasCaptureStopError: captureStopError != nil
+        )
+        resetState()
 
-        guard writer.status == .completed else {
+        guard completedSuccessfully else {
             try? FileManager.default.removeItem(at: destination)
-            throw ScreenCaptureError.writerFailed
+            throw writingError ?? ScreenCaptureError.writerFailed
         }
 
         return destination
@@ -105,7 +125,19 @@ final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStre
         of type: SCStreamOutputType
     ) {
         guard type == .screen,
+              sampleBuffer.isValid,
               CMSampleBufferDataIsReady(sampleBuffer),
+              let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(
+                  sampleBuffer,
+                  createIfNecessary: false
+              ) as? [[SCStreamFrameInfo: Any]],
+              let attachments = attachmentsArray.first,
+              let frameStatusRawValue = attachments[.status] as? Int,
+              let frameStatus = SCFrameStatus(rawValue: frameStatusRawValue),
+              ScreenRecordingFramePolicy.shouldAppend(
+                  frameStatus: frameStatus,
+                  hasImageBuffer: CMSampleBufferGetImageBuffer(sampleBuffer) != nil
+              ),
               let writer,
               let input,
               input.isReadyForMoreMediaData else {
@@ -116,14 +148,33 @@ final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStre
             writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
             startedSession = true
         }
-        input.append(sampleBuffer)
+        guard input.append(sampleBuffer) else {
+            streamFailure = writer.error ?? ScreenCaptureError.writerFailed
+            return
+        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        guard self.stream === stream else {
-            return
+        let recordFailure = { [weak self] in
+            guard let self, self.stream === stream else {
+                return
+            }
+            self.streamFailure = error
         }
 
-        self.stream = nil
+        if DispatchQueue.getSpecific(key: outputQueueKey) != nil {
+            recordFailure()
+        } else {
+            outputQueue.sync(execute: recordFailure)
+        }
+    }
+
+    private func resetState() {
+        stream = nil
+        writer = nil
+        input = nil
+        destination = nil
+        startedSession = false
+        streamFailure = nil
     }
 }

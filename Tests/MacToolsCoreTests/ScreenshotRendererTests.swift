@@ -11,7 +11,10 @@ final class ScreenshotRendererTests: XCTestCase {
                 .line(start: CGPoint(x: 2, y: 12), end: CGPoint(x: 26, y: 12), color: .red),
                 .arrow(start: CGPoint(x: 2, y: 2), end: CGPoint(x: 20, y: 20), color: .green),
                 .rectangle(CGRect(x: 4, y: 4, width: 10, height: 8), color: .blue),
-                .circle(CGRect(x: 6, y: 10, width: 14, height: 14), color: .purple),
+                .freehand(
+                    points: [CGPoint(x: 4, y: 20), CGPoint(x: 12, y: 26), CGPoint(x: 24, y: 18)],
+                    color: .purple
+                ),
                 .mosaic(CGRect(x: 16, y: 16, width: 8, height: 8))
             ]
         )
@@ -59,12 +62,16 @@ final class ScreenshotRendererTests: XCTestCase {
         )
     }
 
-    func testRendererDrawsRectangleAndCircleUsingSelectedColors() throws {
+    func testRendererDrawsRectangleAndFreehandUsingSelectedColors() throws {
         let data = try ScreenshotRenderer.pngData(
             image: try makeSolidImage(color: CGColor(gray: 0, alpha: 1)),
             annotations: [
                 .rectangle(CGRect(x: 3, y: 3, width: 26, height: 26), color: .red),
-                .circle(CGRect(x: 8, y: 8, width: 16, height: 16), color: .green)
+                .freehand(
+                    points: [CGPoint(x: 4, y: 8), CGPoint(x: 16, y: 22), CGPoint(x: 28, y: 10)],
+                    color: .green,
+                    lineWidth: 4
+                )
             ]
         )
         let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
@@ -77,6 +84,42 @@ final class ScreenshotRendererTests: XCTestCase {
         XCTAssertTrue(containsRGB(in: pixels) { red, green, blue in
             green > 140 && red < 100 && blue < 100
         })
+        for point in [
+            CGPoint(x: 4, y: 8),
+            CGPoint(x: 10, y: 15),
+            CGPoint(x: 16, y: 22),
+            CGPoint(x: 22, y: 16),
+            CGPoint(x: 28, y: 10)
+        ] {
+            let pixel = rgb(at: point, in: pixels, width: image.width, height: image.height)
+            XCTAssertGreaterThan(pixel.green, 140, "Expected freehand stroke at \(point)")
+            XCTAssertLessThan(pixel.red, 100, "Expected freehand stroke at \(point)")
+        }
+        let offPathPixel = rgb(
+            at: CGPoint(x: 16, y: 5),
+            in: pixels,
+            width: image.width,
+            height: image.height
+        )
+        XCTAssertLessThan(offPathPixel.green, 30)
+    }
+
+    func testRendererUsesSelectedFreehandLineWidthAcrossFullPath() throws {
+        let image = try makeSolidImage(color: CGColor(gray: 0, alpha: 1))
+        let points = [CGPoint(x: 3, y: 5), CGPoint(x: 16, y: 25), CGPoint(x: 29, y: 7)]
+        let thinData = try ScreenshotRenderer.pngData(
+            image: image,
+            annotations: [.freehand(points: points, color: .red, lineWidth: 2)]
+        )
+        let thickData = try ScreenshotRenderer.pngData(
+            image: image,
+            annotations: [.freehand(points: points, color: .red, lineWidth: 8)]
+        )
+
+        XCTAssertGreaterThan(
+            try coloredPixelCount(in: thickData),
+            try coloredPixelCount(in: thinData)
+        )
     }
 
     func testRendererUsesEachAnnotationsSelectedLineWidth() throws {
@@ -211,6 +254,19 @@ final class ScreenshotRendererTests: XCTestCase {
             index += 4
         }
         return false
+    }
+
+    private func rgb(
+        at point: CGPoint,
+        in pixels: [UInt8],
+        width: Int,
+        height: Int
+    ) -> (red: UInt8, green: UInt8, blue: UInt8) {
+        let x = min(max(Int(point.x), 0), width - 1)
+        let y = min(max(Int(point.y), 0), height - 1)
+        let row = height - 1 - y
+        let index = (row * width + x) * 4
+        return (pixels[index], pixels[index + 1], pixels[index + 2])
     }
 
     private func coloredPixelCount(in data: Data) throws -> Int {

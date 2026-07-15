@@ -87,8 +87,8 @@ final class ClipboardListViewTests: XCTestCase {
         XCTAssertEqual(ClipboardRowContentStyle.style(for: .file), .standard)
     }
 
-    func testClipboardTextUsesTwoThirdsFontSizeAndAtMostThreeLines() {
-        XCTAssertEqual(ClipboardRowTextPresentation.fontSize, 16 * 2 / 3, accuracy: 0.001)
+    func testClipboardTextUsesReadableTwelvePointFontAndAtMostThreeLines() {
+        XCTAssertEqual(ClipboardRowTextPresentation.fontSize, 12, accuracy: 0.001)
         XCTAssertEqual(ClipboardRowTextPresentation.lineLimit, 3)
     }
 
@@ -101,7 +101,7 @@ final class ClipboardListViewTests: XCTestCase {
         let outputDirectory = URL(fileURLWithPath: outputDirectoryPath, isDirectory: true)
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         let item = makeItem(
-            text: "第一行：这是用于验证剪贴板展示的较长内容。\n第二行：正文应该缩小到原字号的三分之二。\n第三行：这是允许展示的最后一行。\n第四行：这一行应该被截断。\n第五行：不应继续展示。"
+            text: "第一行：这是用于验证剪贴板展示的较长内容。\n第二行：正文使用更易读的十二点字号。\n第三行：这是允许展示的最后一行。\n第四行：这一行应该被截断。\n第五行：不应继续展示。"
         )
 
         try writeClipboardRowSnapshot(

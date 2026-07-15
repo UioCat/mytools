@@ -81,6 +81,12 @@ final class AppEnvironment {
                 }
                 return try self.saveWindowLayoutSettings(windowLayoutSettings)
             },
+            onSaveAppearanceMode: { [weak self] appearanceMode in
+                guard let self else {
+                    throw AppEnvironmentError.unavailable
+                }
+                return try self.saveAppearanceMode(appearanceMode)
+            },
             onCopy: { [weak self] item in
                 self?.copyFromPanel(item)
             },
@@ -234,6 +240,17 @@ final class AppEnvironment {
     private func saveWindowLayoutSettings(_ windowLayoutSettings: WindowLayoutSettings) throws -> AppSettings {
         var updated = settings
         updated.windowLayout = windowLayoutSettings
+
+        try settingsStore.save(updated)
+        settings = updated
+        onSettingsChanged(updated)
+
+        return updated
+    }
+
+    private func saveAppearanceMode(_ appearanceMode: AppAppearanceMode) throws -> AppSettings {
+        var updated = settings
+        updated.appearanceMode = appearanceMode
 
         try settingsStore.save(updated)
         settings = updated

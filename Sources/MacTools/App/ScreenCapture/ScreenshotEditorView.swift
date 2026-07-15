@@ -1,27 +1,18 @@
-import AppKit
 import CoreGraphics
 import MacToolsCore
 import SwiftUI
 
-private enum ScreenshotEditorTool: CaseIterable, Identifiable {
-    case line
-    case arrow
-    case rectangle
-    case circle
-    case mosaic
-
-    var id: Self { self }
-
+private extension ScreenshotAnnotationTool {
     var title: String {
         switch self {
         case .line:
             return "划线"
+        case .freehand:
+            return "画笔"
         case .arrow:
             return "箭头"
         case .rectangle:
             return "长方形"
-        case .circle:
-            return "圆形"
         case .mosaic:
             return "马赛克"
         }
@@ -31,12 +22,12 @@ private enum ScreenshotEditorTool: CaseIterable, Identifiable {
         switch self {
         case .line:
             return "line.diagonal"
+        case .freehand:
+            return "pencil.tip"
         case .arrow:
             return "arrow.up.right"
         case .rectangle:
             return "rectangle"
-        case .circle:
-            return "circle"
         case .mosaic:
             return "checkerboard.rectangle"
         }
@@ -51,11 +42,12 @@ struct ScreenshotEditorView: View {
     let onCopy: (Data) -> Void
     let onCancel: () -> Void
 
-    @State private var tool: ScreenshotEditorTool = .line
+    @State private var tool: ScreenshotAnnotationTool
     @State private var annotationColor: ScreenshotAnnotationColor
     @State private var annotationLineWidth: ScreenshotAnnotationLineWidth
     @State private var annotationStore = ScreenshotAnnotationStore()
     @State private var dragStart: CGPoint?
+    @State private var freehandStroke = ScreenshotFreehandStroke()
     @State private var previewAnnotation: ScreenshotAnnotation?
     @State private var errorMessage: String?
     @State private var isExporting = false
@@ -78,7 +70,8 @@ struct ScreenshotEditorView: View {
         self.onSettingsChange = onSettingsChange
         self.onCopy = onCopy
         self.onCancel = onCancel
-        _annotationColor = State(initialValue: settings.annotationColor)
+        _tool = State(initialValue: settings.annotationTool)
+        _annotationColor = State(initialValue: settings.annotationColor.nearestPreset)
         _annotationLineWidth = State(initialValue: settings.annotationLineWidth)
     }
 
@@ -121,14 +114,15 @@ struct ScreenshotEditorView: View {
     private var editorToolbar: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
-                ForEach(ScreenshotEditorTool.allCases) { candidate in
+                ForEach(ScreenshotAnnotationTool.allCases, id: \.self) { candidate in
                     Button {
-                        tool = candidate
+                        selectTool(candidate)
                     } label: {
                         toolbarLabel(candidate.title, systemImage: candidate.imageName)
                     }
                     .buttonStyle(.bordered)
                     .tint(tool == candidate ? .accentColor : .secondary)
+                    .accessibilityValue(tool == candidate ? "已选择" : "未选择")
                 }
 
                 Button {
@@ -165,11 +159,6 @@ struct ScreenshotEditorView: View {
                 ForEach(ScreenshotAnnotationColor.presets, id: \.self) { color in
                     colorButton(color)
                 }
-
-                ColorPicker("自定义颜色", selection: customColorBinding, supportsOpacity: false)
-                    .labelsHidden()
-                    .frame(width: 24)
-                    .help("自定义颜色")
 
                 Divider()
                     .frame(height: 20)
@@ -237,38 +226,34 @@ struct ScreenshotEditorView: View {
         .accessibilityValue(annotationColor == color ? "已选择" : "未选择")
     }
 
-    private var customColorBinding: Binding<Color> {
-        Binding(
-            get: { swiftUIColor(annotationColor) },
-            set: { newColor in
-                guard let components = NSColor(newColor).usingColorSpace(.sRGB) else {
-                    return
-                }
-                let color = ScreenshotAnnotationColor(
-                    red: components.redComponent,
-                    green: components.greenComponent,
-                    blue: components.blueComponent
-                )
-                annotationColor = color
-                persistSettings(color: color, lineWidth: annotationLineWidth)
-            }
-        )
-    }
-
     private func lineWidthButton(_ lineWidth: ScreenshotAnnotationLineWidth) -> some View {
         Button {
             annotationLineWidth = lineWidth
-            persistSettings(color: annotationColor, lineWidth: lineWidth)
+            persistSettings(tool: tool, color: annotationColor, lineWidth: lineWidth)
         } label: {
-            RoundedRectangle(cornerRadius: lineWidth.points / 2, style: .continuous)
-                .fill(Color.primary)
-                .frame(width: 22, height: lineWidth.points)
-                .frame(width: 28, height: 20)
+            ScreenshotLineWidthPreview()
+                .stroke(
+                    Color.primary.opacity(0.88),
+                    style: StrokeStyle(lineWidth: lineWidth.points, lineCap: .round)
+                )
+                .frame(width: 22, height: 12)
+                .frame(width: 30, height: 22)
                 .background {
-                    if annotationLineWidth == lineWidth {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(Color.accentColor, lineWidth: 2)
-                    }
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(
+                            annotationLineWidth == lineWidth
+                                ? Color.accentColor.opacity(0.16)
+                                : Color.primary.opacity(0.04)
+                        )
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(
+                            annotationLineWidth == lineWidth
+                                ? Color.accentColor.opacity(0.8)
+                                : Color.primary.opacity(0.12),
+                            lineWidth: annotationLineWidth == lineWidth ? 1.5 : 0.5
+                        )
                 }
         }
         .buttonStyle(.plain)
@@ -279,14 +264,21 @@ struct ScreenshotEditorView: View {
 
     private func selectColor(_ color: ScreenshotAnnotationColor) {
         annotationColor = color
-        persistSettings(color: color, lineWidth: annotationLineWidth)
+        persistSettings(tool: tool, color: color, lineWidth: annotationLineWidth)
+    }
+
+    private func selectTool(_ tool: ScreenshotAnnotationTool) {
+        self.tool = tool
+        persistSettings(tool: tool, color: annotationColor, lineWidth: annotationLineWidth)
     }
 
     private func persistSettings(
+        tool: ScreenshotAnnotationTool,
         color: ScreenshotAnnotationColor,
         lineWidth: ScreenshotAnnotationLineWidth
     ) {
         let settings = ScreenCaptureSettings(
+            annotationTool: tool,
             annotationColor: color,
             annotationLineWidth: lineWidth
         )
@@ -340,7 +332,7 @@ struct ScreenshotEditorView: View {
         case .white:
             return "白色"
         default:
-            return "自定义颜色"
+            return "颜色"
         }
     }
 
@@ -372,6 +364,10 @@ struct ScreenshotEditorView: View {
                     if let previewAnnotation {
                         draw(previewAnnotation, in: &context, imageRect: imageRect, isPreview: true)
                     }
+                    if tool == .freehand,
+                       let freehandPreview = freehandAnnotation(imageRect: imageRect) {
+                        draw(freehandPreview, in: &context, imageRect: imageRect, isPreview: true)
+                    }
                 }
                 .contentShape(Rectangle())
                 .gesture(annotationGesture(imageRect: imageRect))
@@ -396,20 +392,46 @@ struct ScreenshotEditorView: View {
                 guard let dragStart else {
                     return
                 }
+                if tool == .freehand {
+                    freehandStroke.append(point)
+                    return
+                }
                 previewAnnotation = annotation(from: dragStart, to: point, imageRect: imageRect)
             }
             .onEnded { value in
                 defer {
                     dragStart = nil
+                    freehandStroke = ScreenshotFreehandStroke()
                     previewAnnotation = nil
                 }
-                guard let dragStart,
-                      let point = imagePoint(from: value.location, imageRect: imageRect),
+                guard let dragStart else {
+                    return
+                }
+
+                if tool == .freehand {
+                    if let point = imagePoint(from: value.location, imageRect: imageRect) {
+                        freehandStroke.append(point)
+                    }
+                    guard let annotation = freehandAnnotation(imageRect: imageRect) else {
+                        return
+                    }
+                    annotationStore.append(annotation)
+                    return
+                }
+
+                guard let point = imagePoint(from: value.location, imageRect: imageRect),
                       distance(from: dragStart, to: point) >= 2 else {
                     return
                 }
                 annotationStore.append(annotation(from: dragStart, to: point, imageRect: imageRect))
             }
+    }
+
+    private func freehandAnnotation(imageRect: CGRect) -> ScreenshotAnnotation? {
+        freehandStroke.annotation(
+            color: annotationColor,
+            lineWidth: imageLineWidth(in: imageRect)
+        )
     }
 
     private func annotation(
@@ -421,6 +443,8 @@ struct ScreenshotEditorView: View {
         switch tool {
         case .line:
             return .line(start: start, end: end, color: annotationColor, lineWidth: lineWidth)
+        case .freehand:
+            return .freehand(points: [start, end], color: annotationColor, lineWidth: lineWidth)
         case .arrow:
             return .arrow(start: start, end: end, color: annotationColor, lineWidth: lineWidth)
         case .rectangle:
@@ -429,8 +453,6 @@ struct ScreenshotEditorView: View {
                 color: annotationColor,
                 lineWidth: lineWidth
             )
-        case .circle:
-            return .circle(from: start, to: end, color: annotationColor, lineWidth: lineWidth)
         case .mosaic:
             return .mosaic(CGRect(x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y))
         }
@@ -448,6 +470,21 @@ struct ScreenshotEditorView: View {
             var path = Path()
             path.move(to: canvasPoint(from: start, imageRect: imageRect))
             path.addLine(to: canvasPoint(from: end, imageRect: imageRect))
+            context.stroke(
+                path,
+                with: .color(displayColor(color, isPreview: isPreview)),
+                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+            )
+        case let .freehand(points, color, lineWidth):
+            guard let firstPoint = points.first else {
+                return
+            }
+            let lineWidth = canvasLineWidth(lineWidth, in: imageRect)
+            var path = Path()
+            path.move(to: canvasPoint(from: firstPoint, imageRect: imageRect))
+            for point in points.dropFirst() {
+                path.addLine(to: canvasPoint(from: point, imageRect: imageRect))
+            }
             context.stroke(
                 path,
                 with: .color(displayColor(color, isPreview: isPreview)),
@@ -481,12 +518,6 @@ struct ScreenshotEditorView: View {
         case let .rectangle(rect, color, lineWidth):
             context.stroke(
                 Path(canvasRect(from: rect, imageRect: imageRect)),
-                with: .color(displayColor(color, isPreview: isPreview)),
-                lineWidth: canvasLineWidth(lineWidth, in: imageRect)
-            )
-        case let .circle(rect, color, lineWidth):
-            context.stroke(
-                Path(ellipseIn: canvasRect(from: rect, imageRect: imageRect)),
                 with: .color(displayColor(color, isPreview: isPreview)),
                 lineWidth: canvasLineWidth(lineWidth, in: imageRect)
             )
@@ -583,5 +614,18 @@ struct ScreenshotEditorView: View {
                 isExporting = false
             }
         }
+    }
+}
+
+private struct ScreenshotLineWidthPreview: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + 4, y: rect.maxY - 3))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX - 4, y: rect.minY + 3),
+            control1: CGPoint(x: rect.midX - 3, y: rect.maxY - 3),
+            control2: CGPoint(x: rect.midX + 3, y: rect.minY + 3)
+        )
+        return path
     }
 }

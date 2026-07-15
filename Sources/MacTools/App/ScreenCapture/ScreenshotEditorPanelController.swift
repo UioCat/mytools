@@ -14,7 +14,7 @@ final class ScreenshotEditorPanelController {
         onSettingsChange: @escaping (ScreenCaptureSettings) -> Bool,
         onCopy: @escaping (Data) -> Void,
         onCancel: @escaping () -> Void
-    ) {
+    ) -> Bool {
         dismiss()
 
         let displayBounds = CGRect(origin: .zero, size: selection.displayFrame.size)
@@ -57,8 +57,11 @@ final class ScreenshotEditorPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: rootView)
         panel.setFrame(selection.displayFrame, display: true)
-        panel.makeKeyAndOrderFront(nil)
         self.panel = panel
+        NSApp.activate(ignoringOtherApps: true)
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        return panel.isVisible
     }
 
     func dismiss() {

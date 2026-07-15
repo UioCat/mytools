@@ -10,6 +10,7 @@ enum ScreenCaptureError: Error, Equatable {
     case writerCreationFailed
     case writerFailed
     case downloadsDirectoryUnavailable
+    case editorPresentationFailed
 }
 
 @MainActor
@@ -59,12 +60,10 @@ final class SystemScreenCaptureService: ScreenStillCapturing {
             throw ScreenCaptureError.displayUnavailable
         }
 
-        let excludedApplications: [SCRunningApplication]
-        if let bundleIdentifier = Bundle.main.bundleIdentifier,
-           let application = content.applications.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
-            excludedApplications = [application]
-        } else {
-            excludedApplications = []
+        let bundleIdentifier = Bundle.main.bundleIdentifier
+        let excludedApplications = content.applications.filter { application in
+            application.processID == ProcessInfo.processInfo.processIdentifier
+                || application.bundleIdentifier == bundleIdentifier
         }
 
         let filter = SCContentFilter(

@@ -47,7 +47,7 @@ final class ScreenCaptureOverlayLayoutTests: XCTestCase {
             visibleFrame: CGRect(x: -1_440, y: 0, width: 1_440, height: 900)
         )
 
-        XCTAssertEqual(frame, CGRect(x: -834, y: 836, width: 228, height: 48))
+        XCTAssertEqual(frame, CGRect(x: -808, y: 836, width: 176, height: 48))
     }
 
     func testRecordingControlStaysBelowMenuBarAndCentersInVisibleFrame() {
@@ -55,6 +55,6 @@ final class ScreenCaptureOverlayLayoutTests: XCTestCase {
             visibleFrame: CGRect(x: 80, y: 40, width: 1_360, height: 836)
         )
 
-        XCTAssertEqual(frame, CGRect(x: 646, y: 812, width: 228, height: 48))
+        XCTAssertEqual(frame, CGRect(x: 672, y: 812, width: 176, height: 48))
     }
 }

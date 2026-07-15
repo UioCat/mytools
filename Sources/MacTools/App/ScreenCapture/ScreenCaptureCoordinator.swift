@@ -115,7 +115,7 @@ final class ScreenCaptureCoordinator {
                 guard state.beginEditingScreenshot() else {
                     return
                 }
-                editor.present(
+                guard editor.present(
                     image: image,
                     selection: selection,
                     settings: settingsProvider(),
@@ -127,7 +127,10 @@ final class ScreenCaptureCoordinator {
                         self?.state.cancel()
                         self?.stillCapture.invalidatePreparation()
                     }
-                )
+                ) else {
+                    throw ScreenCaptureError.editorPresentationFailed
+                }
+                logger.info("screen capture editor presented")
             } catch {
                 fail(message: "截图失败，请检查屏幕录制权限后重试", error: error)
             }

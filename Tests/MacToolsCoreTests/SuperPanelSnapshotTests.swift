@@ -54,6 +54,35 @@ final class SuperPanelSnapshotTests: XCTestCase {
             content: folderContent,
             to: outputDirectory.appendingPathComponent("super-panel-folder.png")
         )
+
+        let finderContent = SuperPanelContent.fileSystem(
+            item: ClipboardItem(
+                id: UUID(),
+                kind: .folder,
+                displayTitle: "Projects",
+                searchableText: "/Users/example/Projects",
+                text: nil,
+                originalPath: "/Users/example/Projects",
+                cachedFilePath: nil,
+                thumbnailPath: nil,
+                sourceApp: "访达",
+                createdAt: Date(timeIntervalSince1970: 0),
+                lastUsedAt: nil,
+                useCount: 0,
+                isPinned: false,
+                isFavorite: false
+            ),
+            windowLayoutButtons: WindowLayoutMode.allCases.map(WindowLayoutButton.init(mode:)),
+            presentation: .finderCurrentDirectory
+        )
+        try writeSnapshot(
+            ContextActionView(
+                content: finderContent,
+                performAction: { _ in }
+            ),
+            content: finderContent,
+            to: outputDirectory.appendingPathComponent("super-panel-finder.png")
+        )
     }
 
     @MainActor
@@ -84,8 +113,8 @@ final class SuperPanelSnapshotTests: XCTestCase {
             }
 
             try pngData.write(to: url)
-            XCTAssertEqual(bitmap.pixelsWide, Int(renderedSize.width * renderer.scale))
-            XCTAssertEqual(bitmap.pixelsHigh, Int(renderedSize.height * renderer.scale))
+            XCTAssertEqual(bitmap.pixelsWide, Int((renderedSize.width * renderer.scale).rounded(.up)))
+            XCTAssertEqual(bitmap.pixelsHigh, Int((renderedSize.height * renderer.scale).rounded(.up)))
             XCTAssertGreaterThan(pngData.count, 1_000)
         }
     }

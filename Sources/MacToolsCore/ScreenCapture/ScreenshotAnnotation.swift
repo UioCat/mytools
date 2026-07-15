@@ -1,5 +1,13 @@
 import CoreGraphics
 
+public enum ScreenshotAnnotationTool: String, CaseIterable, Codable, Equatable, Hashable {
+    case line
+    case freehand
+    case arrow
+    case rectangle
+    case mosaic
+}
+
 public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable {
     public let red: CGFloat
     public let green: CGFloat
@@ -28,6 +36,23 @@ public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable {
 
     public var cgColor: CGColor {
         CGColor(red: red, green: green, blue: blue, alpha: alpha)
+    }
+
+    public var nearestPreset: ScreenshotAnnotationColor {
+        Self.presets.min {
+            squaredDistance(to: $0) < squaredDistance(to: $1)
+        } ?? .blue
+    }
+
+    private func squaredDistance(to other: ScreenshotAnnotationColor) -> CGFloat {
+        let redDelta = red - other.red
+        let greenDelta = green - other.green
+        let blueDelta = blue - other.blue
+        let alphaDelta = alpha - other.alpha
+        return redDelta * redDelta
+            + greenDelta * greenDelta
+            + blueDelta * blueDelta
+            + alphaDelta * alphaDelta
     }
 }
 
@@ -69,6 +94,11 @@ public enum ScreenshotAnnotation: Equatable {
         color: ScreenshotAnnotationColor = .blue,
         lineWidth: CGFloat = ScreenshotAnnotationLineWidth.medium.points
     )
+    case freehand(
+        points: [CGPoint],
+        color: ScreenshotAnnotationColor = .blue,
+        lineWidth: CGFloat = ScreenshotAnnotationLineWidth.medium.points
+    )
     case arrow(
         start: CGPoint,
         end: CGPoint,
@@ -80,27 +110,38 @@ public enum ScreenshotAnnotation: Equatable {
         color: ScreenshotAnnotationColor = .blue,
         lineWidth: CGFloat = ScreenshotAnnotationLineWidth.medium.points
     )
-    case circle(
-        CGRect,
-        color: ScreenshotAnnotationColor = .blue,
-        lineWidth: CGFloat = ScreenshotAnnotationLineWidth.medium.points
-    )
     case mosaic(CGRect)
+}
 
-    public static func circle(
-        from start: CGPoint,
-        to end: CGPoint,
-        color: ScreenshotAnnotationColor = .blue,
-        lineWidth: CGFloat = ScreenshotAnnotationLineWidth.medium.points
-    ) -> ScreenshotAnnotation {
-        let side = min(abs(end.x - start.x), abs(end.y - start.y))
-        let rect = CGRect(
-            x: end.x >= start.x ? start.x : start.x - side,
-            y: end.y >= start.y ? start.y : start.y - side,
-            width: side,
-            height: side
-        )
-        return .circle(rect, color: color, lineWidth: lineWidth)
+public struct ScreenshotFreehandStroke: Equatable {
+    public private(set) var points: [CGPoint] = []
+    private var pathLength: CGFloat = 0
+
+    public init() {}
+
+    public mutating func append(_ point: CGPoint, minimumSampleDistance: CGFloat = 0.75) {
+        guard let lastPoint = points.last else {
+            points = [point]
+            return
+        }
+
+        let segmentLength = hypot(point.x - lastPoint.x, point.y - lastPoint.y)
+        guard segmentLength >= max(0, minimumSampleDistance) else {
+            return
+        }
+        points.append(point)
+        pathLength += segmentLength
+    }
+
+    public func annotation(
+        color: ScreenshotAnnotationColor,
+        lineWidth: CGFloat,
+        minimumPathLength: CGFloat = 2
+    ) -> ScreenshotAnnotation? {
+        guard pathLength >= max(0, minimumPathLength), points.count >= 2 else {
+            return nil
+        }
+        return .freehand(points: points, color: color, lineWidth: lineWidth)
     }
 }
 

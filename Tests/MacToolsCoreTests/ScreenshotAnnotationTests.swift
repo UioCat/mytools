@@ -3,6 +3,13 @@ import XCTest
 @testable import MacToolsCore
 
 final class ScreenshotAnnotationTests: XCTestCase {
+    func testAnnotationToolsIncludeEveryRestorableEditorChoice() {
+        XCTAssertEqual(
+            ScreenshotAnnotationTool.allCases,
+            [.line, .freehand, .arrow, .rectangle, .mosaic]
+        )
+    }
+
     func testAnnotationLineWidthProvidesCommonChoices() {
         XCTAssertEqual(ScreenshotAnnotationLineWidth.allCases, [.thin, .medium, .thick])
         XCTAssertEqual(ScreenshotAnnotationLineWidth.thin.points, 2)
@@ -34,31 +41,71 @@ final class ScreenshotAnnotationTests: XCTestCase {
         XCTAssertFalse(ScreenshotMosaicOutlinePolicy.shouldShowOutline(isPreview: false))
     }
 
-    func testCommonAnnotationColorsIncludeCustomizableScreenshotPalette() {
+    func testCommonAnnotationColorsUsePresetPaletteAndNormalizeLegacyCustomColor() {
         XCTAssertEqual(
             ScreenshotAnnotationColor.presets,
             [.red, .orange, .yellow, .green, .blue, .purple, .black, .white]
         )
         XCTAssertEqual(
-            ScreenshotAnnotationColor(red: 0.2, green: 0.4, blue: 0.6),
-            .init(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+            ScreenshotAnnotationColor(red: 0.6, green: 0.32, blue: 0.9).nearestPreset,
+            .purple
         )
     }
 
-    func testAnnotationStorePreservesCircleAndSelectedColor() {
+    func testAnnotationStorePreservesFreehandPathColorAndLineWidth() {
         var store = ScreenshotAnnotationStore()
-        let circle = ScreenshotAnnotation.circle(
-            from: CGPoint(x: 22, y: 15),
-            to: CGPoint(x: 2, y: 3),
-            color: .red
+        let points = [
+            CGPoint(x: 2, y: 3),
+            CGPoint(x: 8, y: 7),
+            CGPoint(x: 14, y: 4)
+        ]
+        let freehand = ScreenshotAnnotation.freehand(
+            points: points,
+            color: .red,
+            lineWidth: 6
         )
 
-        store.append(circle)
+        store.append(freehand)
 
         XCTAssertEqual(
             store.annotations,
-            [.circle(CGRect(x: 10, y: 3, width: 12, height: 12), color: .red)]
+            [.freehand(points: points, color: .red, lineWidth: 6)]
         )
+    }
+
+    func testFreehandStrokeCommitsClosedPathUsingAccumulatedLength() {
+        var stroke = ScreenshotFreehandStroke()
+        let points = [
+            CGPoint(x: 2, y: 2),
+            CGPoint(x: 12, y: 2),
+            CGPoint(x: 12, y: 12),
+            CGPoint(x: 2, y: 2)
+        ]
+        points.forEach { stroke.append($0) }
+
+        XCTAssertEqual(stroke.points, points)
+        XCTAssertEqual(
+            stroke.annotation(color: .orange, lineWidth: 6),
+            .freehand(points: points, color: .orange, lineWidth: 6)
+        )
+    }
+
+    func testFreehandStrokeCanCommitFromLastInBoundsPointWhenReleaseIsOutside() {
+        var stroke = ScreenshotFreehandStroke()
+        stroke.append(CGPoint(x: 2, y: 2))
+        stroke.append(CGPoint(x: 12, y: 2))
+
+        XCTAssertNotNil(stroke.annotation(color: .blue, lineWidth: 3))
+    }
+
+    func testFreehandStrokeIgnoresNoiseAndRejectsTooShortPath() {
+        var stroke = ScreenshotFreehandStroke()
+        stroke.append(.zero)
+        stroke.append(CGPoint(x: 0.5, y: 0))
+        stroke.append(CGPoint(x: 1.5, y: 0))
+
+        XCTAssertEqual(stroke.points, [.zero, CGPoint(x: 1.5, y: 0)])
+        XCTAssertNil(stroke.annotation(color: .blue, lineWidth: 3))
     }
 
     func testAnnotationStoreUndoesLatestMosaicOnly() {

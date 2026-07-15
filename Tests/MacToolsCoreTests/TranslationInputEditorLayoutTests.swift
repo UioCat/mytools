@@ -10,4 +10,11 @@ final class TranslationInputEditorLayoutTests: XCTestCase {
         XCTAssertEqual(layout.lineFragmentPadding, 0)
         XCTAssertEqual(layout.caretLeadingOffset, layout.placeholderLeadingOffset)
     }
+
+    func testTranslationTextAreasCanCompressIntoTheDefaultWorkspaceHeight() {
+        let layout = TranslationWorkspaceLayout.standard
+
+        XCTAssertEqual(layout.inputEditorMinimumHeight, 120)
+        XCTAssertEqual(layout.outputEditorMinimumHeight, 150)
+    }
 }
