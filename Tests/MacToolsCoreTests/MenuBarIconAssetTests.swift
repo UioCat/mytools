@@ -66,4 +66,21 @@ final class MenuBarIconAssetTests: XCTestCase {
             packagingScript.contains("Sources/MacTools/Resources/MenuBarIcon.png")
         )
     }
+
+    func testApplicationIconIsASourceControlledHighResolutionIconFamily() throws {
+        let assetURL = repositoryRoot.appendingPathComponent(
+            "Sources/MacTools/Resources/AppIcon.icns"
+        )
+        let exists = FileManager.default.fileExists(atPath: assetURL.path)
+
+        XCTAssertTrue(exists, "Expected the source-controlled application icon")
+        guard exists else { return }
+
+        let image = try XCTUnwrap(NSImage(contentsOf: assetURL))
+        let largestPixelDimension = image.representations
+            .map { max($0.pixelsWide, $0.pixelsHigh) }
+            .max()
+
+        XCTAssertGreaterThanOrEqual(largestPixelDimension ?? 0, 512)
+    }
 }

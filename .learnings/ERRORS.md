@@ -223,3 +223,35 @@ Use the authenticated GitHub connector, GitHub web status, or a locally authenti
 - **Notes**: Monitored the run through the authenticated connector after the transient timeout, then downloaded and verified both public Release assets directly.
 
 ---
+
+## [ERR-20260716-001] Spotlight UI automation denied
+
+**Logged**: 2026-07-16T11:09:05+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The shell could not open and type into Spotlight for an automated visual check because macOS denied synthetic keyboard events.
+
+### Error
+```
+“osascript”不允许发送按键。 (1002)
+```
+
+### Context
+- Attempted to reproduce the reported Spotlight icon result after rebuilding and registering `build/MacTools.app`.
+- The current terminal process does not have the Accessibility permission required by System Events to send keyboard input.
+
+### Suggested Fix
+Keep the Finder and Spotlight check in the manual verification checklist. For automated evidence, render the packaged application icon through `NSWorkspace` without requesting additional system permissions.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/manual-verification.md, scripts/package_app.sh
+
+### Resolution
+- **Resolved**: 2026-07-16T11:09:05+08:00
+- **Notes**: Verified the packaged and DMG-contained app with `NSWorkspace`, and added the direct Finder/Spotlight check to the manual checklist.
+
+---

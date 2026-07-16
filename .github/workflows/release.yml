@@ -29,6 +29,8 @@ jobs:
           codesign --verify --deep --strict --verbose=2 build/MacTools.app
           codesign -dv --verbose=4 build/MacTools.app 2>&1 | grep -q '^Signature=adhoc$'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/MacTools.app/Contents/Info.plist)" = "${GITHUB_REF_NAME#v}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' build/MacTools.app/Contents/Info.plist)" = "AppIcon.icns"
+          test -f build/MacTools.app/Contents/Resources/AppIcon.icns
           test "$(lipo -archs build/MacTools.app/Contents/MacOS/MacTools)" = "arm64"
 
       - name: Create and verify DMG
@@ -62,6 +64,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: |
             MacTools 是 macOS 26+ 的 Apple Silicon 菜单栏效率工具。
+
+            应用包包含 Finder 和 Spotlight 可识别的 MacTools 自定义图标。
 
             安装说明：
             1. 下载 DMG，将 MacTools.app 拖入 Applications。

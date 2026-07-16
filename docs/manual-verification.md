@@ -74,3 +74,4 @@
 - Open settings and confirm permission status is visible.
 - Build app bundle with `scripts/package_app.sh`.
 - Launch `build/MacTools.app`.
+- Search for `MacTools.app` in Finder and Spotlight, then confirm both show the custom blue-purple app icon instead of the generic application placeholder, including after rebuilding over an existing bundle.
