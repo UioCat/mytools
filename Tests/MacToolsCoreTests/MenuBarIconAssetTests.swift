@@ -98,9 +98,14 @@ final class MenuBarIconAssetTests: XCTestCase {
             encoding: .utf8
         )
 
+        let legacySidebarSymbolPrefix = "wrench.and."
+        let legacySidebarSymbolSuffix = "screwdriver.fill"
+        let legacySidebarSloganPrefix = "高效 · "
+        let legacySidebarSloganSuffix = "便捷 · 智能"
+
         XCTAssertTrue(workspaceSource.contains("private let brandIcon: Image"))
         XCTAssertTrue(runtimeSource.contains("brandIcon: Image(nsImage: MenuBarLogoImage.make())"))
-        XCTAssertFalse(workspaceSource.contains("wrench.and.screwdriver.fill"))
-        XCTAssertFalse(workspaceSource.contains("高效 · 便捷 · 智能"))
+        XCTAssertFalse(workspaceSource.contains(legacySidebarSymbolPrefix + legacySidebarSymbolSuffix))
+        XCTAssertFalse(workspaceSource.contains(legacySidebarSloganPrefix + legacySidebarSloganSuffix))
     }
 }
