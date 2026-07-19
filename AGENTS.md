@@ -69,6 +69,12 @@ Use the packaged app for Finder Automation, TCC identity, signing, screenshot/re
 - Generated `.build/`, `build/`, app bundles, local logs, SQLite files, clipboard caches, recordings, and editor metadata are not source artifacts.
 - Do not use destructive Git commands to remove unrelated work.
 
+## 提交与推送
+
+- 每次完成源代码、测试、脚本或文档修改并通过必要验证后，必须主动创建 Git commit 并 push 到对应远程分支，不等待用户再次提醒。
+- Git commit 信息，以及面向用户的提交、合并和推送结果说明，必须使用中文。
+- 提交和推送前必须确认改动范围、验证结果与目标分支，不得夹带无关的用户改动。
+
 ## Coding Guidance
 
 - Add or update focused tests in `Tests/MacToolsCoreTests` for behavior changes. Prefer deterministic helpers over tests that depend on live TCC state or the active desktop.

@@ -3,7 +3,6 @@ import Foundation
 
 public enum SuperPanelLayout {
     public static let scale: CGFloat = 0.5
-    public static let translationScale: CGFloat = scale * 4 / 3
 
     public static let headerIconSize: CGFloat = 36
     public static let headerIconFontSize: CGFloat = 16
@@ -18,15 +17,27 @@ public enum SuperPanelLayout {
     public static let headerBottomPadding: CGFloat = 10
 
     public static let standardPrimaryActionRowHeight: CGFloat = 58
-    public static let translationActionRowHeight: CGFloat = 44
-    public static let translationActionIconSize: CGFloat = 28
-    public static let translationActionIconFontSize: CGFloat = 14
+    public static let translationPanelWidth: CGFloat = 420
+    public static let translationActionSectionHeight: CGFloat = 44
+    public static let translationActionButtonHeight: CGFloat = 30
     public static let translationActionTitleFontSize: CGFloat = 15
-    public static let translationActionSpacing: CGFloat = 10
-    public static let translationActionHorizontalPadding: CGFloat = 16
-    public static let translationActionVerticalPadding: CGFloat = 8
+    public static let translationActionSpacing: CGFloat = 8
+    public static let translationActionSectionHorizontalPadding: CGFloat = 12
+    public static let translationActionButtonHorizontalPadding: CGFloat = 14
+
+    private static let previewLabelWidth: CGFloat = 48
+    private static let previewSpacing: CGFloat = 12
+    private static let previewHorizontalPadding: CGFloat = 22
+    private static let previewRowVerticalPadding: CGFloat = 8
+    private static let textPreviewSectionVerticalPadding: CGFloat = 8
+    private static let textPreviewFontSize: CGFloat = 14
+    private static let maximumPanelHeight: CGFloat = 620
 
     public static func panelSize(for content: SuperPanelContent) -> CGSize {
+        if content.kind == .text {
+            return translationPanelSize(for: content)
+        }
+
         let isExpandedPanel = content.kind == .fileSystem || content.kind == .windowLayout
         let previewRowsHeight = estimatedPreviewRowsHeight(
             for: content,
@@ -35,10 +46,7 @@ public enum SuperPanelLayout {
         let primaryActionCount = content.actions.filter { !$0.id.isWindowLayoutButton }.count
         let windowLayoutActionCount = content.actions.count - primaryActionCount
         let windowLayoutRows = CGFloat((windowLayoutActionCount + 1) / 2)
-        let primaryActionRowHeight = content.kind == .text
-            ? translationActionRowHeight
-            : standardPrimaryActionRowHeight
-        let actionsHeight = CGFloat(primaryActionCount) * primaryActionRowHeight
+        let actionsHeight = CGFloat(primaryActionCount) * standardPrimaryActionRowHeight
             + (windowLayoutActionCount > 0 ? 42 + windowLayoutRows * 44 : 0)
         let legacyHeight = 92
             + previewRowsHeight
@@ -53,15 +61,64 @@ public enum SuperPanelLayout {
                     primaryActionCount: primaryActionCount,
                     windowLayoutActionCount: windowLayoutActionCount,
                     windowLayoutRows: windowLayoutRows
-                ), 130), 620)
+                ), 130), maximumPanelHeight)
             )
         }
 
-        let contentScale = content.kind == .text ? translationScale : scale
         return CGSize(
-            width: 500 * contentScale,
-            height: min(max(legacyHeight, 260), 620) * contentScale
+            width: 500 * scale,
+            height: min(max(legacyHeight, 260), maximumPanelHeight) * scale
         )
+    }
+
+    private static func translationPanelSize(for content: SuperPanelContent) -> CGSize {
+        let headerHeight = max(
+            headerIconSize,
+            headerTitleFontSize + headerTextSpacing + headerSubtitleFontSize
+        ) + headerTopPadding + headerBottomPadding
+        let dividerHeight: CGFloat = 1
+        let previewHeight = translationPreviewHeight(for: content)
+        let actionHeight = content.actions.isEmpty ? 0 : translationActionSectionHeight
+        let contentHeight = headerHeight
+            + dividerHeight
+            + previewHeight
+            + (content.previewRows.isEmpty ? 0 : dividerHeight)
+            + actionHeight
+
+        return CGSize(
+            width: translationPanelWidth,
+            height: min(contentHeight, maximumPanelHeight)
+        )
+    }
+
+    private static func translationPreviewHeight(for content: SuperPanelContent) -> CGFloat {
+        guard !content.previewRows.isEmpty else {
+            return 0
+        }
+
+        let internalDividersHeight = CGFloat(max(content.previewRows.count - 1, 0))
+        let rowsHeight = content.previewRows.reduce(0) { height, row in
+            height + translationPreviewRowHeight(for: row)
+        }
+        return rowsHeight
+            + internalDividersHeight
+            + textPreviewSectionVerticalPadding * 2
+    }
+
+    private static func translationPreviewRowHeight(for row: SuperPanelPreviewRow) -> CGFloat {
+        let valueWidth = translationPanelWidth
+            - previewHorizontalPadding * 2
+            - previewLabelWidth
+            - previewSpacing
+        let font = NSFont.systemFont(ofSize: textPreviewFontSize, weight: .medium)
+        let lineHeight = ceil(NSLayoutManager().defaultLineHeight(for: font))
+        let bounds = (row.value as NSString).boundingRect(
+            with: CGSize(width: valueWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        let textHeight = max(lineHeight, ceil(bounds.height))
+        return textHeight + previewRowVerticalPadding * 2
     }
 
     private static func estimatedPreviewRowsHeight(
@@ -89,8 +146,11 @@ public enum SuperPanelLayout {
     }
 
     private static func previewLineCount(for value: String) -> Int {
-        let font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        let valueWidth: CGFloat = 320 - 44 - 48 - 12
+        let font = NSFont.systemFont(ofSize: textPreviewFontSize, weight: .medium)
+        let valueWidth: CGFloat = 320
+            - previewHorizontalPadding * 2
+            - previewLabelWidth
+            - previewSpacing
         let bounds = (value as NSString).boundingRect(
             with: CGSize(width: valueWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
