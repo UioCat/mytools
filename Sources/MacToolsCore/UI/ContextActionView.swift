@@ -103,12 +103,32 @@ public struct ContextActionView: View {
         }
     }
 
+    @ViewBuilder
     private var actionSection: some View {
+        if content.kind == .text {
+            translationActionSection
+        } else {
+            standardActionSection
+        }
+    }
+
+    private var translationActionSection: some View {
+        HStack(spacing: SuperPanelLayout.translationActionSpacing) {
+            ForEach(primaryActions) { action in
+                TranslationActionButton(action: action, performAction: performAction)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, SuperPanelLayout.translationActionSectionHorizontalPadding)
+        .frame(height: SuperPanelLayout.translationActionSectionHeight)
+    }
+
+    private var standardActionSection: some View {
         VStack(spacing: 0) {
             ForEach(Array(primaryActions.enumerated()), id: \.element.id) { index, action in
                 SuperPanelActionRow(
                     action: action,
-                    isCompact: content.kind == .text,
                     performAction: performAction
                 )
 
@@ -232,9 +252,50 @@ public struct ContextActionView: View {
 
 }
 
+private struct TranslationActionButton: View {
+    let action: SuperPanelActionDescriptor
+    let performAction: (SuperPanelActionID) -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            performAction(action.id)
+        } label: {
+            Text(action.title)
+                .font(.system(
+                    size: SuperPanelLayout.translationActionTitleFontSize,
+                    weight: .medium
+                ))
+                .foregroundStyle(isPrimary ? Color.white : MacToolsGlassTheme.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, SuperPanelLayout.translationActionButtonHorizontalPadding)
+                .frame(height: SuperPanelLayout.translationActionButtonHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(buttonBackground)
+                )
+                .frame(height: SuperPanelLayout.translationActionSectionHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+
+    private var isPrimary: Bool {
+        action.id == .copyTranslatedText
+    }
+
+    private var buttonBackground: Color {
+        if isPrimary {
+            return MacToolsGlassTheme.activeBlue.opacity(isHovering ? 0.84 : 1)
+        }
+        return isHovering ? MacToolsGlassTheme.rowHover : MacToolsGlassTheme.fieldFill
+    }
+}
+
 private struct SuperPanelActionRow: View {
     let action: SuperPanelActionDescriptor
-    let isCompact: Bool
     let performAction: (SuperPanelActionID) -> Void
 
     @State private var isHovering = false
@@ -276,33 +337,31 @@ private struct SuperPanelActionRow: View {
     }
 
     private var rowHeight: CGFloat {
-        isCompact
-            ? SuperPanelLayout.translationActionRowHeight
-            : SuperPanelLayout.standardPrimaryActionRowHeight
+        SuperPanelLayout.standardPrimaryActionRowHeight
     }
 
     private var iconSize: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionIconSize : 34
+        34
     }
 
     private var iconFontSize: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionIconFontSize : 18
+        18
     }
 
     private var titleFontSize: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionTitleFontSize : 20
+        20
     }
 
     private var rowSpacing: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionSpacing : 16
+        16
     }
 
     private var horizontalPadding: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionHorizontalPadding : 22
+        22
     }
 
     private var verticalPadding: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionVerticalPadding : 11
+        11
     }
 
     private var iconBackground: Color {

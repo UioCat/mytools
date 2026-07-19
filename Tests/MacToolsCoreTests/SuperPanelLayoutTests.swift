@@ -7,7 +7,7 @@ final class SuperPanelLayoutTests: XCTestCase {
         WindowLayoutButton(id: "layout.\($0)", title: "布局 \($0)", modes: [.maximize])
     }
 
-    func testTranslationPanelKeepsExpandedWidthAndUsesCompactActionHeight() {
+    func testTranslationPanelUsesExpandedWidthAndContentDrivenHeight() {
         let content = SuperPanelContent.text(
             originalText: "hello",
             translation: .success(
@@ -17,18 +17,44 @@ final class SuperPanelLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 1_000.0 / 3.0, height: 196)
+            CGSize(width: 420, height: 187)
         )
     }
 
-    func testTranslationActionsUseCompactReadableMetrics() {
-        XCTAssertEqual(SuperPanelLayout.translationActionRowHeight, 44)
-        XCTAssertEqual(SuperPanelLayout.translationActionIconSize, 28)
-        XCTAssertEqual(SuperPanelLayout.translationActionIconFontSize, 14)
+    func testTranslationActionsUseCompactTextOnlyMetrics() {
+        XCTAssertEqual(SuperPanelLayout.translationActionSectionHeight, 44)
+        XCTAssertEqual(SuperPanelLayout.translationActionButtonHeight, 30)
         XCTAssertEqual(SuperPanelLayout.translationActionTitleFontSize, 15)
-        XCTAssertEqual(SuperPanelLayout.translationActionSpacing, 10)
-        XCTAssertEqual(SuperPanelLayout.translationActionHorizontalPadding, 16)
-        XCTAssertEqual(SuperPanelLayout.translationActionVerticalPadding, 8)
+        XCTAssertEqual(SuperPanelLayout.translationActionSpacing, 8)
+        XCTAssertEqual(SuperPanelLayout.translationActionSectionHorizontalPadding, 12)
+        XCTAssertEqual(SuperPanelLayout.translationActionButtonHorizontalPadding, 14)
+    }
+
+    func testTranslationPanelHeightTracksRenderedTextLines() {
+        let shortContent = SuperPanelContent.text(
+            originalText: "short",
+            translation: .success(
+                TranslationResponse(translatedText: "简短", providerID: "test")
+            )
+        )
+        let longContent = SuperPanelContent.text(
+            originalText: String(repeating: "sample translation text ", count: 12),
+            translation: .success(
+                TranslationResponse(
+                    translatedText: String(repeating: "示例译文", count: 24),
+                    providerID: "test"
+                )
+            )
+        )
+
+        XCTAssertGreaterThan(
+            SuperPanelLayout.panelSize(for: longContent).height,
+            SuperPanelLayout.panelSize(for: shortContent).height
+        )
+        XCTAssertLessThanOrEqual(
+            SuperPanelLayout.panelSize(for: longContent).height,
+            620
+        )
     }
 
     func testStandardLayoutPanelExpandsToFitEightButtons() {
