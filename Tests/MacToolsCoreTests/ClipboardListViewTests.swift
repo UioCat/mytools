@@ -27,14 +27,14 @@ final class ClipboardListViewTests: XCTestCase {
         )
     }
 
-    func testClipboardCategoryArrowNavigationStopsAtFirstAndLastModes() {
+    func testClipboardCategoryArrowNavigationWrapsAtFirstAndLastModes() {
         XCTAssertEqual(
             ClipboardPanelModeNavigator.mode(adjacentTo: .all, direction: .previous),
-            .all
+            .favorites
         )
         XCTAssertEqual(
             ClipboardPanelModeNavigator.mode(adjacentTo: .favorites, direction: .next),
-            .favorites
+            .all
         )
     }
 

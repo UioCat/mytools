@@ -65,8 +65,8 @@ enum ClipboardPanelModeNavigator {
             return currentMode
         }
 
-        let offset = direction == .previous ? -1 : 1
-        let nextIndex = min(max(currentIndex + offset, modes.startIndex), modes.index(before: modes.endIndex))
+        let offset = direction == .previous ? modes.count - 1 : 1
+        let nextIndex = (currentIndex + offset) % modes.count
         return modes[nextIndex]
     }
 }
