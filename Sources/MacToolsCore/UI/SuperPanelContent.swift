@@ -60,10 +60,16 @@ public enum SuperPanelActionID: Equatable, Hashable {
 public struct SuperPanelPreviewRow: Equatable {
     public var label: String
     public var value: String
+    public var speechRequest: TranslationSpeechRequest?
 
-    public init(label: String, value: String) {
+    public init(
+        label: String,
+        value: String,
+        speechRequest: TranslationSpeechRequest? = nil
+    ) {
         self.label = label
         self.value = value
+        self.speechRequest = speechRequest
     }
 }
 
@@ -125,7 +131,20 @@ public struct SuperPanelContent: Equatable {
         case (_, .success(let response)):
             let translatedText = response.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
             subtitle = translatedText.isEmpty ? "翻译结果为空" : translatedText
-            previewRows.append(.init(label: "译文", value: subtitle))
+            let speechRequest = translatedText.isEmpty
+                ? nil
+                : TranslationSpeechRequest(
+                    text: translatedText,
+                    languageCode: TranslationSpeechLanguagePolicy.languageCode(forOriginalText: displayText),
+                    source: .superRightClick
+                )
+            previewRows.append(
+                .init(
+                    label: "译文",
+                    value: subtitle,
+                    speechRequest: speechRequest
+                )
+            )
             actions.append(
                 .init(id: .copyTranslatedText, title: "复制译文", systemImage: "doc.on.doc")
             )

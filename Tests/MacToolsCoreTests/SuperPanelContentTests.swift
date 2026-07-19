@@ -16,7 +16,15 @@ final class SuperPanelContentTests: XCTestCase {
         XCTAssertEqual(content.headerSubtitle, "超级右键点击")
         XCTAssertEqual(content.previewRows, [
             .init(label: "原文", value: "super right click"),
-            .init(label: "译文", value: "超级右键点击")
+            .init(
+                label: "译文",
+                value: "超级右键点击",
+                speechRequest: TranslationSpeechRequest(
+                    text: "超级右键点击",
+                    languageCode: "zh-CN",
+                    source: .superRightClick
+                )
+            )
         ])
         XCTAssertEqual(
             content.actions.map(\.id),

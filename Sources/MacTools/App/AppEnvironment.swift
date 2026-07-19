@@ -21,6 +21,9 @@ final class AppEnvironment {
     private let finderFolderResolutionCoordinator = FinderFolderResolutionCoordinator()
     private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
+    private lazy var translationSpeechController = TranslationSpeechController(
+        engine: SystemTranslationSpeechEngine()
+    )
     private lazy var screenCaptureCoordinator = ScreenCaptureCoordinator(
         permissionService: permissionService,
         logger: logger,
@@ -55,6 +58,7 @@ final class AppEnvironment {
             router: mainPanelRouter,
             model: clipboardModel,
             settings: settings,
+            speechController: translationSpeechController,
             permissionService: permissionService,
             defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
             onSaveClipboardSettings: { [weak self] clipboardSettings in
@@ -108,6 +112,7 @@ final class AppEnvironment {
         windowLayoutButtons: { [weak self] in
             self?.settings.windowLayout.visibleButtons ?? []
         },
+        speechController: translationSpeechController,
         logger: logger
     )
     var onSettingsChanged: (AppSettings) -> Void = { _ in }

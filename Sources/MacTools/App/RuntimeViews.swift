@@ -22,6 +22,7 @@ final class PanelDismissHandler {
 struct RuntimeMainWorkspaceView: View {
     @ObservedObject var router: MainPanelRouter
     @ObservedObject var model: ClipboardPanelModel
+    let speechController: TranslationSpeechController
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> AppSettings
@@ -39,6 +40,7 @@ struct RuntimeMainWorkspaceView: View {
         router: MainPanelRouter,
         model: ClipboardPanelModel,
         settings: AppSettings,
+        speechController: TranslationSpeechController,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> AppSettings,
@@ -52,6 +54,7 @@ struct RuntimeMainWorkspaceView: View {
     ) {
         self.router = router
         self.model = model
+        self.speechController = speechController
         self.permissionService = permissionService
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
@@ -100,7 +103,10 @@ struct RuntimeMainWorkspaceView: View {
                 onDismiss: onDismiss
             )
         } translation: {
-            RuntimeTranslationModuleView(settings: currentSettings)
+            RuntimeTranslationModuleView(
+                settings: currentSettings,
+                speechController: speechController
+            )
         }
         .onAppear {
             if router.selectedModule == .clipboard {
@@ -219,12 +225,26 @@ struct RuntimeSettingsView: View {
 
 struct RuntimeTranslationModuleView: View {
     let settings: AppSettings
+    @ObservedObject var speechController: TranslationSpeechController
     @State private var inputText = ""
     @State private var isInputComposingText = false
     @State private var workspaceState: TranslationWorkspaceState = .idle
+    @State private var translatedOriginalText = ""
 
     private var content: TranslationWorkspaceContent {
         TranslationWorkspaceContent(settings: settings.translation, state: workspaceState)
+    }
+
+    private var speechRequest: TranslationSpeechRequest? {
+        content.speechRequest(originalText: translatedOriginalText)
+    }
+
+    private var isSpeakingOutput: Bool {
+        guard let speechRequest else {
+            return false
+        }
+
+        return speechController.state.isSpeaking(speechRequest)
     }
 
     private let inputEditorLayout = TranslationInputEditorLayout.standard
@@ -322,6 +342,8 @@ struct RuntimeTranslationModuleView: View {
 
                 Spacer(minLength: 0)
 
+                speechButton
+
                 Button {
                     copyOutputText()
                 } label: {
@@ -346,10 +368,54 @@ struct RuntimeTranslationModuleView: View {
             )
             .padding(14)
             .liquidGlassModule(cornerRadius: 16)
+
+            if isSpeakingOutput, let speechRequest {
+                Label(
+                    "正在朗读\(TranslationSpeechLanguagePolicy.displayName(for: speechRequest.languageCode)) · 系统音色",
+                    systemImage: "waveform"
+                )
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(MacToolsGlassTheme.activeBlue)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 2)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .liquidGlassModule(cornerRadius: 22)
+        .animation(.easeInOut(duration: 0.16), value: isSpeakingOutput)
+    }
+
+    private var speechButton: some View {
+        let title = isSpeakingOutput ? "停止朗读" : "朗读译文"
+
+        return Button {
+            guard let speechRequest else {
+                return
+            }
+            speechController.toggle(speechRequest)
+        } label: {
+            Image(systemName: isSpeakingOutput ? "stop.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 32, height: 32)
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            speechRequest == nil
+                ? MacToolsGlassTheme.textTertiary
+                : (isSpeakingOutput ? Color.white : MacToolsGlassTheme.textSecondary)
+        )
+        .liquidGlassButtonStyle(
+            cornerRadius: 12,
+            isSelected: isSpeakingOutput,
+            minimumSize: CGSize(width: 32, height: 32),
+            showsIdleSurface: speechRequest != nil
+        )
+        .disabled(speechRequest == nil)
+        .accessibilityLabel(title)
+        .help(title)
     }
 
     private func copyOutputText() {
@@ -367,6 +433,7 @@ struct RuntimeTranslationModuleView: View {
             return
         }
 
+        speechController.stop(ifSource: .translationWorkspace)
         workspaceState = .translating
         Task {
             let service = TranslationService(
@@ -377,6 +444,7 @@ struct RuntimeTranslationModuleView: View {
             await MainActor.run {
                 switch result {
                 case .success(let response):
+                    translatedOriginalText = text
                     workspaceState = .translated(response.translatedText)
                 case .failure(let error):
                     workspaceState = .failed(Self.message(for: error))

@@ -2,13 +2,19 @@ import SwiftUI
 
 public struct ContextActionView: View {
     public let content: SuperPanelContent
+    private let speechState: TranslationSpeechState
+    private let performSpeech: (TranslationSpeechRequest) -> Void
     private let performAction: (SuperPanelActionID) -> Void
 
     public init(
         content: SuperPanelContent,
+        speechState: TranslationSpeechState = .idle,
+        performSpeech: @escaping (TranslationSpeechRequest) -> Void = { _ in },
         performAction: @escaping (SuperPanelActionID) -> Void
     ) {
         self.content = content
+        self.speechState = speechState
+        self.performSpeech = performSpeech
         self.performAction = performAction
     }
 
@@ -188,7 +194,7 @@ public struct ContextActionView: View {
     }
 
     private func previewRow(_ row: SuperPanelPreviewRow) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             Text(row.label)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(MacToolsGlassTheme.textTertiary)
@@ -200,9 +206,37 @@ public struct ContextActionView: View {
                 .lineLimit(SuperPanelPreviewLineLimitPolicy.lineLimit(for: content.kind, row: row))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
+
+            if let speechRequest = row.speechRequest {
+                speechButton(for: speechRequest)
+            }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 8)
+    }
+
+    private func speechButton(for request: TranslationSpeechRequest) -> some View {
+        let isSpeaking = speechState.isSpeaking(request)
+        let title = isSpeaking ? "停止朗读" : "朗读译文"
+
+        return Button {
+            performSpeech(request)
+        } label: {
+            Image(systemName: isSpeaking ? "stop.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSpeaking ? Color.white : MacToolsGlassTheme.textSecondary)
+        .liquidGlassButtonStyle(
+            cornerRadius: 10,
+            isSelected: isSpeaking,
+            minimumSize: CGSize(width: 30, height: 30),
+            showsIdleSurface: true
+        )
+        .accessibilityLabel(title)
+        .help(title)
     }
 
     private var iconColor: Color {

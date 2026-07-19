@@ -70,8 +70,11 @@
 - Configure a Bailian API Key, enter Chinese in the translation tool, and confirm it translates to English.
 - Enter English or another non-Chinese language in the translation tool, and confirm it translates to Chinese.
 - Click the translation output copy button and confirm the translated text is copied.
+- Confirm the translation output speaker button is disabled before a successful translation. After translating, click it and confirm the system voice reads the translated language, the button changes to a blue stop control, and `正在朗读英语/中文 · 系统音色` appears below the output. Click again and confirm playback stops immediately.
 - Click the translation output text, press Cmd+A then Cmd+C, and confirm the translated text is copied.
 - Long right-click selected text and confirm the context panel appears immediately with a translation loading state, then updates in place with the translated result following the same language direction.
+- After the super-right-click translation succeeds, confirm a speaker button appears at the trailing edge of the `译文` preview row without adding another action row or changing the compact panel size. Click it and confirm it changes to a blue stop control while speaking.
+- Start speech in one translation surface, then click the speaker button for a different translated result in the other surface; confirm the first playback stops before the second begins and only the active surface shows the stop state.
 - Open settings and confirm permission status is visible.
 - Build app bundle with `scripts/package_app.sh`.
 - Launch `build/MacTools.app`.

@@ -7,11 +7,13 @@ private enum ContextPanelActionResult {
     case keepVisible
 }
 
+@MainActor
 final class ContextPanelController {
     private let fileActionService: FileActionService
     private let pasteboard: WritablePasteboard
     private let windowLayoutService: SystemWindowLayoutService
     private let windowLayoutButtons: () -> [WindowLayoutButton]
+    private let speechController: TranslationSpeechController
     private let logger: Logger
     private var panel: NSPanel?
     private var localDismissMonitor: Any?
@@ -22,17 +24,21 @@ final class ContextPanelController {
         pasteboard: WritablePasteboard,
         windowLayoutService: SystemWindowLayoutService,
         windowLayoutButtons: @escaping () -> [WindowLayoutButton],
+        speechController: TranslationSpeechController,
         logger: Logger
     ) {
         self.fileActionService = fileActionService
         self.pasteboard = pasteboard
         self.windowLayoutService = windowLayoutService
         self.windowLayoutButtons = windowLayoutButtons
+        self.speechController = speechController
         self.logger = logger
     }
 
     deinit {
-        stopOutsideClickDismissMonitors()
+        MainActor.assumeIsolated {
+            stopOutsideClickDismissMonitors()
+        }
     }
 
     func show(
@@ -96,8 +102,10 @@ final class ContextPanelController {
         reposition: Bool = true,
         performAction: @escaping (SuperPanelActionID) -> ContextPanelActionResult
     ) {
-        let view = ContextActionView(
+        reconcileSpeechPlayback(with: content)
+        let view = RuntimeContextActionView(
             content: content,
+            speechController: speechController,
             performAction: { [weak self] actionID in
                 let result = performAction(actionID)
                 if result == .close {
@@ -126,6 +134,20 @@ final class ContextPanelController {
         }
         panel?.orderFrontRegardless()
         startOutsideClickDismissMonitors()
+    }
+
+    private func reconcileSpeechPlayback(with content: SuperPanelContent) {
+        guard let activeRequest = speechController.state.activeRequest,
+              activeRequest.source == .superRightClick else {
+            return
+        }
+
+        let keepsActiveRequest = content.previewRows.contains { row in
+            row.speechRequest == activeRequest
+        }
+        if !keepsActiveRequest {
+            speechController.stop()
+        }
     }
 
     private func makePanel() -> NSPanel {
@@ -367,5 +389,22 @@ final class ContextPanelController {
     private static func normalizedText(_ text: String) -> String {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedText.isEmpty ? text : trimmedText
+    }
+}
+
+private struct RuntimeContextActionView: View {
+    let content: SuperPanelContent
+    @ObservedObject var speechController: TranslationSpeechController
+    let performAction: (SuperPanelActionID) -> Void
+
+    var body: some View {
+        ContextActionView(
+            content: content,
+            speechState: speechController.state,
+            performSpeech: { request in
+                speechController.toggle(request)
+            },
+            performAction: performAction
+        )
     }
 }
