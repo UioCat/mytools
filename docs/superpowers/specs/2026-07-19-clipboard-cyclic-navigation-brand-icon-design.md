@@ -17,7 +17,7 @@
 
 `ClipboardPanelModeNavigator` remains the single testable navigation policy. Its previous/next calculation will wrap around `ClipboardPanelMode.allCases` instead of clamping at the first and last modes. `MainPanelView` continues to consume Left and Right key events through the existing monitor, so search focus, vertical list selection, and Return-key behavior remain unchanged.
 
-`RuntimeMainWorkspaceView` will load the existing `MenuBarIcon.png` through the App target's current icon loader and pass it into `MainWorkspaceView`. The sidebar will render that image at the existing brand-badge footprint and remove the subtitle row. The fallback remains the current tools symbol only for callers that do not inject an image, such as isolated Core previews.
+`RuntimeMainWorkspaceView` will load the existing `MenuBarIcon.png` through the App target's current icon loader and pass it into `MainWorkspaceView`. The sidebar will render that image at the existing brand-badge footprint and remove the subtitle row. `MainWorkspaceView` requires callers to inject the brand image; isolated Core previews must explicitly provide their own preview image, so no legacy tools-symbol fallback remains.
 
 A repository-wide symbol and text scan will confirm that no visible old tools logo or removed slogan remains. Module-specific SF Symbols are not brand logos and will remain unchanged.
 
