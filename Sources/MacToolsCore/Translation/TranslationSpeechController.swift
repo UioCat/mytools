@@ -36,13 +36,26 @@ public enum TranslationSpeechState: Equatable {
 }
 
 public enum TranslationSpeechLanguagePolicy {
-    public static func languageCode(forOriginalText text: String) -> String {
+    public static func originalLanguageCode(for text: String) -> String {
+        switch TranslationLanguageRouter.targetLanguage(for: text) {
+        case "en":
+            return "zh-CN"
+        default:
+            return "en-US"
+        }
+    }
+
+    public static func translatedLanguageCode(forOriginalText text: String) -> String {
         switch TranslationLanguageRouter.targetLanguage(for: text) {
         case "en":
             return "en-US"
         default:
             return "zh-CN"
         }
+    }
+
+    public static func languageCode(forOriginalText text: String) -> String {
+        translatedLanguageCode(forOriginalText: text)
     }
 
     public static func displayName(for languageCode: String) -> String {

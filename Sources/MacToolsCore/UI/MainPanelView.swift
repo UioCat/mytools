@@ -315,7 +315,10 @@ public struct MainPanelView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .frame(width: 32, height: 32)
+                        .frame(
+                            width: MacToolsControlMetrics.inlineIconSize.width,
+                            height: MacToolsControlMetrics.inlineIconSize.height
+                        )
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -333,11 +336,14 @@ public struct MainPanelView: View {
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 14, weight: .medium))
-                    .frame(width: 38, height: 38)
+                    .frame(
+                        width: MacToolsControlMetrics.toolbarIconSize.width,
+                        height: MacToolsControlMetrics.toolbarIconSize.height
+                    )
                     .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .foregroundStyle(clearButtonColor(for: itemSummary))
-            .liquidGlassButtonStyle(cornerRadius: 14, minimumSize: CGSize(width: 38, height: 38))
+            .liquidGlassButtonStyle(cornerRadius: 14, minimumSize: MacToolsControlMetrics.toolbarIconSize)
             .disabled(!itemSummary.hasClearableItems)
             .opacity(itemSummary.hasClearableItems ? 1 : 0.64)
             .help("清空未收藏的记录")
@@ -375,7 +381,7 @@ public struct MainPanelView: View {
                             .frame(width: 18, height: 3)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 36)
+                    .frame(height: MacToolsControlMetrics.clipboardCategoryHeight)
                     .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(ClipboardCategoryButtonStyle(isSelected: isSelected))
@@ -395,14 +401,17 @@ public struct MainPanelView: View {
         } label: {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 14, weight: .semibold))
-                .frame(width: 38, height: 38)
+                .frame(
+                    width: MacToolsControlMetrics.toolbarIconSize.width,
+                    height: MacToolsControlMetrics.toolbarIconSize.height
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .foregroundStyle(chrome.isSidebarVisible ? MacToolsGlassTheme.textPrimary : MacToolsGlassTheme.textSecondary)
         .liquidGlassButtonStyle(
             cornerRadius: 14,
             isSelected: chrome.isSidebarVisible,
-            minimumSize: CGSize(width: 38, height: 38)
+            minimumSize: MacToolsControlMetrics.toolbarIconSize
         )
         .help(chrome.isSidebarVisible ? "隐藏工具栏" : "显示工具栏")
     }
@@ -564,7 +573,10 @@ private struct ClipboardCategoryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(minWidth: 96, minHeight: 36)
+            .frame(
+                minWidth: MacToolsControlMetrics.clipboardCategoryMinimumWidth,
+                minHeight: MacToolsControlMetrics.clipboardCategoryHeight
+            )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .modifier(
                 ClipboardCategoryButtonSurfaceModifier(

@@ -70,11 +70,15 @@
 - Configure a Bailian API Key, enter Chinese in the translation tool, and confirm it translates to English.
 - Enter English or another non-Chinese language in the translation tool, and confirm it translates to Chinese.
 - Click the translation output copy button and confirm the translated text is copied.
-- Confirm the translation output speaker button is disabled before a successful translation. After translating, click it and confirm the system voice reads the translated language, the button changes to a blue stop control, and `正在朗读英语/中文 · 系统音色` appears below the output. Click again and confirm playback stops immediately.
+- Confirm the original-text speaker button is disabled while the translation input is empty. Enter Chinese or English, click the original speaker, and confirm the system voice uses the source language, the button changes to a blue stop control, and `正在朗读英语/中文 · 系统音色` appears below the input. Edit the input and confirm stale playback stops immediately.
+- After translating, click the translated-text speaker and confirm the system voice uses the translated language, the button changes to a blue stop control, and the matching speech status appears below the output. Switch between original and translated speech and confirm the previous playback stops first.
 - Click the translation output text, press Cmd+A then Cmd+C, and confirm the translated text is copied.
 - Long right-click selected text and confirm the context panel appears immediately with a translation loading state, then updates in place with the translated result following the same language direction.
-- After the super-right-click translation succeeds, confirm a speaker button appears at the trailing edge of the `译文` preview row without adding another action row or changing the compact panel size. Click it and confirm it changes to a blue stop control while speaking.
-- Start speech in one translation surface, then click the speaker button for a different translated result in the other surface; confirm the first playback stops before the second begins and only the active surface shows the stop state.
+- Long right-click selected text and confirm the `原文` preview row has a speaker button before translation completes. After translation succeeds, confirm both `原文` and `译文` speaker buttons remain visible, use the correct language voices, and switch independently between speaker and blue stop states.
+- Confirm the translated super-right-click panel fully displays both bottom action buttons, each button is `40 pt` high, and the action section leaves equal `8 pt` spacing above and below the buttons.
+- Click `文本悬浮中转` and confirm the resulting `320 pt`-wide panel simultaneously shows the selected text and the complete `复制文本` action for short content; confirm long content scrolls without clipping the action.
+- Start speech in one translation surface, then click either original or translated speech in the other surface; confirm the first playback stops before the second begins and only the active request shows the stop state.
+- Inspect non-screenshot interfaces and confirm inline icon buttons, toolbar buttons, text actions, navigation rows, context actions, window-layout buttons, and settings action rows follow their documented semantic size without forcing unrelated controls to the same width.
 - Open settings and confirm permission status is visible.
 - Build app bundle with `scripts/package_app.sh`.
 - Launch `build/MacTools.app`.

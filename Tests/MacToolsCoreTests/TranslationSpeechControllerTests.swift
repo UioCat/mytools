@@ -69,13 +69,21 @@ final class TranslationSpeechControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .idle)
     }
 
-    func testSpeechLanguageMatchesAutomaticTranslationDirection() {
+    func testSpeechLanguageMatchesOriginalAndTranslatedDirections() {
         XCTAssertEqual(
-            TranslationSpeechLanguagePolicy.languageCode(forOriginalText: "你好，世界"),
+            TranslationSpeechLanguagePolicy.originalLanguageCode(for: "你好，世界"),
+            "zh-CN"
+        )
+        XCTAssertEqual(
+            TranslationSpeechLanguagePolicy.translatedLanguageCode(forOriginalText: "你好，世界"),
             "en-US"
         )
         XCTAssertEqual(
-            TranslationSpeechLanguagePolicy.languageCode(forOriginalText: "Hello, world"),
+            TranslationSpeechLanguagePolicy.originalLanguageCode(for: "Hello, world"),
+            "en-US"
+        )
+        XCTAssertEqual(
+            TranslationSpeechLanguagePolicy.translatedLanguageCode(forOriginalText: "Hello, world"),
             "zh-CN"
         )
         XCTAssertEqual(TranslationSpeechLanguagePolicy.displayName(for: "en-US"), "英语")

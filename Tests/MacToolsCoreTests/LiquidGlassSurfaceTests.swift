@@ -2,6 +2,18 @@ import XCTest
 @testable import MacToolsCore
 
 final class LiquidGlassSurfaceTests: XCTestCase {
+    func testControlMetricsDefineTheApprovedSemanticButtonSizes() {
+        XCTAssertEqual(MacToolsControlMetrics.textActionHeight, 40)
+        XCTAssertEqual(MacToolsControlMetrics.inlineIconSize, CGSize(width: 32, height: 32))
+        XCTAssertEqual(MacToolsControlMetrics.toolbarIconSize, CGSize(width: 40, height: 40))
+        XCTAssertEqual(MacToolsControlMetrics.sidebarNavigationHeight, 44)
+        XCTAssertEqual(MacToolsControlMetrics.clipboardCategoryHeight, 36)
+        XCTAssertEqual(MacToolsControlMetrics.clipboardCategoryMinimumWidth, 96)
+        XCTAssertEqual(MacToolsControlMetrics.superPanelActionRowHeight, 56)
+        XCTAssertEqual(MacToolsControlMetrics.windowLayoutButtonHeight, 40)
+        XCTAssertEqual(MacToolsControlMetrics.settingsRowButtonMinimumHeight, 44)
+    }
+
     func testPanelStyleUsesUntintedSystemGlassLikeSpotlight() {
         let style = LiquidGlassSurfaceStyle.panel(cornerRadius: 30)
 

@@ -120,7 +120,20 @@ public struct SuperPanelContent: Equatable {
     ) -> SuperPanelContent {
         let normalizedText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayText = normalizedText.isEmpty ? originalText : normalizedText
-        var previewRows = [SuperPanelPreviewRow(label: "原文", value: displayText)]
+        let originalSpeechRequest = normalizedText.isEmpty
+            ? nil
+            : TranslationSpeechRequest(
+                text: displayText,
+                languageCode: TranslationSpeechLanguagePolicy.originalLanguageCode(for: displayText),
+                source: .superRightClick
+            )
+        var previewRows = [
+            SuperPanelPreviewRow(
+                label: "原文",
+                value: displayText,
+                speechRequest: originalSpeechRequest
+            )
+        ]
         var actions: [SuperPanelActionDescriptor] = []
         let subtitle: String
 
@@ -135,7 +148,7 @@ public struct SuperPanelContent: Equatable {
                 ? nil
                 : TranslationSpeechRequest(
                     text: translatedText,
-                    languageCode: TranslationSpeechLanguagePolicy.languageCode(forOriginalText: displayText),
+                    languageCode: TranslationSpeechLanguagePolicy.translatedLanguageCode(forOriginalText: displayText),
                     source: .superRightClick
                 )
             previewRows.append(

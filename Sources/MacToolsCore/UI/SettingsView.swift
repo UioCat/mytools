@@ -269,6 +269,7 @@ public struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
+                    .frame(minHeight: MacToolsControlMetrics.settingsRowButtonMinimumHeight)
                     .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .foregroundStyle(MacToolsGlassTheme.textPrimary)
@@ -496,7 +497,10 @@ private struct ClipboardSettingsEditor: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
+                .frame(
+                    width: MacToolsControlMetrics.inlineIconSize.width,
+                    height: MacToolsControlMetrics.inlineIconSize.height
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -906,7 +910,10 @@ private struct WindowLayoutModeActionCell: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
-                    .frame(width: 24, height: 24)
+                    .frame(
+                        width: MacToolsControlMetrics.inlineIconSize.width,
+                        height: MacToolsControlMetrics.inlineIconSize.height
+                    )
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1199,10 +1206,9 @@ private struct TranslationSettingsEditor: View {
                 HStack(spacing: 10) {
                     Button(action: save) {
                         Label("保存", systemImage: "tray.and.arrow.down")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: MacToolsControlMetrics.textActionFontSize, weight: .semibold))
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
+                    .buttonStyle(GlassPrimaryButtonStyle(cornerRadius: 14))
 
                     if let saveMessage {
                         Text(saveMessage)
@@ -1276,7 +1282,10 @@ private struct TranslationSettingsEditor: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 22, height: 22)
+                .frame(
+                    width: MacToolsControlMetrics.inlineIconSize.width,
+                    height: MacToolsControlMetrics.inlineIconSize.height
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1692,6 +1701,7 @@ private struct PermissionStatusRow: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
+                .frame(minHeight: MacToolsControlMetrics.settingsRowButtonMinimumHeight)
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .foregroundStyle(MacToolsGlassTheme.textPrimary)

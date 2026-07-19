@@ -16,14 +16,15 @@ public enum SuperPanelLayout {
     public static let headerTopPadding: CGFloat = 12
     public static let headerBottomPadding: CGFloat = 10
 
-    public static let standardPrimaryActionRowHeight: CGFloat = 58
+    public static let standardPrimaryActionRowHeight = MacToolsControlMetrics.superPanelActionRowHeight
     public static let translationPanelWidth: CGFloat = 420
-    public static let translationActionSectionHeight: CGFloat = 44
-    public static let translationActionButtonHeight: CGFloat = 30
-    public static let translationActionTitleFontSize: CGFloat = 15
+    public static let textTransitPanelWidth: CGFloat = 320
+    public static let translationActionSectionHeight: CGFloat = 56
+    public static let translationActionButtonHeight = MacToolsControlMetrics.textActionHeight
+    public static let translationActionTitleFontSize = MacToolsControlMetrics.textActionFontSize
     public static let translationActionSpacing: CGFloat = 8
     public static let translationActionSectionHorizontalPadding: CGFloat = 12
-    public static let translationActionButtonHorizontalPadding: CGFloat = 14
+    public static let translationActionButtonHorizontalPadding = MacToolsControlMetrics.textActionHorizontalPadding
 
     private static let previewLabelWidth: CGFloat = 48
     private static let previewSpacing: CGFloat = 12
@@ -31,11 +32,19 @@ public enum SuperPanelLayout {
     private static let previewRowVerticalPadding: CGFloat = 8
     private static let textPreviewSectionVerticalPadding: CGFloat = 8
     private static let textPreviewFontSize: CGFloat = 14
+    private static let standardActionSectionVerticalPadding: CGFloat = 16
+    private static let windowLayoutSectionVerticalPadding: CGFloat = 24
+    private static let windowLayoutHeaderToGridSpacing: CGFloat = 10
+    private static let windowLayoutGridSpacing: CGFloat = 8
+    private static let windowLayoutHeaderFontSize: CGFloat = 12
     private static let maximumPanelHeight: CGFloat = 620
 
     public static func panelSize(for content: SuperPanelContent) -> CGSize {
         if content.kind == .text {
             return translationPanelSize(for: content)
+        }
+        if content.kind == .textTransit {
+            return textTransitPanelSize(for: content)
         }
 
         let isExpandedPanel = content.kind == .fileSystem || content.kind == .windowLayout
@@ -45,9 +54,9 @@ public enum SuperPanelLayout {
         )
         let primaryActionCount = content.actions.filter { !$0.id.isWindowLayoutButton }.count
         let windowLayoutActionCount = content.actions.count - primaryActionCount
-        let windowLayoutRows = CGFloat((windowLayoutActionCount + 1) / 2)
+        let windowLayoutRows = (windowLayoutActionCount + 1) / 2
         let actionsHeight = CGFloat(primaryActionCount) * standardPrimaryActionRowHeight
-            + (windowLayoutActionCount > 0 ? 42 + windowLayoutRows * 44 : 0)
+            + windowLayoutSectionHeight(rowCount: windowLayoutRows)
         let legacyHeight = 92
             + previewRowsHeight
             + estimatedExpandedTextHeight(for: content)
@@ -72,12 +81,12 @@ public enum SuperPanelLayout {
     }
 
     private static func translationPanelSize(for content: SuperPanelContent) -> CGSize {
-        let headerHeight = max(
-            headerIconSize,
-            headerTitleFontSize + headerTextSpacing + headerSubtitleFontSize
-        ) + headerTopPadding + headerBottomPadding
+        let headerHeight = panelHeaderHeight
         let dividerHeight: CGFloat = 1
-        let previewHeight = translationPreviewHeight(for: content)
+        let previewHeight = textPreviewHeight(
+            for: content,
+            panelWidth: translationPanelWidth
+        )
         let actionHeight = content.actions.isEmpty ? 0 : translationActionSectionHeight
         let contentHeight = headerHeight
             + dividerHeight
@@ -91,25 +100,65 @@ public enum SuperPanelLayout {
         )
     }
 
-    private static func translationPreviewHeight(for content: SuperPanelContent) -> CGFloat {
+    private static func textTransitPanelSize(for content: SuperPanelContent) -> CGSize {
+        let dividerHeight: CGFloat = 1
+        let previewHeight = textPreviewHeight(
+            for: content,
+            panelWidth: textTransitPanelWidth
+        )
+        let primaryActionCount = content.actions.filter { !$0.id.isWindowLayoutButton }.count
+        let internalActionDividers = CGFloat(max(primaryActionCount - 1, 0))
+        let actionHeight = primaryActionCount == 0
+            ? 0
+            : standardActionSectionVerticalPadding
+                + CGFloat(primaryActionCount) * standardPrimaryActionRowHeight
+                + internalActionDividers
+        let contentHeight = panelHeaderHeight
+            + dividerHeight
+            + previewHeight
+            + (content.previewRows.isEmpty ? 0 : dividerHeight)
+            + actionHeight
+
+        return CGSize(
+            width: textTransitPanelWidth,
+            height: min(contentHeight, maximumPanelHeight)
+        )
+    }
+
+    private static func textPreviewHeight(
+        for content: SuperPanelContent,
+        panelWidth: CGFloat
+    ) -> CGFloat {
         guard !content.previewRows.isEmpty else {
             return 0
         }
 
         let internalDividersHeight = CGFloat(max(content.previewRows.count - 1, 0))
         let rowsHeight = content.previewRows.reduce(0) { height, row in
-            height + translationPreviewRowHeight(for: row)
+            height + textPreviewRowHeight(
+                for: row,
+                contentKind: content.kind,
+                panelWidth: panelWidth
+            )
         }
         return rowsHeight
             + internalDividersHeight
             + textPreviewSectionVerticalPadding * 2
     }
 
-    private static func translationPreviewRowHeight(for row: SuperPanelPreviewRow) -> CGFloat {
-        let valueWidth = translationPanelWidth
+    private static func textPreviewRowHeight(
+        for row: SuperPanelPreviewRow,
+        contentKind: SuperPanelKind,
+        panelWidth: CGFloat
+    ) -> CGFloat {
+        let speechControlWidth = row.speechRequest == nil
+            ? 0
+            : previewSpacing + MacToolsControlMetrics.inlineIconSize.width
+        let valueWidth = panelWidth
             - previewHorizontalPadding * 2
             - previewLabelWidth
             - previewSpacing
+            - speechControlWidth
         let font = NSFont.systemFont(ofSize: textPreviewFontSize, weight: .medium)
         let lineHeight = ceil(NSLayoutManager().defaultLineHeight(for: font))
         let bounds = (row.value as NSString).boundingRect(
@@ -117,8 +166,16 @@ public enum SuperPanelLayout {
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: font]
         )
-        let textHeight = max(lineHeight, ceil(bounds.height))
-        return textHeight + previewRowVerticalPadding * 2
+        let maximumTextHeight = SuperPanelPreviewLineLimitPolicy
+            .lineLimit(for: contentKind, row: row)
+            .map { CGFloat($0) * lineHeight }
+            ?? .greatestFiniteMagnitude
+        let textHeight = max(lineHeight, min(ceil(bounds.height), maximumTextHeight))
+        let contentHeight = max(
+            textHeight,
+            row.speechRequest == nil ? 0 : MacToolsControlMetrics.inlineIconSize.height
+        )
+        return contentHeight + previewRowVerticalPadding * 2
     }
 
     private static func estimatedPreviewRowsHeight(
@@ -164,30 +221,47 @@ public enum SuperPanelLayout {
         previewRowsHeight: CGFloat,
         primaryActionCount: Int,
         windowLayoutActionCount: Int,
-        windowLayoutRows: CGFloat
+        windowLayoutRows: Int
     ) -> CGFloat {
-        let headerHeight = max(
-            headerIconSize,
-            headerTitleFontSize + headerTextSpacing + headerSubtitleFontSize
-        ) + headerTopPadding + headerBottomPadding
         let dividerHeight: CGFloat = 1
-        let actionSectionVerticalPadding: CGFloat = 16
         let primaryActionsHeight = CGFloat(primaryActionCount) * standardPrimaryActionRowHeight
+        let primaryActionDividersHeight = CGFloat(max(primaryActionCount - 1, 0))
         let previewHeight = previewRowsHeight > 0 ? previewRowsHeight + dividerHeight : 0
         let groupDividerHeight = primaryActionCount > 0 && windowLayoutActionCount > 0
             ? dividerHeight
             : 0
-        let windowLayoutHeight = windowLayoutActionCount > 0
-            ? 42 + windowLayoutRows * 44
-            : 0
+        let windowLayoutHeight = windowLayoutSectionHeight(rowCount: windowLayoutRows)
 
-        return headerHeight
+        return panelHeaderHeight
             + dividerHeight
             + previewHeight
-            + actionSectionVerticalPadding
+            + standardActionSectionVerticalPadding
             + primaryActionsHeight
+            + primaryActionDividersHeight
             + groupDividerHeight
             + windowLayoutHeight
+    }
+
+    private static var panelHeaderHeight: CGFloat {
+        max(
+            headerIconSize,
+            headerTitleFontSize + headerTextSpacing + headerSubtitleFontSize
+        ) + headerTopPadding + headerBottomPadding
+    }
+
+    private static func windowLayoutSectionHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else {
+            return 0
+        }
+
+        let headerFont = NSFont.systemFont(ofSize: windowLayoutHeaderFontSize, weight: .semibold)
+        let headerHeight = ceil(NSLayoutManager().defaultLineHeight(for: headerFont))
+        let gridHeight = CGFloat(rowCount) * MacToolsControlMetrics.windowLayoutButtonHeight
+            + CGFloat(max(rowCount - 1, 0)) * windowLayoutGridSpacing
+        return windowLayoutSectionVerticalPadding
+            + headerHeight
+            + windowLayoutHeaderToGridSpacing
+            + gridHeight
     }
 
     private static func estimatedExpandedTextHeight(for content: SuperPanelContent) -> CGFloat {

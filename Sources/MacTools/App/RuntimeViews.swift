@@ -235,16 +235,28 @@ struct RuntimeTranslationModuleView: View {
         TranslationWorkspaceContent(settings: settings.translation, state: workspaceState)
     }
 
-    private var speechRequest: TranslationSpeechRequest? {
-        content.speechRequest(originalText: translatedOriginalText)
+    private var originalSpeechRequest: TranslationSpeechRequest? {
+        content.originalSpeechRequest(text: inputText)
     }
 
-    private var isSpeakingOutput: Bool {
-        guard let speechRequest else {
+    private var translatedSpeechRequest: TranslationSpeechRequest? {
+        content.translatedSpeechRequest(originalText: translatedOriginalText)
+    }
+
+    private var isSpeakingOriginal: Bool {
+        guard let originalSpeechRequest else {
             return false
         }
 
-        return speechController.state.isSpeaking(speechRequest)
+        return speechController.state.isSpeaking(originalSpeechRequest)
+    }
+
+    private var isSpeakingTranslation: Bool {
+        guard let translatedSpeechRequest else {
+            return false
+        }
+
+        return speechController.state.isSpeaking(translatedSpeechRequest)
     }
 
     private let inputEditorLayout = TranslationInputEditorLayout.standard
@@ -272,13 +284,25 @@ struct RuntimeTranslationModuleView: View {
         }
         .liquidGlassGroup(spacing: 12)
         .padding(18)
+        .onChange(of: inputText) { _, _ in
+            speechController.stop(ifSource: .translationWorkspace)
+        }
+        .onDisappear {
+            speechController.stop(ifSource: .translationWorkspace)
+        }
     }
 
     private var translationInputSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(content.inputTitle)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(MacToolsGlassTheme.textPrimary)
+            HStack(spacing: 10) {
+                Text(content.inputTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                Spacer(minLength: 0)
+
+                speechButton(for: originalSpeechRequest, textRole: "原文")
+            }
 
             ZStack(alignment: .topLeading) {
                 if TranslationInputPlaceholderPolicy.isPlaceholderVisible(
@@ -308,12 +332,16 @@ struct RuntimeTranslationModuleView: View {
             .padding(10)
             .liquidGlassModule(cornerRadius: 16)
 
+            if isSpeakingOriginal, let originalSpeechRequest {
+                speechStatus(for: originalSpeechRequest)
+            }
+
             HStack(spacing: 10) {
                 Button {
                     translateInputText()
                 } label: {
                     Label(content.translateButtonTitle, systemImage: "arrow.right.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: MacToolsControlMetrics.textActionFontSize, weight: .semibold))
                         .frame(minWidth: 92)
                 }
                 .buttonStyle(GlassPrimaryButtonStyle(cornerRadius: 14))
@@ -342,19 +370,19 @@ struct RuntimeTranslationModuleView: View {
 
                 Spacer(minLength: 0)
 
-                speechButton
+                speechButton(for: translatedSpeechRequest, textRole: "译文")
 
                 Button {
                     copyOutputText()
                 } label: {
                     Label(content.outputCopyButtonTitle, systemImage: "doc.on.doc")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: MacToolsControlMetrics.textActionFontSize, weight: .semibold))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(content.copyableOutputText == nil ? MacToolsGlassTheme.textDisabled : MacToolsGlassTheme.textSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .liquidGlassButtonStyle(cornerRadius: 12, showsIdleSurface: content.copyableOutputText != nil)
+                .padding(.horizontal, MacToolsControlMetrics.textActionHorizontalPadding)
+                .frame(height: MacToolsControlMetrics.textActionHeight)
+                .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: content.copyableOutputText != nil)
                 .disabled(content.copyableOutputText == nil)
             }
 
@@ -369,53 +397,64 @@ struct RuntimeTranslationModuleView: View {
             .padding(14)
             .liquidGlassModule(cornerRadius: 16)
 
-            if isSpeakingOutput, let speechRequest {
-                Label(
-                    "正在朗读\(TranslationSpeechLanguagePolicy.displayName(for: speechRequest.languageCode)) · 系统音色",
-                    systemImage: "waveform"
-                )
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(MacToolsGlassTheme.activeBlue)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 2)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            if isSpeakingTranslation, let translatedSpeechRequest {
+                speechStatus(for: translatedSpeechRequest)
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .liquidGlassModule(cornerRadius: 22)
-        .animation(.easeInOut(duration: 0.16), value: isSpeakingOutput)
+        .animation(.easeInOut(duration: 0.16), value: isSpeakingTranslation)
     }
 
-    private var speechButton: some View {
-        let title = isSpeakingOutput ? "停止朗读" : "朗读译文"
+    private func speechButton(
+        for request: TranslationSpeechRequest?,
+        textRole: String
+    ) -> some View {
+        let isSpeaking = request.map(speechController.state.isSpeaking) ?? false
+        let title = isSpeaking ? "停止朗读\(textRole)" : "朗读\(textRole)"
 
         return Button {
-            guard let speechRequest else {
+            guard let request else {
                 return
             }
-            speechController.toggle(speechRequest)
+            speechController.toggle(request)
         } label: {
-            Image(systemName: isSpeakingOutput ? "stop.fill" : "speaker.wave.2.fill")
+            Image(systemName: isSpeaking ? "stop.fill" : "speaker.wave.2.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .frame(width: 32, height: 32)
+                .frame(
+                    width: MacToolsControlMetrics.inlineIconSize.width,
+                    height: MacToolsControlMetrics.inlineIconSize.height
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .foregroundStyle(
-            speechRequest == nil
+            request == nil
                 ? MacToolsGlassTheme.textTertiary
-                : (isSpeakingOutput ? Color.white : MacToolsGlassTheme.textSecondary)
+                : (isSpeaking ? Color.white : MacToolsGlassTheme.textSecondary)
         )
         .liquidGlassButtonStyle(
             cornerRadius: 12,
-            isSelected: isSpeakingOutput,
-            minimumSize: CGSize(width: 32, height: 32),
-            showsIdleSurface: speechRequest != nil
+            isSelected: isSpeaking,
+            minimumSize: MacToolsControlMetrics.inlineIconSize,
+            showsIdleSurface: request != nil
         )
-        .disabled(speechRequest == nil)
+        .disabled(request == nil)
         .accessibilityLabel(title)
         .help(title)
+    }
+
+    private func speechStatus(for request: TranslationSpeechRequest) -> some View {
+        Label(
+            "正在朗读\(TranslationSpeechLanguagePolicy.displayName(for: request.languageCode)) · 系统音色",
+            systemImage: "waveform"
+        )
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(MacToolsGlassTheme.activeBlue)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 2)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     private func copyOutputText() {

@@ -71,7 +71,23 @@ public struct TranslationWorkspaceContent: Equatable {
         return trimmedText.isEmpty ? nil : text
     }
 
-    public func speechRequest(
+    public func originalSpeechRequest(
+        text: String,
+        source: TranslationSpeechSource = .translationWorkspace
+    ) -> TranslationSpeechRequest? {
+        let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedText.isEmpty else {
+            return nil
+        }
+
+        return TranslationSpeechRequest(
+            text: normalizedText,
+            languageCode: TranslationSpeechLanguagePolicy.originalLanguageCode(for: normalizedText),
+            source: source
+        )
+    }
+
+    public func translatedSpeechRequest(
         originalText: String,
         source: TranslationSpeechSource = .translationWorkspace
     ) -> TranslationSpeechRequest? {
@@ -82,9 +98,16 @@ public struct TranslationWorkspaceContent: Equatable {
         let normalizedOutput = outputText.trimmingCharacters(in: .whitespacesAndNewlines)
         return TranslationSpeechRequest(
             text: normalizedOutput,
-            languageCode: TranslationSpeechLanguagePolicy.languageCode(forOriginalText: originalText),
+            languageCode: TranslationSpeechLanguagePolicy.translatedLanguageCode(forOriginalText: originalText),
             source: source
         )
+    }
+
+    public func speechRequest(
+        originalText: String,
+        source: TranslationSpeechSource = .translationWorkspace
+    ) -> TranslationSpeechRequest? {
+        translatedSpeechRequest(originalText: originalText, source: source)
     }
 
     public var isOutputPlaceholder: Bool {

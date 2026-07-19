@@ -15,7 +15,15 @@ final class SuperPanelContentTests: XCTestCase {
         XCTAssertEqual(content.headerTitle, "选中的文本 17 个")
         XCTAssertEqual(content.headerSubtitle, "超级右键点击")
         XCTAssertEqual(content.previewRows, [
-            .init(label: "原文", value: "super right click"),
+            .init(
+                label: "原文",
+                value: "super right click",
+                speechRequest: TranslationSpeechRequest(
+                    text: "super right click",
+                    languageCode: "en-US",
+                    source: .superRightClick
+                )
+            ),
             .init(
                 label: "译文",
                 value: "超级右键点击",
@@ -48,7 +56,15 @@ final class SuperPanelContentTests: XCTestCase {
         XCTAssertEqual(content.headerTitle, "选中的文本 5 个")
         XCTAssertEqual(content.headerSubtitle, "翻译未配置")
         XCTAssertEqual(content.previewRows, [
-            .init(label: "原文", value: "hello"),
+            .init(
+                label: "原文",
+                value: "hello",
+                speechRequest: TranslationSpeechRequest(
+                    text: "hello",
+                    languageCode: "en-US",
+                    source: .superRightClick
+                )
+            ),
             .init(label: "提示", value: "在设置里填写 DASHSCOPE_API_KEY 后可显示翻译结果")
         ])
         XCTAssertEqual(
@@ -73,7 +89,15 @@ final class SuperPanelContentTests: XCTestCase {
         XCTAssertEqual(content.headerSubtitle, "翻译中...")
         XCTAssertTrue(content.showsLoadingIndicator)
         XCTAssertEqual(content.previewRows, [
-            .init(label: "原文", value: "hello"),
+            .init(
+                label: "原文",
+                value: "hello",
+                speechRequest: TranslationSpeechRequest(
+                    text: "hello",
+                    languageCode: "en-US",
+                    source: .superRightClick
+                )
+            ),
             .init(label: "译文", value: "翻译中...")
         ])
         XCTAssertEqual(content.actions.map(\.id), [.textTransit])

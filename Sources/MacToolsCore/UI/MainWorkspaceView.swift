@@ -3,7 +3,7 @@ import SwiftUI
 public struct MainWorkspaceLayout {
     public static let isSidebarVisibleByDefault = false
     public static let sidebarWidth: CGFloat = 150
-    public static let collapsedSidebarToggleSize = CGSize(width: 48, height: 48)
+    public static let collapsedSidebarToggleSize = MacToolsControlMetrics.toolbarIconSize
     public static let moduleContentHorizontalAlignment = HorizontalAlignment.leading
     public static let moduleContentVerticalAlignment = VerticalAlignment.top
     public static let moduleContentAlignment = Alignment(
@@ -176,7 +176,7 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
                     Label(module.title, systemImage: module.iconName)
                         .font(.system(size: 14, weight: .semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: 42)
+                        .frame(height: MacToolsControlMetrics.sidebarNavigationHeight)
                         .padding(.horizontal, 12)
                         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }

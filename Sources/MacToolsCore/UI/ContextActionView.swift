@@ -208,23 +208,29 @@ public struct ContextActionView: View {
                 .textSelection(.enabled)
 
             if let speechRequest = row.speechRequest {
-                speechButton(for: speechRequest)
+                speechButton(for: speechRequest, textRole: row.label)
             }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 8)
     }
 
-    private func speechButton(for request: TranslationSpeechRequest) -> some View {
+    private func speechButton(
+        for request: TranslationSpeechRequest,
+        textRole: String
+    ) -> some View {
         let isSpeaking = speechState.isSpeaking(request)
-        let title = isSpeaking ? "停止朗读" : "朗读译文"
+        let title = isSpeaking ? "停止朗读\(textRole)" : "朗读\(textRole)"
 
         return Button {
             performSpeech(request)
         } label: {
             Image(systemName: isSpeaking ? "stop.fill" : "speaker.wave.2.fill")
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 30, height: 30)
+                .frame(
+                    width: MacToolsControlMetrics.inlineIconSize.width,
+                    height: MacToolsControlMetrics.inlineIconSize.height
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -232,7 +238,7 @@ public struct ContextActionView: View {
         .liquidGlassButtonStyle(
             cornerRadius: 10,
             isSelected: isSpeaking,
-            minimumSize: CGSize(width: 30, height: 30),
+            minimumSize: MacToolsControlMetrics.inlineIconSize,
             showsIdleSurface: true
         )
         .accessibilityLabel(title)
@@ -299,7 +305,7 @@ private struct TranslationActionButton: View {
             Text(action.title)
                 .font(.system(
                     size: SuperPanelLayout.translationActionTitleFontSize,
-                    weight: .medium
+                    weight: .semibold
                 ))
                 .foregroundStyle(isPrimary ? Color.white : MacToolsGlassTheme.textPrimary)
                 .lineLimit(1)
@@ -383,7 +389,7 @@ private struct SuperPanelActionRow: View {
     }
 
     private var titleFontSize: CGFloat {
-        20
+        18
     }
 
     private var rowSpacing: CGFloat {
@@ -449,8 +455,7 @@ private struct WindowLayoutActionButton: View {
             }
             .foregroundStyle(MacToolsGlassTheme.textPrimary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .frame(minHeight: 36)
+            .frame(height: MacToolsControlMetrics.windowLayoutButtonHeight)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isHovering ? MacToolsGlassTheme.activeBlue.opacity(0.16) : Color.white.opacity(0.055))

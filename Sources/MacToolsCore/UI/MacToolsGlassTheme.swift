@@ -23,6 +23,22 @@ public enum MacToolsGlassTheme {
     }
 }
 
+public enum MacToolsControlMetrics {
+    public static let textActionHeight: CGFloat = 40
+    public static let textActionFontSize: CGFloat = 14
+    public static let textActionHorizontalPadding: CGFloat = 16
+
+    public static let inlineIconSize = CGSize(width: 32, height: 32)
+    public static let toolbarIconSize = CGSize(width: 40, height: 40)
+
+    public static let sidebarNavigationHeight: CGFloat = 44
+    public static let clipboardCategoryHeight: CGFloat = 36
+    public static let clipboardCategoryMinimumWidth: CGFloat = 96
+    public static let superPanelActionRowHeight: CGFloat = 56
+    public static let windowLayoutButtonHeight: CGFloat = 40
+    public static let settingsRowButtonMinimumHeight: CGFloat = 44
+}
+
 struct GlassStatusPill: View {
     let title: String
     let systemImage: String?
@@ -66,8 +82,8 @@ public struct GlassPrimaryButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(Color.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
+            .padding(.horizontal, MacToolsControlMetrics.textActionHorizontalPadding)
+            .frame(minHeight: MacToolsControlMetrics.textActionHeight)
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .glassEffect(
                 .regular
