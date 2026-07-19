@@ -83,4 +83,24 @@ final class MenuBarIconAssetTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(largestPixelDimension ?? 0, 512)
     }
+
+    func testSidebarUsesCurrentMenuBarAssetWithoutLegacyBranding() throws {
+        let workspaceSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sources/MacToolsCore/UI/MainWorkspaceView.swift"
+            ),
+            encoding: .utf8
+        )
+        let runtimeSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sources/MacTools/App/RuntimeViews.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(workspaceSource.contains("private let brandIcon: Image"))
+        XCTAssertTrue(runtimeSource.contains("brandIcon: Image(nsImage: MenuBarLogoImage.make())"))
+        XCTAssertFalse(workspaceSource.contains("wrench.and.screwdriver.fill"))
+        XCTAssertFalse(workspaceSource.contains("高效 · 便捷 · 智能"))
+    }
 }

@@ -66,7 +66,10 @@ struct RuntimeMainWorkspaceView: View {
     }
 
     var body: some View {
-        MainWorkspaceView(selectedModule: $router.selectedModule) {
+        MainWorkspaceView(
+            selectedModule: $router.selectedModule,
+            brandIcon: Image(nsImage: MenuBarLogoImage.make())
+        ) {
             RuntimeSettingsView(
                 settings: currentSettings,
                 permissionService: permissionService,

@@ -102,17 +102,20 @@ public struct MainWorkspaceModuleHeader: View {
 public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, TranslationContent: View>: View {
     @Binding private var selectedModule: MainToolModule
     @State private var isSidebarVisible = MainWorkspaceLayout.isSidebarVisibleByDefault
+    private let brandIcon: Image
     private let settingsContent: SettingsContent
     private let clipboardContent: ClipboardContent
     private let translationContent: TranslationContent
 
     public init(
         selectedModule: Binding<MainToolModule>,
+        brandIcon: Image,
         @ViewBuilder settings: () -> SettingsContent,
         @ViewBuilder clipboard: () -> ClipboardContent,
         @ViewBuilder translation: () -> TranslationContent
     ) {
         self._selectedModule = selectedModule
+        self.brandIcon = brandIcon
         self.settingsContent = settings()
         self.clipboardContent = clipboard()
         self.translationContent = translation()
@@ -152,18 +155,16 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 10) {
-                    GlassIconBadge(systemName: "wrench.and.screwdriver.fill", size: 34, iconSize: 14)
+            HStack(spacing: 10) {
+                brandIcon
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 34, height: 34)
+                    .accessibilityHidden(true)
 
-                    Text("MacTools")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
-                }
-
-                Text("高效 · 便捷 · 智能")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                Text("MacTools")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 14)

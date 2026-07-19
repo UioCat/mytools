@@ -5,8 +5,9 @@
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
+- Confirm the sidebar shows the current blue-purple ribbon icon without the slogan.
 - Confirm the equal-width category row below search contains exactly `全部`, `文本`, `图像`, and `收藏`; files and folders remain available through `全部`.
-- Click each category and use the Left/Right arrow keys to switch between adjacent categories.
+- Click each category and use the Left/Right arrow keys to verify adjacent transitions and both wrap-around transitions.
 - Click a clipboard item once and confirm it only becomes selected; click the same item again and confirm it performs the Enter action and pastes at the previously focused cursor location.
 - After selecting with the keyboard or changing category/search, click the highlighted item once and confirm it only re-arms mouse selection instead of pasting immediately.
 - Fill clipboard history beyond one screen, then hold the Up/Down arrow keys; confirm every newly selected row is automatically brought into view, including rows before and after a large image preview.
