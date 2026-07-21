@@ -192,6 +192,7 @@ public struct SettingsView: View {
             shortcutsSection
             clipboardSection
             superRightClickSection
+            permissionsSection
         }
     }
 
@@ -199,7 +200,6 @@ public struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             translationSection
             syncSection
-            permissionsSection
             systemSection
         }
     }
