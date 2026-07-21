@@ -7,7 +7,7 @@ public final class ClipboardClassifier {
 
     public func classify(payload: ClipboardPayload, sourceApp: String?) -> ClipboardItem {
         let now = Date()
-        let contentHash = ClipboardContentHasher.md5(for: payload)
+        let contentHash = ClipboardContentHasher.sha256(for: payload)
 
         if let firstURL = payload.fileURLs.first {
             return classifyFileURL(firstURL, sourceApp: sourceApp, contentHash: contentHash, now: now)

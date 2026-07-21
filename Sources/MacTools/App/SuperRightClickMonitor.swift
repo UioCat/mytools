@@ -13,7 +13,6 @@ final class SuperRightClickMonitor {
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var longPressTimer: Timer?
     private var pendingSuppressedRightMouseDown: CGEvent?
-    private static let replayedRightClickUserData: Int64 = 0x4D_54_52_43
 
     init(
         thresholdMilliseconds: Int,
@@ -54,7 +53,7 @@ final class SuperRightClickMonitor {
         return true
     }
 
-    nonisolated private static let handleEventTap: CGEventTapCallBack = { _, type, event, userInfo in
+    nonisolated private static let handleEventTap: CGEventTapCallBack = { proxy, type, event, userInfo in
         guard let userInfo else {
             return Unmanaged.passUnretained(event)
         }
@@ -62,7 +61,7 @@ final class SuperRightClickMonitor {
         let monitor = Unmanaged<SuperRightClickMonitor>
             .fromOpaque(userInfo)
             .takeUnretainedValue()
-        return monitor.handleEvent(type: type, event: event)
+        return monitor.handleEvent(type: type, event: event, proxy: proxy)
     }
 
     func stop() {
@@ -81,7 +80,8 @@ final class SuperRightClickMonitor {
 
     nonisolated private func handleEvent(
         type: CGEventType,
-        event: CGEvent
+        event: CGEvent,
+        proxy: CGEventTapProxy
     ) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             MainActor.assumeIsolated {
@@ -94,22 +94,22 @@ final class SuperRightClickMonitor {
         }
 
         let shouldSuppress = MainActor.assumeIsolated {
-            handleEventOnMainActor(type: type, event: event)
+            handleEventOnMainActor(type: type, event: event, proxy: proxy)
         }
 
         return shouldSuppress ? nil : Unmanaged.passUnretained(event)
     }
 
-    private func handleEventOnMainActor(type: CGEventType, event: CGEvent) -> Bool {
-        if isReplayedSystemRightClick(event) {
-            return false
-        }
-
+    private func handleEventOnMainActor(
+        type: CGEventType,
+        event: CGEvent,
+        proxy: CGEventTapProxy
+    ) -> Bool {
         switch type {
         case .rightMouseDown:
             return handleRightMouseDown(event: event)
         case .rightMouseUp:
-            return handleRightMouseUp(event: event)
+            return handleRightMouseUp(event: event, proxy: proxy)
         default:
             return false
         }
@@ -132,13 +132,16 @@ final class SuperRightClickMonitor {
         return route.shouldSuppressOriginalEvent
     }
 
-    private func handleRightMouseUp(event: CGEvent? = nil) -> Bool {
+    private func handleRightMouseUp(
+        event: CGEvent,
+        proxy: CGEventTapProxy
+    ) -> Bool {
         logger.info("super right click right mouse up")
         longPressTimer?.invalidate()
         longPressTimer = nil
         let route = gestureRouter.handle(.released(atMilliseconds: currentMilliseconds()))
-        if route == .suppressAndReplaySystemRightClick, let event {
-            replaySystemRightClick(mouseUpEvent: event)
+        if route == .suppressAndReplaySystemRightClick {
+            replaySystemRightClick(mouseUpEvent: event, proxy: proxy)
         }
         pendingSuppressedRightMouseDown = nil
         return route.shouldSuppressOriginalEvent
@@ -185,25 +188,18 @@ final class SuperRightClickMonitor {
         }
     }
 
-    private func replaySystemRightClick(mouseUpEvent: CGEvent) {
+    private func replaySystemRightClick(
+        mouseUpEvent: CGEvent,
+        proxy: CGEventTapProxy
+    ) {
         guard let mouseDownEvent = pendingSuppressedRightMouseDown?.copy(),
               let mouseUpEvent = mouseUpEvent.copy() else {
             logger.error("super right click could not replay short system right click")
             return
         }
 
-        markAsReplayedSystemRightClick(mouseDownEvent)
-        markAsReplayedSystemRightClick(mouseUpEvent)
-        mouseDownEvent.post(tap: .cghidEventTap)
-        mouseUpEvent.post(tap: .cghidEventTap)
-    }
-
-    private func markAsReplayedSystemRightClick(_ event: CGEvent) {
-        event.setIntegerValueField(.eventSourceUserData, value: Self.replayedRightClickUserData)
-    }
-
-    private func isReplayedSystemRightClick(_ event: CGEvent) -> Bool {
-        event.getIntegerValueField(.eventSourceUserData) == Self.replayedRightClickUserData
+        mouseDownEvent.tapPostEvent(proxy)
+        mouseUpEvent.tapPostEvent(proxy)
     }
 
     private func currentMilliseconds() -> Int {

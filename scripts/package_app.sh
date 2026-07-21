@@ -7,7 +7,7 @@ APP_DIR="$ROOT_DIR/build/MacTools.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
-BUNDLE_ID="local.mactools.mvp"
+BUNDLE_ID="${MACOS_BUNDLE_ID:-local.mactools.mvp}"
 APP_VERSION="${MACOS_APP_VERSION:-0.1.0}"
 BUILD_NUMBER="${MACOS_BUILD_NUMBER:-1}"
 FORCE_ADHOC_SIGNING="${MACOS_FORCE_ADHOC_SIGNING:-0}"
@@ -27,6 +27,17 @@ if [[ "$FORCE_ADHOC_SIGNING" != "0" && "$FORCE_ADHOC_SIGNING" != "1" ]]; then
   exit 1
 fi
 
+CODESIGN_IDENTITY=""
+if [[ "$FORCE_ADHOC_SIGNING" == "0" ]]; then
+  CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
+  if [[ -z "$CODESIGN_IDENTITY" ]]; then
+    CODESIGN_IDENTITY="$(
+      security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F '"' '/Developer ID Application|Apple Development|Mac Developer/ { print $2; exit }'
+    )"
+  fi
+fi
+
 swift build -c release --product MacTools
 
 rm -rf "$APP_DIR"
@@ -34,7 +45,6 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BUILD_DIR/MacTools" "$MACOS_DIR/MacTools"
 cp "$ROOT_DIR/Sources/MacTools/Resources/MenuBarIcon.png" "$RESOURCES_DIR/MenuBarIcon.png"
 cp "$ROOT_DIR/Sources/MacTools/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
-
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -66,25 +76,12 @@ PLIST
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$CONTENTS_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$CONTENTS_DIR/Info.plist"
-
-CODESIGN_IDENTITY=""
-if [[ "$FORCE_ADHOC_SIGNING" == "0" ]]; then
-  CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
-  if [[ -z "$CODESIGN_IDENTITY" ]]; then
-    CODESIGN_IDENTITY="$(
-      security find-identity -v -p codesigning 2>/dev/null \
-        | awk -F '"' '/Developer ID Application|Apple Development|Mac Developer/ { print $2; exit }'
-    )"
-  fi
-fi
-
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$CONTENTS_DIR/Info.plist"
 if [[ -n "$CODESIGN_IDENTITY" ]]; then
   echo "Signing with identity: $CODESIGN_IDENTITY" >&2
-  codesign \
-    --force \
-    --sign "$CODESIGN_IDENTITY" \
-    --requirements "=designated => identifier \"$BUNDLE_ID\" and anchor trusted" \
-    "$APP_DIR"
+  SIGN_ARGUMENTS=(--force --sign "$CODESIGN_IDENTITY")
+  SIGN_ARGUMENTS+=(--requirements "=designated => identifier \"$BUNDLE_ID\" and anchor trusted" "$APP_DIR")
+  codesign "${SIGN_ARGUMENTS[@]}"
 else
   echo "warning: no trusted code signing identity found; using ad-hoc signing." >&2
   echo "warning: macOS TCC may not reliably match Accessibility/Input Monitoring grants for this build." >&2
@@ -94,5 +91,8 @@ else
     --requirements "=designated => identifier \"$BUNDLE_ID\"" \
     "$APP_DIR"
 fi
+
+
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 echo "$APP_DIR"

@@ -1,0 +1,424 @@
+import Foundation
+import XCTest
+@testable import MacToolsCore
+
+final class SyncLocalRepositoryTests: XCTestCase {
+    func testTwoDatabasesConvergeThroughSharedSnapshotAndContentObject() throws {
+        let root = temporaryDirectory().appendingPathComponent("MacTools Sync", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        let store = DriveSyncStore(rootURL: root)
+        let descriptor = try store.prepare()
+        let first = try makeReplica(deviceID: "device-a")
+        let second = try makeReplica(deviceID: "device-b")
+        defer {
+            try? FileManager.default.removeItem(at: first.workingDirectory)
+            try? FileManager.default.removeItem(at: second.workingDirectory)
+        }
+        try first.sync.bindStore(descriptor.storeID)
+        try second.sync.bindStore(descriptor.storeID)
+
+        let firstID = UUID(uuidString: "10000000-0000-0000-0000-000000000000")!
+        let secondID = UUID(uuidString: "20000000-0000-0000-0000-000000000000")!
+        try first.clipboard.upsert(textItem(id: firstID, text: "shared text"))
+        try second.clipboard.upsert(textItem(id: secondID, text: "shared text"))
+        var firstSettings = AppSettings.defaults
+        firstSettings.appearanceMode = .dark
+        firstSettings.translation.apiKey = "must-not-sync"
+        try first.preferences.save(firstSettings)
+
+        let firstBundle = try first.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 1,
+            scope: .allHistory
+        )
+        _ = try store.write(firstBundle, seenRevisions: ["device-a": 1], updatedAt: Date())
+        let remote = try XCTUnwrap(store.replicas(generation: 1).first)
+        let contents = try Dictionary(uniqueKeysWithValues: remote.clipboard.records.compactMap { record in
+            try store.contentData(contentID: record.contentID, kind: record.kind).map {
+                (record.contentID, $0)
+            }
+        })
+        try second.sync.apply(
+            clipboard: remote.clipboard,
+            contents: contents,
+            payloadStore: second.payloadStore,
+            historyLimit: 500
+        )
+        let mergedSettings = try second.sync.apply(preferences: remote.preferences)
+
+        let items = try second.clipboard.search("", limit: 500)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].id, firstID)
+        XCTAssertEqual(items[0].text, "shared text")
+        XCTAssertEqual(mergedSettings?.appearanceMode, .dark)
+        XCTAssertEqual(mergedSettings?.translation.apiKey, "")
+        XCTAssertFalse(firstBundle.preferences.domains.contains {
+            String(data: $0.value, encoding: .utf8)?.contains("must-not-sync") == true
+        })
+        XCTAssertEqual(try store.storedObjects().count, 1)
+    }
+
+    func testTombstoneCompactsOnlyAfterEveryVisibleDeviceAcknowledgesSourceRevision() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let item = textItem(id: UUID(), text: "to delete")
+        try replica.clipboard.upsert(item)
+        try replica.clipboard.delete(id: item.id)
+        let initial = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 3,
+            scope: .allHistory
+        )
+        XCTAssertEqual(initial.tombstones.records.count, 1)
+
+        let digest = SyncSnapshotDigests(clipboard: "c", preferences: "p", tombstones: "t")
+        let sourceManifest = SyncReplicaManifest(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 3,
+            seenRevisions: ["device-a": 3],
+            snapshotDigests: digest,
+            updatedAt: Date()
+        )
+        let stalePeer = SyncReplicaManifest(
+            deviceID: "device-b",
+            generation: 1,
+            revision: 5,
+            seenRevisions: ["device-a": 2],
+            snapshotDigests: digest,
+            updatedAt: Date()
+        )
+        XCTAssertTrue(try replica.sync.compactAcknowledgedTombstones(
+            activeManifests: [sourceManifest, stalePeer],
+            localDeviceID: "device-a",
+            generation: 1
+        ).isEmpty)
+
+        var acknowledgingPeer = stalePeer
+        acknowledgingPeer.seenRevisions["device-a"] = 3
+        XCTAssertEqual(try replica.sync.compactAcknowledgedTombstones(
+            activeManifests: [sourceManifest, acknowledgingPeer],
+            localDeviceID: "device-a",
+            generation: 1
+        ).count, 1)
+        XCTAssertTrue(try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 4,
+            scope: .allHistory
+        ).tombstones.records.isEmpty)
+    }
+
+    func testCapacityBlockedClipboardRecordRemainsPendingWhileOtherChangesAreAcknowledged() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let uploaded = textItem(id: UUID(), text: "uploaded")
+        let blocked = textItem(id: UUID(), text: "blocked")
+        try replica.clipboard.upsert(uploaded)
+        try replica.clipboard.upsert(blocked)
+
+        let cutoff = Date().addingTimeInterval(1)
+        try replica.sync.acknowledgeSnapshot(
+            upTo: cutoff,
+            excludingClipboardRecordNames: [blocked.id.uuidString]
+        )
+
+        XCTAssertTrue(try replica.sync.hasPendingChanges())
+        XCTAssertFalse(try replica.sync.hasPendingChanges(
+            excludingClipboardRecordNames: [blocked.id.uuidString]
+        ))
+    }
+
+    func testMissingLocalImagePayloadStaysPendingWithoutBlockingOtherChanges() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let imageID = UUID()
+        let imageData = Self.pngData()
+        let image = ClipboardItem(
+            id: imageID,
+            kind: .imageData,
+            displayTitle: "image",
+            searchableText: "image",
+            text: nil,
+            originalPath: nil,
+            cachedFilePath: nil,
+            thumbnailPath: nil,
+            sourceApp: "Tests",
+            contentHash: ClipboardContentHasher.sha256String(for: imageData),
+            createdAt: Date(timeIntervalSince1970: 100),
+            lastUsedAt: nil,
+            useCount: 0,
+            isPinned: false,
+            isFavorite: false
+        )
+        try replica.clipboard.upsertPNG(image, data: imageData)
+        let text = textItem(id: UUID(), text: "available")
+        try replica.clipboard.upsert(text)
+        let savedImage = try XCTUnwrap(
+            replica.clipboard.search("", limit: 10).first { $0.id == imageID }
+        )
+        try FileManager.default.removeItem(
+            atPath: try XCTUnwrap(savedImage.cachedFilePath)
+        )
+
+        let bundle = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 1,
+            scope: .allHistory
+        )
+
+        XCTAssertEqual(bundle.clipboard.records.map(\.recordName), [text.id.uuidString])
+        XCTAssertEqual(bundle.unavailableClipboardRecordNames, [imageID.uuidString])
+        try replica.sync.acknowledgeSnapshot(
+            upTo: bundle.outboxCutoff,
+            excludingClipboardRecordNames: bundle.unavailableClipboardRecordNames
+        )
+        XCTAssertTrue(try replica.sync.hasPendingChanges())
+        XCTAssertFalse(try replica.sync.hasPendingChanges(
+            excludingClipboardRecordNames: [imageID.uuidString]
+        ))
+    }
+
+    func testAdoptingNewGenerationRemovesOlderTombstones() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let storeID = UUID()
+        try replica.sync.bindStore(storeID)
+        let item = textItem(id: UUID(), text: "old generation")
+        try replica.clipboard.upsert(item)
+        try replica.clipboard.delete(id: item.id)
+        XCTAssertEqual(
+            try replica.sync.tombstonedRecordNames(generation: 1),
+            [item.id.uuidString]
+        )
+
+        XCTAssertTrue(try replica.sync.adoptGeneration(2, storeID: storeID))
+
+        XCTAssertTrue(try replica.sync.tombstonedRecordNames(generation: 1).isEmpty)
+    }
+
+    func testStaleReplicaCannotRestoreTombstonedClipboardRecord() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let item = textItem(id: UUID(), text: "deleted remotely")
+        let tombstone = SyncTombstoneSnapshot(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 2,
+            records: [
+                SyncTombstoneRecord(
+                    tombstoneID: "tombstone.1.\(item.id.uuidString)",
+                    targetRecordName: item.id.uuidString,
+                    targetType: "ClipboardContent",
+                    generation: 1,
+                    deletedAt: Date(timeIntervalSince1970: 200),
+                    reason: "user",
+                    sourceDeviceID: "device-a",
+                    sourceRevision: 2
+                )
+            ]
+        )
+        let staleSnapshot = SyncClipboardSnapshot(
+            deviceID: "device-b",
+            generation: 1,
+            revision: 1,
+            records: [
+                SyncClipboardRecord(
+                    recordName: item.id.uuidString,
+                    contentID: try XCTUnwrap(item.contentHash),
+                    kind: .text,
+                    displayTitle: item.displayTitle,
+                    searchableText: item.searchableText,
+                    sourceApp: item.sourceApp,
+                    createdAt: item.createdAt,
+                    lastCapturedAt: item.lastCapturedAt,
+                    lastUsedAt: item.lastUsedAt,
+                    retentionAt: item.retentionAt,
+                    useCount: item.useCount,
+                    isPinned: item.isPinned,
+                    isFavorite: item.isFavorite,
+                    favoriteClock: item.favoriteClock,
+                    pinnedClock: item.pinnedClock
+                )
+            ]
+        )
+        let contentID = try XCTUnwrap(item.contentHash)
+        let object = SyncTextContentObject(
+            contentID: contentID,
+            kind: .text,
+            text: try XCTUnwrap(item.text),
+            byteCount: Int64(item.text?.utf8.count ?? 0)
+        )
+
+        try replica.sync.apply(tombstones: tombstone)
+        try replica.sync.apply(
+            clipboard: staleSnapshot,
+            contents: [contentID: try SyncSnapshotCodec.encode(object)],
+            payloadStore: replica.payloadStore,
+            historyLimit: 500
+        )
+
+        XCTAssertTrue(try replica.clipboard.search("", limit: 500).isEmpty)
+    }
+
+    func testRemovingPeerRehomesItsUncompactedTombstone() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let targetID = UUID()
+        let tombstone = SyncTombstoneSnapshot(
+            deviceID: "device-b",
+            generation: 1,
+            revision: 4,
+            records: [
+                SyncTombstoneRecord(
+                    tombstoneID: "tombstone.1.\(targetID.uuidString)",
+                    targetRecordName: targetID.uuidString,
+                    targetType: "ClipboardContent",
+                    generation: 1,
+                    deletedAt: Date(timeIntervalSince1970: 200),
+                    reason: "user",
+                    sourceDeviceID: "device-b",
+                    sourceRevision: 4
+                )
+            ]
+        )
+        try replica.sync.apply(tombstones: tombstone)
+        XCTAssertTrue(try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 1,
+            scope: .allHistory
+        ).tombstones.records.isEmpty)
+
+        try replica.sync.preserveTombstones(
+            fromRemovedDeviceID: "device-b",
+            generation: 1,
+            at: Date(timeIntervalSince1970: 300)
+        )
+        let rehomed = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 2,
+            scope: .allHistory
+        )
+
+        XCTAssertTrue(try replica.sync.hasPendingChanges())
+        XCTAssertEqual(rehomed.tombstones.records.count, 1)
+        XCTAssertEqual(rehomed.tombstones.records[0].sourceDeviceID, "device-a")
+        XCTAssertEqual(rehomed.tombstones.records[0].sourceRevision, 2)
+    }
+
+    func testImportedPeerTombstoneCompactsAfterEveryDeviceAcknowledgesItsSourceRevision() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let targetID = UUID()
+        try replica.sync.apply(tombstones: SyncTombstoneSnapshot(
+            deviceID: "device-b",
+            generation: 1,
+            revision: 4,
+            records: [
+                SyncTombstoneRecord(
+                    tombstoneID: "tombstone.1.\(targetID.uuidString)",
+                    targetRecordName: targetID.uuidString,
+                    targetType: "ClipboardContent",
+                    generation: 1,
+                    deletedAt: Date(timeIntervalSince1970: 200),
+                    reason: "user",
+                    sourceDeviceID: "device-b",
+                    sourceRevision: 4
+                )
+            ]
+        ))
+        let digests = SyncSnapshotDigests(clipboard: "c", preferences: "p", tombstones: "t")
+        let localManifest = SyncReplicaManifest(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 2,
+            seenRevisions: ["device-b": 4],
+            snapshotDigests: digests,
+            updatedAt: Date()
+        )
+        let sourceManifest = SyncReplicaManifest(
+            deviceID: "device-b",
+            generation: 1,
+            revision: 5,
+            seenRevisions: ["device-b": 5],
+            snapshotDigests: digests,
+            updatedAt: Date()
+        )
+
+        let compacted = try replica.sync.compactAcknowledgedTombstones(
+            activeManifests: [localManifest, sourceManifest],
+            localDeviceID: "device-a",
+            generation: 1
+        )
+
+        XCTAssertEqual(compacted.count, 1)
+        XCTAssertTrue(try replica.sync.tombstonedRecordNames(generation: 1).isEmpty)
+    }
+
+    private struct Replica {
+        var clipboard: ClipboardRepository
+        var preferences: PreferenceRepository
+        var sync: SyncLocalRepository
+        var payloadStore: PayloadStore
+        var workingDirectory: URL
+    }
+
+    private func makeReplica(deviceID: String) throws -> Replica {
+        let database = try MacToolsDatabase.inMemory()
+        let workingDirectory = temporaryDirectory()
+        let payloadStore = PayloadStore(
+            rootDirectory: workingDirectory.appendingPathComponent("Payloads", isDirectory: true)
+        )
+        let clipboard = ClipboardRepository(database: database, payloadStore: payloadStore)
+        let preferences = PreferenceRepository(database: database)
+        try preferences.save(.defaults, enqueuesSyncChange: false)
+        let overrides = DeviceOverrideRepository(database: database)
+        _ = try overrides.deviceID()
+        return Replica(
+            clipboard: clipboard,
+            preferences: preferences,
+            sync: SyncLocalRepository(
+                database: database,
+                clipboardRepository: clipboard,
+                preferenceRepository: preferences
+            ),
+            payloadStore: payloadStore,
+            workingDirectory: workingDirectory
+        )
+    }
+
+    private func textItem(id: UUID, text: String) -> ClipboardItem {
+        ClipboardItem(
+            id: id,
+            kind: .text,
+            displayTitle: text,
+            searchableText: text,
+            text: text,
+            originalPath: nil,
+            cachedFilePath: nil,
+            thumbnailPath: nil,
+            sourceApp: "Tests",
+            contentHash: ClipboardContentHasher.sha256String(for: Data("text:\(text)".utf8)),
+            createdAt: Date(timeIntervalSince1970: 100),
+            lastUsedAt: nil,
+            useCount: 0,
+            isPinned: false,
+            isFavorite: false
+        )
+    }
+
+    private func temporaryDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
+    private static func pngData() -> Data {
+        Data(base64Encoded: onePixelPNGBase64)!
+    }
+
+    private static let onePixelPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+}

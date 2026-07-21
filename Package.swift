@@ -25,7 +25,10 @@ let package = Package(
         ),
         .testTarget(
             name: "MacToolsCoreTests",
-            dependencies: ["MacToolsCore"]
+            dependencies: [
+                "MacToolsCore",
+                .product(name: "GRDB", package: "GRDB.swift")
+            ]
         )
     ]
 )

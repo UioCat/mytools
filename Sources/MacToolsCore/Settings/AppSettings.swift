@@ -119,8 +119,10 @@ public struct HotKeyBinding: Codable, Equatable, Hashable {
 }
 
 public struct ClipboardSettings: Codable, Equatable {
+    public static let fixedHistoryLimit = 500
+
     public var isRecordingEnabled: Bool
-    public var maxHistoryCount: Int
+    public private(set) var maxHistoryCount: Int
     public var maxCacheMegabytes: Int
     public var cacheStoragePath: String
 
@@ -131,7 +133,7 @@ public struct ClipboardSettings: Codable, Equatable {
         cacheStoragePath: String = ""
     ) {
         self.isRecordingEnabled = isRecordingEnabled
-        self.maxHistoryCount = maxHistoryCount
+        self.maxHistoryCount = Self.fixedHistoryLimit
         self.maxCacheMegabytes = ClipboardCacheLimit.normalizedMegabytes(maxCacheMegabytes)
         self.cacheStoragePath = cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -154,7 +156,7 @@ public struct ClipboardSettings: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             isRecordingEnabled: try container.decodeIfPresent(Bool.self, forKey: .isRecordingEnabled) ?? true,
-            maxHistoryCount: try container.decodeIfPresent(Int.self, forKey: .maxHistoryCount) ?? 500,
+            maxHistoryCount: Self.fixedHistoryLimit,
             maxCacheMegabytes: try container.decodeIfPresent(Int.self, forKey: .maxCacheMegabytes)
                 ?? ClipboardCacheLimit.defaultMegabytes,
             cacheStoragePath: try container.decodeIfPresent(String.self, forKey: .cacheStoragePath) ?? ""
@@ -164,7 +166,7 @@ public struct ClipboardSettings: Codable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(isRecordingEnabled, forKey: .isRecordingEnabled)
-        try container.encode(maxHistoryCount, forKey: .maxHistoryCount)
+        try container.encode(Self.fixedHistoryLimit, forKey: .maxHistoryCount)
         try container.encode(maxCacheMegabytes, forKey: .maxCacheMegabytes)
         try container.encode(cacheStoragePath, forKey: .cacheStoragePath)
     }
@@ -326,6 +328,13 @@ public struct TranslationSettings: Codable, Equatable {
         return isRevealed ? apiKey : String(repeating: "*", count: apiKey.count)
     }
 
+    public func resolvingAPIKey(currentAPIKey: String, wasEdited: Bool) -> Self {
+        guard !wasEdited else { return self }
+        var resolved = self
+        resolved.apiKey = currentAPIKey
+        return resolved
+    }
+
     public var bailianConfiguration: BailianTranslationConfiguration? {
         guard isConfigured, let endpointURL = URL(string: endpointURLString) else {
             return nil
@@ -351,6 +360,13 @@ public struct TranslationSettings: Codable, Equatable {
         self.apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? Self.defaultModel
         self.endpointURLString = try container.decodeIfPresent(String.self, forKey: .endpointURLString) ?? Self.defaultEndpointURLString
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(providerID, forKey: .providerID)
+        try container.encode(model, forKey: .model)
+        try container.encode(endpointURLString, forKey: .endpointURLString)
     }
 }
 
@@ -416,6 +432,128 @@ public enum AppAppearanceMode: String, Codable, CaseIterable, Equatable, Sendabl
     }
 }
 
+public enum ClipboardSyncScope: String, Codable, CaseIterable, Equatable, Sendable {
+    case favoritesAndPinned
+    case allHistory
+
+    public var displayName: String {
+        switch self {
+        case .favoritesAndPinned:
+            return "仅收藏与置顶"
+        case .allHistory:
+            return "全部历史"
+        }
+    }
+}
+
+public struct SyncSettings: Codable, Equatable, Sendable {
+    public var isEnabled: Bool
+    public var clipboardScope: ClipboardSyncScope
+    public var storageLimit: SyncStorageLimit
+
+    public static let defaults = SyncSettings(
+        isEnabled: false,
+        clipboardScope: .favoritesAndPinned,
+        storageLimit: .default
+    )
+
+    public init(
+        isEnabled: Bool,
+        clipboardScope: ClipboardSyncScope,
+        storageLimit: SyncStorageLimit = .default
+    ) {
+        self.isEnabled = isEnabled
+        self.clipboardScope = clipboardScope
+        self.storageLimit = storageLimit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled
+        case clipboardScope
+        case storageLimit
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        self.clipboardScope = try container.decodeIfPresent(
+            ClipboardSyncScope.self,
+            forKey: .clipboardScope
+        ) ?? .favoritesAndPinned
+        self.storageLimit = try container.decodeIfPresent(
+            SyncStorageLimit.self,
+            forKey: .storageLimit
+        ) ?? .default
+    }
+}
+
+public struct SyncStorageUsage: Equatable, Sendable {
+    public var usedBytes: Int64
+    public var capacityBytes: Int64
+    public var ordinaryHistoryCount: Int
+    public var imageBytes: Int64
+    public var textBytes: Int64
+    public var metadataBytes: Int64
+
+    public static let empty = SyncStorageUsage(
+        usedBytes: 0,
+        capacityBytes: SyncStorageLimit.default.byteLimit,
+        ordinaryHistoryCount: 0,
+        imageBytes: 0,
+        textBytes: 0,
+        metadataBytes: 0
+    )
+
+    public init(
+        usedBytes: Int64,
+        capacityBytes: Int64,
+        ordinaryHistoryCount: Int,
+        imageBytes: Int64,
+        textBytes: Int64,
+        metadataBytes: Int64
+    ) {
+        self.usedBytes = usedBytes
+        self.capacityBytes = capacityBytes
+        self.ordinaryHistoryCount = ordinaryHistoryCount
+        self.imageBytes = imageBytes
+        self.textBytes = textBytes
+        self.metadataBytes = metadataBytes
+    }
+}
+
+public enum SyncStatus: Equatable, Sendable {
+    case unconfigured
+    case off
+    case syncing
+    case waitingForDownload
+    case synced(lastSyncAt: Date?, usage: SyncStorageUsage)
+    case capacityFull(usage: SyncStorageUsage)
+    case folderUnavailable
+    case protocolIncompatible
+    case failed
+
+    public var displayName: String {
+        switch self {
+        case .unconfigured: return "未选择同步文件夹"
+        case .off: return "已关闭"
+        case .syncing: return "正在同步"
+        case .synced: return "已同步"
+        case .waitingForDownload: return "等待 iCloud 下载"
+        case .capacityFull: return "同步空间已满"
+        case .folderUnavailable: return "同步文件夹不可用"
+        case .protocolIncompatible: return "同步协议版本不兼容"
+        case .failed: return "同步失败"
+        }
+    }
+
+    public var storageUsage: SyncStorageUsage? {
+        switch self {
+        case let .synced(_, usage), let .capacityFull(usage): return usage
+        default: return nil
+        }
+    }
+}
+
 public struct AppSettings: Codable, Equatable {
     public var mainPanelShortcut: HotKeyBinding
     public var clipboardShortcut: HotKeyBinding
@@ -427,6 +565,7 @@ public struct AppSettings: Codable, Equatable {
     public var windowLayout: WindowLayoutSettings
     public var screenCapture: ScreenCaptureSettings
     public var appearanceMode: AppAppearanceMode
+    public var sync: SyncSettings
 
     public static let defaults = AppSettings(
         mainPanelShortcut: HotKeyBinding(key: "Space", modifiers: ["Option"]),
@@ -445,7 +584,8 @@ public struct AppSettings: Codable, Equatable {
         translation: TranslationSettings(),
         windowLayout: .defaults,
         screenCapture: .defaults,
-        appearanceMode: .followSystem
+        appearanceMode: .followSystem,
+        sync: .defaults
     )
 
     public init(
@@ -458,7 +598,8 @@ public struct AppSettings: Codable, Equatable {
         translation: TranslationSettings,
         windowLayout: WindowLayoutSettings,
         screenCapture: ScreenCaptureSettings = .defaults,
-        appearanceMode: AppAppearanceMode = .followSystem
+        appearanceMode: AppAppearanceMode = .followSystem,
+        sync: SyncSettings = .defaults
     ) {
         self.mainPanelShortcut = mainPanelShortcut
         self.clipboardShortcut = clipboardShortcut
@@ -470,6 +611,7 @@ public struct AppSettings: Codable, Equatable {
         self.windowLayout = windowLayout
         self.screenCapture = screenCapture
         self.appearanceMode = appearanceMode
+        self.sync = sync
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -483,6 +625,7 @@ public struct AppSettings: Codable, Equatable {
         case windowLayout
         case screenCapture
         case appearanceMode
+        case sync
     }
 
     public init(from decoder: Decoder) throws {
@@ -507,6 +650,8 @@ public struct AppSettings: Codable, Equatable {
             ?? Self.defaults.screenCapture
         self.appearanceMode = (try? container.decodeIfPresent(AppAppearanceMode.self, forKey: .appearanceMode))
             ?? Self.defaults.appearanceMode
+        self.sync = try container.decodeIfPresent(SyncSettings.self, forKey: .sync)
+            ?? Self.defaults.sync
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -521,5 +666,6 @@ public struct AppSettings: Codable, Equatable {
         try container.encode(windowLayout, forKey: .windowLayout)
         try container.encode(screenCapture, forKey: .screenCapture)
         try container.encode(appearanceMode, forKey: .appearanceMode)
+        try container.encode(sync, forKey: .sync)
     }
 }

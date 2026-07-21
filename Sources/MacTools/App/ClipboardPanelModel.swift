@@ -9,23 +9,29 @@ final class ClipboardPanelModel: ObservableObject {
     private let repository: ClipboardRepository
     private let pasteActionService: PasteActionService
     private let logger: Logger
-    private let limit: () -> Int
+    private let historyLimit: () -> Int
+    private let pageSize: Int
+    private let onLocalChange: () -> Void
 
     init(
         repository: ClipboardRepository,
         pasteActionService: PasteActionService,
         logger: Logger,
-        limit: @escaping () -> Int
+        historyLimit: @escaping () -> Int,
+        pageSize: Int = 1_000,
+        onLocalChange: @escaping () -> Void = {}
     ) {
         self.repository = repository
         self.pasteActionService = pasteActionService
         self.logger = logger
-        self.limit = limit
+        self.historyLimit = historyLimit
+        self.pageSize = pageSize
+        self.onLocalChange = onLocalChange
     }
 
     func refresh() {
         do {
-            items = try repository.search("", limit: limit())
+            items = try repository.search("", limit: pageSize)
         } catch {
             logger.error("clipboard refresh failed: \(error)")
         }
@@ -46,6 +52,7 @@ final class ClipboardPanelModel: ObservableObject {
             }
 
             try repository.markUsed(id: item.id, at: Date())
+            onLocalChange()
             refresh()
         } catch {
             logger.error("clipboard selection failed: \(error)")
@@ -55,6 +62,7 @@ final class ClipboardPanelModel: ObservableObject {
     func copy(_ item: ClipboardItem) throws {
         try pasteActionService.copy(item)
         try repository.markUsed(id: item.id, at: Date())
+        onLocalChange()
         refresh()
     }
 
@@ -64,7 +72,12 @@ final class ClipboardPanelModel: ObservableObject {
 
     func toggleFavorite(_ item: ClipboardItem) {
         do {
-            try repository.setFavorite(id: item.id, isFavorite: !item.isFavorite)
+            try repository.setFavorite(
+                id: item.id,
+                isFavorite: !item.isFavorite,
+                historyLimit: historyLimit()
+            )
+            onLocalChange()
             refresh()
         } catch {
             logger.error("favorite toggle failed: \(error)")
@@ -74,6 +87,7 @@ final class ClipboardPanelModel: ObservableObject {
     func delete(_ item: ClipboardItem) {
         do {
             try repository.delete(id: item.id)
+            onLocalChange()
             refresh()
         } catch {
             logger.error("clipboard delete failed: \(error)")
@@ -83,6 +97,7 @@ final class ClipboardPanelModel: ObservableObject {
     func clearNonFavorites() {
         do {
             try repository.deleteAllNonFavorites()
+            onLocalChange()
             refresh()
         } catch {
             logger.error("clipboard clear failed: \(error)")

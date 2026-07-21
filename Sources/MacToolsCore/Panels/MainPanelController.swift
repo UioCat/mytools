@@ -63,6 +63,11 @@ public final class MainPanelController {
         panel?.orderOut(nil)
     }
 
+    public func resize(to size: NSSize) {
+        panel?.setContentSize(size)
+        panel?.center()
+    }
+
     static func configureRoundedBackingLayer(_ view: NSView) {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor

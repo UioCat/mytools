@@ -36,7 +36,7 @@
 - Copy text and confirm it appears in clipboard search.
 - Copy a file and confirm filename/path appears.
 - Copy a folder and confirm folder actions show Copy Path and Open in Terminal.
-- Copy image data and confirm it is stored in the app cache.
+- Copy image data and confirm it is stored under `Store/Payloads/objects/` and referenced by the unified database.
 - In clipboard history, click the star button at the right edge of a row and confirm the item appears in Favorites; click again and confirm it is removed from Favorites.
 - Select a clipboard item and press Enter; confirm it copies and attempts paste.
 - Use Cmd+Enter; confirm it copies without sending paste.
@@ -57,7 +57,7 @@
 - Open Settings on a wide window and confirm the two top setting columns stretch across the usable content width; the Window Layout section spans the full width below them with no large unused right-hand area.
 - In Window Layout, confirm every preview has a visible neutral screen frame and blue inset target region. Verify left/right halves, one-third, two-thirds, centered, and maximized layouts are distinguishable before reading their labels; narrow the window and confirm sections stack without clipping controls.
 - Hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row; confirm each shortcut label is horizontally and vertically centered inside its field.
-- Open settings and click the clipboard cache folder button; confirm the picker opens at the currently displayed folder. Navigate to another folder, click `保存`, confirm the displayed path updates, then restore the default folder and switch cache size between `200M`, `500M`, `1024M`, and `2048M`.
+- Open settings and confirm Clipboard shows a fixed unified storage path, `历史上限 500 条`, and `图片对象：按内容去重 · 自动回收`; confirm there is no cache-folder picker or cache-capacity selector.
 - Open settings and switch appearance among `跟随系统`, `浅色模式`, and `深色模式`; confirm every open MacTools panel updates immediately, the choice survives relaunch, and `跟随系统` reacts to the macOS appearance.
 - Long right-click selected text or a Finder item, click a window layout button, and confirm the frontmost app window moves to the selected visible-screen region.
 - Press a configured window layout shortcut while another app is frontmost and confirm its focused window moves to the matching visible-screen region.
@@ -72,6 +72,26 @@
 - Click the translation output text, press Cmd+A then Cmd+C, and confirm the translated text is copied.
 - Long right-click selected text and confirm the context panel appears immediately with a translation loading state, then updates in place with the translated result following the same language direction.
 - Open settings and confirm permission status is visible.
+- Build with `MACOS_FORCE_ADHOC_SIGNING=1 scripts/package_app.sh`; confirm no CloudKit/iCloud Container/APNs entitlement or Provisioning Profile is required and the packaged app can choose a sync folder.
+- On first launch, confirm sync is off and the switch cannot be enabled before a folder is selected. Select an empty iCloud Drive parent folder and confirm MacTools creates exactly one `MacTools Sync` directory; selecting an existing protocol root must not create a nested directory.
+- Enable sync and confirm the status progresses from `正在同步` to `已同步`, showing logical use against the default `512 MB` limit and ordinary history against `500` without blocking local clipboard use.
+- Switch clipboard sync between `仅收藏与置顶` and `全部历史`; confirm the first mode excludes ordinary entries and the second mode synchronizes ordinary text, URL, and original clipboard images. Confirm file, folder, and image-file path entries never arrive on another Mac.
+- Point two Macs at the same directory, concurrently create the same text and image, and change different ordinary configuration fields while offline. Reconnect and confirm one logical clipboard item and one shared content object remain and both Macs converge on field-level configuration values.
+- Confirm both Macs appear under `同步设备`. Remove the offline Mac, verify its exclusive objects become eligible for GC after the stability window, then relaunch that Mac and confirm it rotates to a new device identity without restoring deleted records.
+- Push merged ordinary cloud history to 501 and confirm the least recently captured or used ordinary content is removed from sync snapshots while both Macs retain their independent local history. Confirm favorites and pinned content remain protected.
+- Exercise 256 MiB or a test-overridden small capacity and confirm ordinary objects are evicted oldest first. When protected objects fill the budget, confirm new image uploads pause while text, configuration, and deletion markers continue.
+- Delete a synchronized item while the other Mac is offline, reconnect it, and confirm the tombstone prevents resurrection. After every visible device acknowledges the source revision, confirm a later snapshot compacts the tombstone.
+- Make an object unreferenced and keep one device snapshot unavailable; confirm GC does not delete it. Restore all snapshots, wait or test-override the 24-hour stability window, and confirm only then is the hash-verified object removed.
+- Evict a cloud item, use or favorite its local copy on another device, then reconnect. Confirm the stale eviction is invalidated by the newer retention time or field clock.
+- Disable sync while a transfer is active, then create local clipboard entries and modify settings. Confirm no further directory operations start, local features remain usable, and re-enabling publishes the retained outbox.
+- Mark an iCloud object or snapshot as not downloaded and confirm the status becomes `等待 iCloud 下载`; local data remains usable and `立即同步` retries after download.
+- Corrupt one shared content object while another Mac still has the correct local payload. Confirm that Mac repairs the object atomically; if no device has correct content, confirm the affected record stays pending with `同步失败` while text, configuration, and deletion markers continue.
+- Remove one local image payload file, then create a text entry and change an ordinary setting. Confirm the image remains pending with `同步失败`, while the text and setting still reach the other Mac; restore the image payload and confirm a retry uploads it.
+- Move or remove the selected directory and confirm the status becomes `同步文件夹不可用`; reselecting the folder restores sync without deleting local history.
+- Select a normal local folder and confirm settings show `普通文件夹 · 未确认由 iCloud Drive 管理` instead of claiming cross-device iCloud sync.
+- Save a Bailian API Key and confirm `settings.json`, unified SQLite, sync snapshots, shared objects, and logs do not contain it. On the second Mac, confirm translation requests a separately entered key while clipboard and ordinary configuration sync still work.
+- Lock or delay Keychain access, relaunch the packaged app, and confirm the menu bar and settings panel still appear. The credential status should report unavailable after the timeout; saving a new key must remain asynchronous, preserve user-entered draft text, and remove the legacy plaintext only after Keychain save succeeds.
+- Place the settings panel over contrasting light and dark windows and check `未选择同步文件夹`, off, syncing, synced, waiting-download, capacity-full, folder-unavailable, protocol-incompatible, and failed states. Resize to the narrow layout and confirm controls remain visible, keyboard reachable, and free of clipping or unintended backing layers.
 - Build app bundle with `scripts/package_app.sh`.
 - Launch `build/MacTools.app`.
 - Search for `MacTools.app` in Finder and Spotlight, then confirm both show the custom blue-purple app icon instead of the generic application placeholder, including after rebuilding over an existing bundle.

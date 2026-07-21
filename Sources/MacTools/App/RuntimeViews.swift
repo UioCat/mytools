@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import MacToolsCore
 import SwiftUI
 
@@ -8,6 +9,34 @@ final class MainPanelRouter: ObservableObject {
 
     func open(_ module: MainToolModule) {
         selectedModule = module
+    }
+}
+
+@MainActor
+final class SyncViewModel: ObservableObject {
+    @Published var status: SyncStatus
+    @Published var remoteSettings: AppSettings?
+    @Published var folderPath: String?
+    @Published var folderIsUbiquitous: Bool?
+    @Published var devices: [SyncDeviceSummary]
+
+    init(status: SyncStatus = .unconfigured, folderPath: String? = nil) {
+        self.status = status
+        self.remoteSettings = nil
+        self.folderPath = folderPath
+        self.folderIsUbiquitous = nil
+        self.devices = []
+    }
+}
+
+@MainActor
+final class TranslationCredentialViewModel: ObservableObject {
+    @Published var apiKey: String
+    @Published var isUnavailable: Bool
+
+    init(apiKey: String = "", isUnavailable: Bool = false) {
+        self.apiKey = apiKey
+        self.isUnavailable = isUnavailable
     }
 }
 
@@ -22,30 +51,49 @@ final class PanelDismissHandler {
 struct RuntimeMainWorkspaceView: View {
     @ObservedObject var router: MainPanelRouter
     @ObservedObject var model: ClipboardPanelModel
+    @ObservedObject var syncModel: SyncViewModel
+    @ObservedObject var translationCredentialModel: TranslationCredentialViewModel
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> AppSettings
-    let onSaveTranslationSettings: (TranslationSettings) throws -> AppSettings
+    let onSaveTranslationSettings: (TranslationSettings, Bool) async throws -> AppSettings
     let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> AppSettings
     let onSaveWindowLayoutSettings: (WindowLayoutSettings) throws -> AppSettings
     let onSaveAppearanceMode: (AppAppearanceMode) throws -> AppSettings
+    let onSaveSyncSettings: (SyncSettings) throws -> AppSettings
+    let onSyncNow: () -> Void
+    let onDeleteCloudData: () -> Void
+    let onConfirmCloudAccountSwitch: () -> Void
+    let onSelectSyncFolder: () -> Void
+    let onOpenSyncFolder: () -> Void
+    let onRemoveSyncDevice: (String) -> Void
     let onCopy: (ClipboardItem) -> Void
     let onCopyAndPaste: (ClipboardItem) -> Void
     let onDismiss: () -> Void
     @State private var currentSettings: AppSettings
+    @State private var translationCredentialUnavailable: Bool
     @State private var clipboardSearchFocusToken = 0
 
     init(
         router: MainPanelRouter,
         model: ClipboardPanelModel,
         settings: AppSettings,
+        syncModel: SyncViewModel,
+        translationCredentialModel: TranslationCredentialViewModel,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> AppSettings,
-        onSaveTranslationSettings: @escaping (TranslationSettings) throws -> AppSettings,
+        onSaveTranslationSettings: @escaping (TranslationSettings, Bool) async throws -> AppSettings,
         onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> AppSettings,
         onSaveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> AppSettings,
         onSaveAppearanceMode: @escaping (AppAppearanceMode) throws -> AppSettings,
+        onSaveSyncSettings: @escaping (SyncSettings) throws -> AppSettings,
+        onSyncNow: @escaping () -> Void,
+        onDeleteCloudData: @escaping () -> Void,
+        onConfirmCloudAccountSwitch: @escaping () -> Void,
+        onSelectSyncFolder: @escaping () -> Void,
+        onOpenSyncFolder: @escaping () -> Void,
+        onRemoveSyncDevice: @escaping (String) -> Void,
         onCopy: @escaping (ClipboardItem) -> Void,
         onCopyAndPaste: @escaping (ClipboardItem) -> Void,
         onDismiss: @escaping () -> Void
@@ -53,29 +101,52 @@ struct RuntimeMainWorkspaceView: View {
         self.router = router
         self.model = model
         self.permissionService = permissionService
+        self.syncModel = syncModel
+        self.translationCredentialModel = translationCredentialModel
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
         self.onSaveTranslationSettings = onSaveTranslationSettings
         self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
         self.onSaveWindowLayoutSettings = onSaveWindowLayoutSettings
         self.onSaveAppearanceMode = onSaveAppearanceMode
+        self.onSaveSyncSettings = onSaveSyncSettings
+        self.onSyncNow = onSyncNow
+        self.onDeleteCloudData = onDeleteCloudData
+        self.onConfirmCloudAccountSwitch = onConfirmCloudAccountSwitch
+        self.onSelectSyncFolder = onSelectSyncFolder
+        self.onOpenSyncFolder = onOpenSyncFolder
+        self.onRemoveSyncDevice = onRemoveSyncDevice
         self.onCopy = onCopy
         self.onCopyAndPaste = onCopyAndPaste
         self.onDismiss = onDismiss
         self._currentSettings = State(initialValue: settings)
+        self._translationCredentialUnavailable = State(
+            initialValue: translationCredentialModel.isUnavailable
+        )
     }
 
     var body: some View {
         MainWorkspaceView(selectedModule: $router.selectedModule) {
             RuntimeSettingsView(
                 settings: currentSettings,
+                syncModel: syncModel,
+                translationCredentialUnavailable: translationCredentialUnavailable,
                 permissionService: permissionService,
                 defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
                 onSaveClipboardSettings: { clipboardSettings in
                     currentSettings = try onSaveClipboardSettings(clipboardSettings)
                 },
-                onSaveTranslationSettings: { translationSettings in
-                    currentSettings = try onSaveTranslationSettings(translationSettings)
+                onSaveTranslationSettings: { translationSettings, apiKeyWasEdited in
+                    do {
+                        currentSettings = try await onSaveTranslationSettings(
+                            translationSettings,
+                            apiKeyWasEdited
+                        )
+                        translationCredentialUnavailable = false
+                    } catch {
+                        translationCredentialUnavailable = true
+                        throw error
+                    }
                 },
                 onSaveSuperRightClickSettings: { superRightClickSettings in
                     currentSettings = try onSaveSuperRightClickSettings(superRightClickSettings)
@@ -86,6 +157,15 @@ struct RuntimeMainWorkspaceView: View {
                 onSaveAppearanceMode: { appearanceMode in
                     currentSettings = try onSaveAppearanceMode(appearanceMode)
                 },
+                onSaveSyncSettings: { syncSettings in
+                    currentSettings = try onSaveSyncSettings(syncSettings)
+                },
+                onSyncNow: onSyncNow,
+                onDeleteCloudData: onDeleteCloudData,
+                onConfirmCloudAccountSwitch: onConfirmCloudAccountSwitch,
+                onSelectSyncFolder: onSelectSyncFolder,
+                onOpenSyncFolder: onOpenSyncFolder,
+                onRemoveSyncDevice: onRemoveSyncDevice,
                 presentation: .embedded
             )
         } clipboard: {
@@ -105,11 +185,21 @@ struct RuntimeMainWorkspaceView: View {
                 advanceClipboardSearchFocus()
             }
         }
-        .onChange(of: router.selectedModule) { module in
+        .onChange(of: router.selectedModule) { _, module in
             if module == .clipboard {
                 model.prepareForPresentation()
                 advanceClipboardSearchFocus()
             }
+        }
+        .onReceive(syncModel.$remoteSettings.compactMap { $0 }) { settings in
+            currentSettings = settings
+        }
+        .onReceive(translationCredentialModel.$apiKey) { apiKey in
+            guard currentSettings.translation.apiKey != apiKey else { return }
+            currentSettings.translation.apiKey = apiKey
+        }
+        .onReceive(translationCredentialModel.$isUnavailable) { isUnavailable in
+            translationCredentialUnavailable = isUnavailable
         }
     }
 
@@ -161,35 +251,62 @@ struct RuntimeClipboardModuleView: View {
 
 struct RuntimeSettingsView: View {
     let settings: AppSettings
+    @ObservedObject var syncModel: SyncViewModel
+    let translationCredentialUnavailable: Bool
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> Void
-    let onSaveTranslationSettings: (TranslationSettings) throws -> Void
+    let onSaveTranslationSettings: (TranslationSettings, Bool) async throws -> Void
     let onSaveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
     let onSaveWindowLayoutSettings: (WindowLayoutSettings) throws -> Void
     let onSaveAppearanceMode: (AppAppearanceMode) throws -> Void
+    let onSaveSyncSettings: (SyncSettings) throws -> Void
+    let onSyncNow: () -> Void
+    let onDeleteCloudData: () -> Void
+    let onConfirmCloudAccountSwitch: () -> Void
+    let onSelectSyncFolder: () -> Void
+    let onOpenSyncFolder: () -> Void
+    let onRemoveSyncDevice: (String) -> Void
     let presentation: ToolModulePresentation
     @State private var permissionSummary: PermissionSummary
 
     init(
         settings: AppSettings,
+        syncModel: SyncViewModel,
+        translationCredentialUnavailable: Bool,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> Void,
-        onSaveTranslationSettings: @escaping (TranslationSettings) throws -> Void,
+        onSaveTranslationSettings: @escaping (TranslationSettings, Bool) async throws -> Void,
         onSaveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void,
         onSaveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> Void,
         onSaveAppearanceMode: @escaping (AppAppearanceMode) throws -> Void,
+        onSaveSyncSettings: @escaping (SyncSettings) throws -> Void,
+        onSyncNow: @escaping () -> Void,
+        onDeleteCloudData: @escaping () -> Void,
+        onConfirmCloudAccountSwitch: @escaping () -> Void,
+        onSelectSyncFolder: @escaping () -> Void,
+        onOpenSyncFolder: @escaping () -> Void,
+        onRemoveSyncDevice: @escaping (String) -> Void,
         presentation: ToolModulePresentation = .window
     ) {
         self.settings = settings
         self.permissionService = permissionService
+        self.syncModel = syncModel
+        self.translationCredentialUnavailable = translationCredentialUnavailable
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
         self.onSaveTranslationSettings = onSaveTranslationSettings
         self.onSaveSuperRightClickSettings = onSaveSuperRightClickSettings
         self.onSaveWindowLayoutSettings = onSaveWindowLayoutSettings
         self.onSaveAppearanceMode = onSaveAppearanceMode
+        self.onSaveSyncSettings = onSaveSyncSettings
+        self.onSyncNow = onSyncNow
+        self.onDeleteCloudData = onDeleteCloudData
+        self.onConfirmCloudAccountSwitch = onConfirmCloudAccountSwitch
+        self.onSelectSyncFolder = onSelectSyncFolder
+        self.onOpenSyncFolder = onOpenSyncFolder
+        self.onRemoveSyncDevice = onRemoveSyncDevice
         self.presentation = presentation
         self._permissionSummary = State(initialValue: permissionService.summary())
     }
@@ -197,6 +314,11 @@ struct RuntimeSettingsView: View {
     var body: some View {
         SettingsView(
             settings: settings,
+            syncStatus: syncModel.status,
+            syncFolderPath: syncModel.folderPath,
+            syncFolderIsUbiquitous: syncModel.folderIsUbiquitous,
+            syncDevices: syncModel.devices,
+            translationCredentialUnavailable: translationCredentialUnavailable,
             permissionSummary: permissionSummary,
             openSystemSettings: permissionService.openSystemSettings,
             openPermissionSettings: permissionService.openSystemSettings(for:),
@@ -205,6 +327,13 @@ struct RuntimeSettingsView: View {
             saveSuperRightClickSettings: onSaveSuperRightClickSettings,
             saveWindowLayoutSettings: onSaveWindowLayoutSettings,
             saveAppearanceMode: onSaveAppearanceMode,
+            saveSyncSettings: onSaveSyncSettings,
+            syncNow: onSyncNow,
+            deleteCloudData: onDeleteCloudData,
+            confirmCloudAccountSwitch: onConfirmCloudAccountSwitch,
+            selectSyncFolder: onSelectSyncFolder,
+            openSyncFolder: onOpenSyncFolder,
+            removeSyncDevice: onRemoveSyncDevice,
             defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
             presentation: presentation
         )

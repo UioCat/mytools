@@ -66,9 +66,15 @@ flowchart LR
 ├── replicas/
 │   └── <deviceID>/
 │       ├── manifest.json
-│       ├── clipboard.json
-│       ├── preferences.json
-│       └── tombstones.json
+│       └── revisions/
+│           ├── <上一已提交revision>/
+│           │   ├── clipboard.json
+│           │   ├── preferences.json
+│           │   └── tombstones.json
+│           └── <当前已提交revision>/
+│               ├── clipboard.json
+│               ├── preferences.json
+│               └── tombstones.json
 ├── evictions/
 │   └── <deviceID>.json
 ├── resets/
@@ -86,10 +92,10 @@ flowchart LR
 | `protocol.json` | 协议版本、store ID、创建时间和容量口径 | 初始化设备；已存在时只校验 |
 | `objects/text/` | 规范化文字或 URL 内容，一种内容只保存一次 | 任意设备，按哈希校验后复用 |
 | `objects/images/` | 标准化 PNG 原图，一种内容只保存一次 | 任意设备，按哈希校验后复用 |
-| `manifest.json` | 设备 ID、代次、单调 revision、已读取的各设备 revision、更新时间和快照摘要 | 目录所属设备 |
-| `clipboard.json` | 当前同步剪贴板引用、字段时钟和设备活动时间 | 目录所属设备 |
-| `preferences.json` | 当前账号级配置领域与字段时钟 | 目录所属设备 |
-| `tombstones.json` | 用户主动删除和重复 Record 收敛标记 | 目录所属设备 |
+| `manifest.json` | 设备 ID、代次、单调 revision、当前 revision 目录、已读取的各设备 revision、更新时间和快照摘要 | 目录所属设备 |
+| `revisions/*/clipboard.json` | 对应 revision 的同步剪贴板引用、字段时钟和设备活动时间 | 目录所属设备 |
+| `revisions/*/preferences.json` | 对应 revision 的账号级配置领域与字段时钟 | 目录所属设备 |
+| `revisions/*/tombstones.json` | 对应 revision 的用户主动删除和重复 Record 收敛标记 | 目录所属设备 |
 | `evictions/` | 容量或全局条数淘汰的观察值 | 文件名对应设备 |
 | `resets/` | 同步数据代次提升标记 | 文件名对应设备 |
 | `removed-devices/` | 用户移除旧设备后的持久标记；第二级文件名保证每个执行设备只写自己的文件 | 执行移除的设备 |
@@ -121,9 +127,10 @@ SHA-256 只用于内容标识、去重和完整性校验，不是加密。数据
 
 - 同一设备的同步任务串行执行，同一时间最多一个快照写事务。
 - 一台设备禁止改写另一台设备的 `replicas/<deviceID>/`。
-- 快照先写入本地 staging，完成编码、长度和 SHA-256 校验后，通过 `NSFileCoordinator` 原子替换目标文件；iCloud 目录不保存长期临时文件。
-- `manifest.json` 最后写入；只有 manifest revision 和快照摘要匹配的一组文件才可应用。
+- 快照先写入新的 revision staging 目录，三个文件全部编码、落盘并读回校验后，再把完整目录原子移入 `revisions/`。
+- `manifest.json` 最后原子写入并切换当前 revision；中断时继续读取上一 revision，未提交目录在下一次成功写入后清理。稳态只保留当前和上一已提交 revision。
 - iCloud 冲突副本只有在内容校验一致时自动删除；内容不一致时保留并显示同步失败，不静默选边。
+- 单个设备副本损坏或尚未下载时隔离该副本，健康设备仍继续合并和提交；在所有可见副本恢复可验证前暂停共享对象 GC。
 
 ### 版本与应用顺序
 
@@ -153,7 +160,7 @@ SHA-256 只用于内容标识、去重和完整性校验，不是加密。数据
 | GC 稳定期 | 24 小时 | 避免引用快照尚未下载完成时提前删除对象 |
 | 本地 staging 保留期 | 24 小时 | 超时且不在活动事务中的本地临时文件可删除，不占用 iCloud 空间 |
 
-512 MiB 是 `MacTools Sync/` 稳态普通文件逻辑大小预算，包含唯一内容对象、快照、墓碑和协议文件。容量决策按实际非对象文件大小为元数据保留空间，再把剩余预算分配给 `objects/`；不会用固定估算掩盖墓碑或快照增长。原子替换可能产生短暂双份文件，但单个图片限制和串行写入保证同一时间最多增加一个待提交对象。设置页不得把该数字描述为用户完整 iCloud 剩余容量。
+512 MiB 是 `MacTools Sync/` 稳态普通文件逻辑大小预算，包含唯一内容对象、快照、墓碑和协议文件。容量决策计入实际元数据、下一 revision 的预计元数据，以及仍处于 24 小时 GC 稳定期的无引用对象；这些对象被物理删除前会占用预算并阻止新增图片上传。revision 提交会短暂存在 staging，新提交后只保留当前和上一 revision。设置页不得把该数字描述为用户完整 iCloud 剩余容量。
 
 ### 淘汰优先级
 
@@ -265,6 +272,9 @@ contentHash ASC
 | stale eviction 遇到更新活动 | 淘汰标记失效，较新内容保留 |
 | manifest 与快照摘要不一致 | 不部分应用，上一 revision 保持有效 |
 | 图片未下载、损坏或哈希不符 | 不写入本地 Payload，后续可重试修复 |
+| 共享对象损坏但本机有正确内容 | 按相同 SHA-256 原子修复；不同内容的 iCloud 冲突版本不自动选边 |
+| 本地图片 Payload 缺失或不可读 | 隔离该记录且不确认其 outbox；文字、配置和删除继续同步 |
+| 本机 Keychain 查询延迟或不可用 | 不阻塞应用启动；设置页显示凭据不可用，凭据写入串行异步执行且不进入同步目录 |
 | 写入成功但读回校验失败 | outbox 不确认，下一轮重试 |
 | 同步目录丢失或 bookmark 失效 | 本地功能正常，状态进入文件夹不可用 |
 | reset 与离线旧快照 | 旧代数据不能复活 |

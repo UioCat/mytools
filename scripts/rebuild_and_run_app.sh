@@ -20,11 +20,37 @@ wait_for_app_process() {
   return 1
 }
 
+request_graceful_quit() {
+  osascript >/dev/null 2>&1 <<OSA &
+tell application id "$BUNDLE_ID" to quit
+OSA
+  local osascript_pid=$!
+
+  for _ in {1..20}; do
+    if ! kill -0 "$osascript_pid" >/dev/null 2>&1; then
+      wait "$osascript_pid" 2>/dev/null || true
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  kill "$osascript_pid" >/dev/null 2>&1 || true
+  wait "$osascript_pid" 2>/dev/null || true
+}
+
 launch_with_open() {
   local launch_output
   launch_output="$(mktemp -t mactools-open.XXXXXX)"
+  local -a open_arguments=("$APP_DIR")
 
-  if open "$APP_DIR" >"$launch_output" 2>&1 && wait_for_app_process; then
+  if [[ "${MACTOOLS_UI_VERIFICATION_OPEN_SETTINGS:-0}" == "1" ]]; then
+    open_arguments=("$APP_DIR" --args --ui-verification-open-settings)
+    if [[ "${MACTOOLS_UI_VERIFICATION_DARK:-0}" == "1" ]]; then
+      open_arguments+=(--ui-verification-dark)
+    fi
+  fi
+
+  if open "${open_arguments[@]}" >"$launch_output" 2>&1 && wait_for_app_process; then
     rm -f "$launch_output"
     return 0
   fi
@@ -71,9 +97,7 @@ fi
 
 echo "==> Stopping any running $APP_NAME"
 if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
-  osascript >/dev/null 2>&1 <<OSA || true
-tell application id "$BUNDLE_ID" to quit
-OSA
+  request_graceful_quit
 
   for _ in {1..20}; do
     if ! pgrep -x "$APP_NAME" >/dev/null 2>&1; then

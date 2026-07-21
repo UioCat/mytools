@@ -26,6 +26,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.screenCapture.annotationLineWidth, .medium)
         XCTAssertEqual(settings.screenCapture.annotationTool, .line)
         XCTAssertEqual(settings.appearanceMode, .followSystem)
+        XCTAssertFalse(settings.sync.isEnabled)
+        XCTAssertEqual(settings.sync.clipboardScope, .favoritesAndPinned)
         XCTAssertTrue(settings.windowLayout.isEnabled)
         XCTAssertEqual(settings.windowLayout.enabledModes, WindowLayoutMode.allCases)
         XCTAssertEqual(settings.windowLayout.modeShortcuts.map(\.mode), WindowLayoutMode.allCases)
@@ -73,7 +75,6 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore(fileURL: url)
         var settings = AppSettings.defaults
         settings.appearanceMode = .dark
-        settings.clipboard.maxHistoryCount = 250
         settings.clipboard.maxCacheMegabytes = 2048
         settings.clipboard.cacheStoragePath = "/tmp/MacToolsClipboardCache"
         settings.translation.apiKey = "sk-test-key"
@@ -95,13 +96,17 @@ final class SettingsStoreTests: XCTestCase {
         try store.save(settings)
         let loaded = try store.load()
 
+        var expected = settings
+        expected.translation.apiKey = ""
+
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
-        XCTAssertEqual(loaded, settings)
+        XCTAssertEqual(loaded, expected)
         XCTAssertEqual(loaded.appearanceMode, .dark)
         XCTAssertEqual(loaded.mainPanelShortcut.displayValue, "Option+Space")
+        XCTAssertEqual(loaded.clipboard.maxHistoryCount, ClipboardSettings.fixedHistoryLimit)
         XCTAssertEqual(loaded.clipboard.maxCacheMegabytes, 2048)
         XCTAssertEqual(loaded.clipboard.cacheStoragePath, "/tmp/MacToolsClipboardCache")
-        XCTAssertEqual(loaded.translation.apiKey, "sk-test-key")
+        XCTAssertEqual(loaded.translation.apiKey, "")
         XCTAssertEqual(loaded.screenCapture, settings.screenCapture)
         XCTAssertEqual(loaded.windowLayout.shortcuts(for: .leftHalf).map(\.displayValue), [
             "Option+Command+Left",
@@ -433,6 +438,10 @@ final class SettingsStoreTests: XCTestCase {
 
         try store.save(settings)
 
+        let storedJSON = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(storedJSON.contains("sk-test-key"))
+        XCTAssertFalse(storedJSON.contains("apiKey"))
+
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
         XCTAssertEqual(permissions.intValue & 0o777, 0o600)
@@ -442,5 +451,64 @@ final class SettingsStoreTests: XCTestCase {
         )
         let directoryPermissions = try XCTUnwrap(directoryAttributes[.posixPermissions] as? NSNumber)
         XCTAssertEqual(directoryPermissions.intValue & 0o777, 0o700)
+    }
+
+    func testPreferenceRepositoryStoresOrdinarySettingsWithoutAPIKey() throws {
+        let database = try MacToolsDatabase.inMemory()
+        let repository = PreferenceRepository(database: database)
+        var settings = AppSettings.defaults
+        settings.appearanceMode = .dark
+        settings.translation.apiKey = "sk-must-not-enter-sqlite"
+
+        try repository.save(settings, at: Date(timeIntervalSince1970: 100))
+        let loaded = try XCTUnwrap(repository.load())
+        let rawData = try XCTUnwrap(repository.rawData())
+        let rawString = try XCTUnwrap(String(data: rawData, encoding: .utf8))
+
+        XCTAssertEqual(loaded.appearanceMode, .dark)
+        XCTAssertEqual(loaded.translation.apiKey, "")
+        XCTAssertFalse(rawString.contains("sk-must-not-enter-sqlite"))
+        XCTAssertFalse(rawString.contains("apiKey"))
+    }
+
+    func testSavingOtherTranslationFieldsPreservesUneditedCredential() {
+        var draft = TranslationSettings(apiKey: "", model: "new-model")
+
+        let preserved = draft.resolvingAPIKey(
+            currentAPIKey: "existing-keychain-value",
+            wasEdited: false
+        )
+        XCTAssertEqual(preserved.apiKey, "existing-keychain-value")
+        XCTAssertEqual(preserved.model, "new-model")
+
+        draft.apiKey = ""
+        let explicitDeletion = draft.resolvingAPIKey(
+            currentAPIKey: "existing-keychain-value",
+            wasEdited: true
+        )
+        XCTAssertEqual(explicitDeletion.apiKey, "")
+    }
+
+    func testSyncFolderStateAndDeviceIdentifierAreDeviceOverrides() throws {
+        let database = try MacToolsDatabase.inMemory()
+        let repository = DeviceOverrideRepository(database: database)
+
+        XCTAssertFalse(try repository.isSyncEnabled())
+        try repository.setSyncEnabled(true)
+        try repository.setSyncFolder(
+            bookmark: Data("bookmark".utf8),
+            displayPath: "/example/MacTools Sync"
+        )
+        try repository.setReplicaRevision(7)
+        try repository.setSeenRevisions(["device-b": 5])
+        let firstDeviceID = try repository.deviceID()
+        let secondDeviceID = try repository.deviceID()
+
+        XCTAssertTrue(try repository.isSyncEnabled())
+        XCTAssertEqual(firstDeviceID, secondDeviceID)
+        XCTAssertEqual(try repository.syncFolderBookmark(), Data("bookmark".utf8))
+        XCTAssertEqual(try repository.syncFolderDisplayPath(), "/example/MacTools Sync")
+        XCTAssertEqual(try repository.replicaRevision(), 7)
+        XCTAssertEqual(try repository.seenRevisions(), ["device-b": 5])
     }
 }

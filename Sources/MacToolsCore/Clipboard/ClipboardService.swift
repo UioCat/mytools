@@ -3,8 +3,7 @@ import Foundation
 public final class ClipboardService {
     private let pasteboard: PasteboardClient
     private let classifier: ClipboardClassifier
-    private let upsert: (ClipboardItem) throws -> Void
-    private let cacheImageData: (Data, AppSettings) throws -> String?
+    private let persist: (ClipboardItem, Data?, AppSettings) throws -> Void
     private var settings: AppSettings
     private var lastChangeCount: Int
 
@@ -12,15 +11,18 @@ public final class ClipboardService {
         pasteboard: PasteboardClient,
         classifier: ClipboardClassifier,
         repository: ClipboardRepository,
-        settings: AppSettings,
-        fileCache: FileCache? = nil
+        settings: AppSettings
     ) {
         self.init(
             pasteboard: pasteboard,
             classifier: classifier,
-            repository: repository,
             settings: settings,
-            fileCacheProvider: { _ in fileCache }
+            persist: { item, _, currentSettings in
+                try repository.upsert(
+                    item,
+                    historyLimit: currentSettings.clipboard.maxHistoryCount
+                )
+            }
         )
     }
 
@@ -29,21 +31,46 @@ public final class ClipboardService {
         classifier: ClipboardClassifier,
         repository: ClipboardRepository,
         settings: AppSettings,
-        fileCacheProvider: @escaping (AppSettings) -> FileCache?
+        payloadStore: PayloadStore
     ) {
         self.init(
             pasteboard: pasteboard,
             classifier: classifier,
             settings: settings,
-            upsert: { item in
-                try repository.upsert(item)
-            },
-            cacheImageData: { data, settings in
-                try fileCacheProvider(settings)?.store(
-                    data: data,
-                    preferredExtension: "png",
-                    maxBytes: ClipboardCacheLimit.bytes(forMegabytes: settings.clipboard.maxCacheMegabytes)
-                ).fileURL.path
+            persist: { item, imageData, currentSettings in
+                if let imageData {
+                    try repository.upsertPNG(
+                        item,
+                        data: imageData,
+                        historyLimit: currentSettings.clipboard.maxHistoryCount
+                    )
+                } else {
+                    try repository.upsert(
+                        item,
+                        historyLimit: currentSettings.clipboard.maxHistoryCount
+                    )
+                }
+            }
+        )
+    }
+
+    convenience init(
+        pasteboard: PasteboardClient,
+        classifier: ClipboardClassifier,
+        settings: AppSettings,
+        upsert: @escaping (ClipboardItem) throws -> Void,
+        cacheImageData: @escaping (Data, AppSettings) throws -> String? = { _, _ in nil }
+    ) {
+        self.init(
+            pasteboard: pasteboard,
+            classifier: classifier,
+            settings: settings,
+            persist: { item, imageData, settings in
+                var persistedItem = item
+                if let imageData {
+                    persistedItem.cachedFilePath = try cacheImageData(imageData, settings)
+                }
+                try upsert(persistedItem)
             }
         )
     }
@@ -52,45 +79,42 @@ public final class ClipboardService {
         pasteboard: PasteboardClient,
         classifier: ClipboardClassifier,
         settings: AppSettings,
-        upsert: @escaping (ClipboardItem) throws -> Void,
-        cacheImageData: @escaping (Data, AppSettings) throws -> String? = { _, _ in nil }
+        persist: @escaping (ClipboardItem, Data?, AppSettings) throws -> Void
     ) {
         self.pasteboard = pasteboard
         self.classifier = classifier
         self.settings = settings
         self.lastChangeCount = pasteboard.changeCount
-        self.upsert = upsert
-        self.cacheImageData = cacheImageData
+        self.persist = persist
     }
 
     public func updateSettings(_ settings: AppSettings) {
         self.settings = settings
     }
 
-    public func pollOnce(sourceApp: String?) throws {
+    @discardableResult
+    public func pollOnce(sourceApp: String?) throws -> Bool {
         let currentChangeCount = pasteboard.changeCount
 
         guard settings.clipboard.isRecordingEnabled else {
             lastChangeCount = currentChangeCount
-            return
+            return false
         }
 
         guard currentChangeCount != lastChangeCount else {
-            return
+            return false
         }
 
         let payload = pasteboard.readPayload()
-        var item = classifier.classify(payload: payload, sourceApp: sourceApp)
+        let item = classifier.classify(payload: payload, sourceApp: sourceApp)
         guard item.kind != .unknown else {
             lastChangeCount = currentChangeCount
-            return
+            return false
         }
 
-        if item.kind == .imageData, let imageData = payload.imageData {
-            item.cachedFilePath = try cacheImageData(imageData, settings)
-        }
-
-        try upsert(item)
+        let imageData = item.kind == .imageData ? payload.imageData : nil
+        try persist(item, imageData, settings)
         lastChangeCount = currentChangeCount
+        return true
     }
 }

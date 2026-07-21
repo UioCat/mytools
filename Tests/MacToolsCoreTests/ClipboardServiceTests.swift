@@ -49,10 +49,15 @@ final class ClipboardServiceTests: XCTestCase {
     }
 
     func testCachesImageDataBeforeRecording() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardServicePayloadTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let database = try ClipboardDatabase.inMemory()
-        let repository = ClipboardRepository(database: database)
-        let imageData = Data([1, 2, 3])
-        let cachedPath = "/tmp/cached-image.png"
+        let payloadStore = PayloadStore(rootDirectory: root)
+        let repository = ClipboardRepository(database: database, payloadStore: payloadStore)
+        let imageData = try XCTUnwrap(
+            Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        )
         let pasteboard = FakePasteboardClient(
             payload: ClipboardPayload(imageData: imageData),
             changeCount: 0
@@ -60,14 +65,9 @@ final class ClipboardServiceTests: XCTestCase {
         let service = ClipboardService(
             pasteboard: pasteboard,
             classifier: ClipboardClassifier(),
+            repository: repository,
             settings: .defaults,
-            upsert: { item in
-                try repository.upsert(item)
-            },
-            cacheImageData: { data, _ in
-                XCTAssertEqual(data, imageData)
-                return cachedPath
-            }
+            payloadStore: payloadStore
         )
 
         pasteboard.changeCount = 1
@@ -76,7 +76,9 @@ final class ClipboardServiceTests: XCTestCase {
         let results = try repository.search("image", limit: 10)
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results[0].kind, .imageData)
-        XCTAssertEqual(results[0].cachedFilePath, cachedPath)
+        let cachedPath = try XCTUnwrap(results[0].cachedFilePath)
+        XCTAssertTrue(cachedPath.contains("/objects/sha256/"))
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: cachedPath)), imageData)
     }
 
     func testImageCacheReceivesUpdatedSettingsWhenPolling() throws {

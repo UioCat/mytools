@@ -3,23 +3,33 @@ import SwiftUI
 
 public struct SettingsView: View {
     public let settings: AppSettings
+    public let syncStatus: SyncStatus
+    public let syncFolderPath: String?
+    public let syncFolderIsUbiquitous: Bool?
+    public let syncDevices: [SyncDeviceSummary]
+    public let translationCredentialUnavailable: Bool
     public let permissionSummary: PermissionSummary
     public let openSystemSettings: () -> Void
     public let openPermissionSettings: (AppPermission) -> Void
     public let saveClipboardSettings: (ClipboardSettings) throws -> Void
-    public let saveTranslationSettings: (TranslationSettings) throws -> Void
+    public let saveTranslationSettings: (TranslationSettings, Bool) async throws -> Void
     public let saveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
     public let saveWindowLayoutSettings: (WindowLayoutSettings) throws -> Void
     public let saveAppearanceMode: (AppAppearanceMode) throws -> Void
+    public let saveSyncSettings: (SyncSettings) throws -> Void
+    public let syncNow: () -> Void
+    public let deleteCloudData: () -> Void
+    public let confirmCloudAccountSwitch: () -> Void
+    public let selectSyncFolder: () -> Void
+    public let openSyncFolder: () -> Void
+    public let removeSyncDevice: (String) -> Void
     private let defaultClipboardCacheDirectory: URL
     private let presentation: ToolModulePresentation
-    @State private var clipboardCacheStoragePath: String
-    @State private var clipboardMaxCacheMegabytes: Int
-    @State private var clipboardSaveMessage: String?
     @State private var translationAPIKey: String
     @State private var translationModel: String
     @State private var translationEndpointURLString: String
     @State private var isTranslationAPIKeyRevealed: Bool
+    @State private var translationAPIKeyIsDirty: Bool
     @State private var translationSaveMessage: String?
     @State private var superRightClickLongPressMilliseconds: Double
     @State private var superRightClickSaveMessage: String?
@@ -29,21 +39,42 @@ public struct SettingsView: View {
     @State private var windowLayoutSaveMessage: String?
     @State private var appearanceMode: AppAppearanceMode
     @State private var appearanceSaveMessage: String?
+    @State private var syncIsEnabled: Bool
+    @State private var clipboardSyncScope: ClipboardSyncScope
+    @State private var syncStorageLimit: SyncStorageLimit
+    @State private var syncSaveMessage: String?
 
     public init(
         settings: AppSettings,
+        syncStatus: SyncStatus = .off,
+        syncFolderPath: String? = nil,
+        syncFolderIsUbiquitous: Bool? = nil,
+        syncDevices: [SyncDeviceSummary] = [],
+        translationCredentialUnavailable: Bool = false,
         permissionSummary: PermissionSummary,
         openSystemSettings: @escaping () -> Void,
         openPermissionSettings: @escaping (AppPermission) -> Void = { _ in },
         saveClipboardSettings: @escaping (ClipboardSettings) throws -> Void = { _ in },
-        saveTranslationSettings: @escaping (TranslationSettings) throws -> Void = { _ in },
+        saveTranslationSettings: @escaping (TranslationSettings, Bool) async throws -> Void = { _, _ in },
         saveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void = { _ in },
         saveWindowLayoutSettings: @escaping (WindowLayoutSettings) throws -> Void = { _ in },
         saveAppearanceMode: @escaping (AppAppearanceMode) throws -> Void = { _ in },
+        saveSyncSettings: @escaping (SyncSettings) throws -> Void = { _ in },
+        syncNow: @escaping () -> Void = {},
+        deleteCloudData: @escaping () -> Void = {},
+        confirmCloudAccountSwitch: @escaping () -> Void = {},
+        selectSyncFolder: @escaping () -> Void = {},
+        openSyncFolder: @escaping () -> Void = {},
+        removeSyncDevice: @escaping (String) -> Void = { _ in },
         defaultClipboardCacheDirectory: URL = ClipboardCacheStorageDisplay.defaultDirectory,
         presentation: ToolModulePresentation = .window
     ) {
         self.settings = settings
+        self.syncStatus = syncStatus
+        self.syncFolderPath = syncFolderPath
+        self.syncFolderIsUbiquitous = syncFolderIsUbiquitous
+        self.syncDevices = syncDevices
+        self.translationCredentialUnavailable = translationCredentialUnavailable
         self.permissionSummary = permissionSummary
         self.openSystemSettings = openSystemSettings
         self.openPermissionSettings = openPermissionSettings
@@ -52,15 +83,20 @@ public struct SettingsView: View {
         self.saveSuperRightClickSettings = saveSuperRightClickSettings
         self.saveWindowLayoutSettings = saveWindowLayoutSettings
         self.saveAppearanceMode = saveAppearanceMode
+        self.saveSyncSettings = saveSyncSettings
+        self.syncNow = syncNow
+        self.deleteCloudData = deleteCloudData
+        self.confirmCloudAccountSwitch = confirmCloudAccountSwitch
+        self.selectSyncFolder = selectSyncFolder
+        self.openSyncFolder = openSyncFolder
+        self.removeSyncDevice = removeSyncDevice
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.presentation = presentation
-        self._clipboardCacheStoragePath = State(initialValue: settings.clipboard.cacheStoragePath)
-        self._clipboardMaxCacheMegabytes = State(initialValue: settings.clipboard.maxCacheMegabytes)
-        self._clipboardSaveMessage = State(initialValue: nil)
         self._translationAPIKey = State(initialValue: settings.translation.apiKey)
         self._translationModel = State(initialValue: settings.translation.model)
         self._translationEndpointURLString = State(initialValue: settings.translation.endpointURLString)
         self._isTranslationAPIKeyRevealed = State(initialValue: settings.translation.apiKey.isEmpty)
+        self._translationAPIKeyIsDirty = State(initialValue: false)
         self._translationSaveMessage = State(initialValue: nil)
         self._superRightClickLongPressMilliseconds = State(
             initialValue: Double(settings.superRightClick.longPressMilliseconds)
@@ -72,15 +108,26 @@ public struct SettingsView: View {
         self._windowLayoutSaveMessage = State(initialValue: nil)
         self._appearanceMode = State(initialValue: settings.appearanceMode)
         self._appearanceSaveMessage = State(initialValue: nil)
+        self._syncIsEnabled = State(initialValue: settings.sync.isEnabled)
+        self._clipboardSyncScope = State(initialValue: settings.sync.clipboardScope)
+        self._syncStorageLimit = State(initialValue: settings.sync.storageLimit)
+        self._syncSaveMessage = State(initialValue: nil)
     }
 
     @ViewBuilder
     public var body: some View {
-        if presentation == .window {
-            content
-                .liquidGlassWindowPanel(frame: .settings)
-        } else {
-            content
+        Group {
+            if presentation == .window {
+                content
+                    .liquidGlassWindowPanel(frame: .settings)
+            } else {
+                content
+            }
+        }
+        .onChange(of: settings.translation.apiKey) { _, apiKey in
+            guard !translationAPIKeyIsDirty else { return }
+            translationAPIKey = apiKey
+            isTranslationAPIKeyRevealed = apiKey.isEmpty
         }
     }
 
@@ -151,6 +198,7 @@ public struct SettingsView: View {
     private var secondarySettingsColumn: some View {
         VStack(alignment: .leading, spacing: 14) {
             translationSection
+            syncSection
             permissionsSection
             systemSection
         }
@@ -169,11 +217,7 @@ public struct SettingsView: View {
         SettingsSection(title: "剪贴板", iconName: "doc.on.clipboard") {
             ClipboardSettingsEditor(
                 currentSettings: settings.clipboard,
-                cacheStoragePath: $clipboardCacheStoragePath,
-                maxCacheMegabytes: $clipboardMaxCacheMegabytes,
-                saveMessage: $clipboardSaveMessage,
-                defaultCacheDirectory: defaultClipboardCacheDirectory,
-                saveClipboardSettings: saveClipboardSettings
+                defaultCacheDirectory: defaultClipboardCacheDirectory
             )
         }
     }
@@ -182,12 +226,44 @@ public struct SettingsView: View {
         SettingsSection(title: "翻译", iconName: "character.book.closed") {
             TranslationSettingsEditor(
                 currentSettings: settings.translation,
-                apiKey: $translationAPIKey,
+                credentialUnavailable: translationCredentialUnavailable,
+                apiKey: Binding(
+                    get: { translationAPIKey },
+                    set: { value in
+                        translationAPIKey = value
+                        translationAPIKeyIsDirty = true
+                    }
+                ),
                 model: $translationModel,
                 endpointURLString: $translationEndpointURLString,
                 isAPIKeyRevealed: $isTranslationAPIKeyRevealed,
                 saveMessage: $translationSaveMessage,
-                saveTranslationSettings: saveTranslationSettings
+                saveTranslationSettings: { settings in
+                    try await saveTranslationSettings(settings, translationAPIKeyIsDirty)
+                    translationAPIKeyIsDirty = false
+                }
+            )
+        }
+    }
+
+    private var syncSection: some View {
+        SettingsSection(title: "数据与同步", iconName: "icloud") {
+            SyncSettingsEditor(
+                currentSettings: settings.sync,
+                status: syncStatus,
+                folderPath: syncFolderPath,
+                folderIsUbiquitous: syncFolderIsUbiquitous,
+                devices: syncDevices,
+                isEnabled: $syncIsEnabled,
+                clipboardScope: $clipboardSyncScope,
+                storageLimit: $syncStorageLimit,
+                saveMessage: $syncSaveMessage,
+                saveSettings: saveSyncSettings,
+                syncNow: syncNow,
+                deleteCloudData: deleteCloudData,
+                selectFolder: selectSyncFolder,
+                openFolder: openSyncFolder,
+                removeDevice: removeSyncDevice
             )
         }
     }
@@ -274,6 +350,318 @@ public struct SettingsView: View {
             .foregroundStyle(MacToolsGlassTheme.textPrimary)
             .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: false)
         }
+    }
+}
+
+private struct SyncSettingsEditor: View {
+    let currentSettings: SyncSettings
+    let status: SyncStatus
+    let folderPath: String?
+    let folderIsUbiquitous: Bool?
+    let devices: [SyncDeviceSummary]
+    @Binding var isEnabled: Bool
+    @Binding var clipboardScope: ClipboardSyncScope
+    @Binding var storageLimit: SyncStorageLimit
+    @Binding var saveMessage: String?
+    let saveSettings: (SyncSettings) throws -> Void
+    let syncNow: () -> Void
+    let deleteCloudData: () -> Void
+    let selectFolder: () -> Void
+    let openFolder: () -> Void
+    let removeDevice: (String) -> Void
+    @State private var isDeleteConfirmationPresented = false
+    @State private var devicePendingRemoval: SyncDeviceSummary?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("iCloud Drive 同步")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                    Text(status.displayName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(statusColor)
+                }
+
+                Spacer(minLength: 10)
+
+                Toggle("iCloud Drive 同步", isOn: enabledBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(Text("iCloud Drive 同步"))
+                    .disabled(folderPath == nil || status == .protocolIncompatible)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+
+            Divider()
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
+
+            if !devices.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("同步设备")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                    ForEach(devices) { device in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                                    .lineLimit(1)
+
+                                Text(device.isCurrentDevice ? "本机" : lastSeenText(for: device))
+                                    .font(.system(size: 10, weight: .regular))
+                                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            if !device.isCurrentDevice {
+                                Button("移除", role: .destructive) {
+                                    devicePendingRemoval = device
+                                }
+                                .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+
+                Divider()
+                    .overlay(MacToolsGlassTheme.divider)
+                    .opacity(0.9)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("同步文件夹")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                        Text(folderPath ?? "尚未选择")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        if folderPath != nil, folderIsUbiquitous == false {
+                            Text("普通文件夹 · 未确认由 iCloud Drive 管理")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Button(folderPath == nil ? "选择" : "更换", action: selectFolder)
+                        .font(.system(size: 12, weight: .medium))
+                }
+
+                if let usage = status.storageUsage {
+                    HStack(spacing: 6) {
+                        Text(Self.byteCountFormatter.string(fromByteCount: usage.usedBytes))
+                        Text("/")
+                        Text(Self.byteCountFormatter.string(fromByteCount: usage.capacityBytes))
+                        Spacer(minLength: 8)
+                        Text("普通历史 \(usage.ordinaryHistoryCount) / 500")
+                    }
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+
+            Divider()
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
+
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 10) {
+                    Text("剪贴板范围")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                    Spacer(minLength: 10)
+
+                    if let saveMessage {
+                        Text(saveMessage)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                    }
+                }
+
+                Picker("剪贴板同步范围", selection: scopeBinding) {
+                    ForEach(ClipboardSyncScope.allCases, id: \.self) { scope in
+                        Text(scope.displayName).tag(scope)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .disabled(!isEnabled || folderPath == nil)
+
+                HStack(spacing: 10) {
+                    Text("同步空间")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                    Spacer(minLength: 10)
+
+                    Picker("同步空间上限", selection: storageLimitBinding) {
+                        ForEach(SyncStorageLimit.allCases) { limit in
+                            Text(limit.displayName).tag(limit)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 110)
+                    .disabled(!isEnabled || folderPath == nil)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+
+            Divider()
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
+
+            HStack(spacing: 8) {
+                Button("立即同步", action: syncNow)
+                    .disabled(!isEnabled || folderPath == nil)
+
+                Button("打开文件夹", action: openFolder)
+                    .disabled(folderPath == nil)
+
+                Spacer(minLength: 8)
+
+                Button("清空同步数据", role: .destructive) {
+                    isDeleteConfirmationPresented = true
+                }
+                .disabled(!isEnabled || folderPath == nil)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+        }
+        .onChange(of: currentSettings) { _, settings in
+            isEnabled = settings.isEnabled
+            clipboardScope = settings.clipboardScope
+            storageLimit = settings.storageLimit
+        }
+        .alert("清空 MacTools 同步数据？", isPresented: $isDeleteConfirmationPresented) {
+            Button("取消", role: .cancel) {}
+            Button("清空", role: .destructive, action: deleteCloudData)
+        } message: {
+            Text("所有设备会忽略旧同步快照；每台 Mac 的本地数据会保留。")
+        }
+        .alert(
+            "移除同步设备？",
+            isPresented: Binding(
+                get: { devicePendingRemoval != nil },
+                set: { if !$0 { devicePendingRemoval = nil } }
+            ),
+            presenting: devicePendingRemoval
+        ) { device in
+            Button("取消", role: .cancel) {}
+            Button("移除", role: .destructive) {
+                removeDevice(device.id)
+                devicePendingRemoval = nil
+            }
+        } message: { device in
+            Text("移除“\(device.name)”后，该设备重新上线时会以新设备身份加入；设备本地数据不会删除。")
+        }
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { isEnabled },
+            set: { newValue in
+                let previous = isEnabled
+                isEnabled = newValue
+                save(previousEnabled: previous, previousScope: clipboardScope)
+            }
+        )
+    }
+
+    private var scopeBinding: Binding<ClipboardSyncScope> {
+        Binding(
+            get: { clipboardScope },
+            set: { newValue in
+                let previous = clipboardScope
+                clipboardScope = newValue
+                save(previousEnabled: isEnabled, previousScope: previous)
+            }
+        )
+    }
+
+    private var storageLimitBinding: Binding<SyncStorageLimit> {
+        Binding(
+            get: { storageLimit },
+            set: { newValue in
+                let previous = storageLimit
+                storageLimit = newValue
+                save(
+                    previousEnabled: isEnabled,
+                    previousScope: clipboardScope,
+                    previousStorageLimit: previous
+                )
+            }
+        )
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .synced:
+            return .green
+        case .waitingForDownload, .syncing:
+            return .orange
+        case .capacityFull, .folderUnavailable, .protocolIncompatible, .failed:
+            return .red
+        case .off, .unconfigured:
+            return MacToolsGlassTheme.textTertiary
+        }
+    }
+
+    private func save(
+        previousEnabled: Bool,
+        previousScope: ClipboardSyncScope,
+        previousStorageLimit: SyncStorageLimit? = nil
+    ) {
+        do {
+            try saveSettings(
+                SyncSettings(
+                    isEnabled: isEnabled,
+                    clipboardScope: clipboardScope,
+                    storageLimit: storageLimit
+                )
+            )
+            saveMessage = "已保存"
+        } catch {
+            isEnabled = previousEnabled
+            clipboardScope = previousScope
+            if let previousStorageLimit { storageLimit = previousStorageLimit }
+            saveMessage = "保存失败"
+        }
+    }
+
+    private static let byteCountFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useMB, .useGB]
+        formatter.countStyle = .binary
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+        return formatter
+    }()
+
+    private func lastSeenText(for device: SyncDeviceSummary) -> String {
+        guard let date = device.lastUpdatedAt else { return "尚未完成同步" }
+        return "最近同步 \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 }
 
@@ -384,11 +772,7 @@ private struct SettingsRow: View {
 
 private struct ClipboardSettingsEditor: View {
     let currentSettings: ClipboardSettings
-    @Binding var cacheStoragePath: String
-    @Binding var maxCacheMegabytes: Int
-    @Binding var saveMessage: String?
     let defaultCacheDirectory: URL
-    let saveClipboardSettings: (ClipboardSettings) throws -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -401,7 +785,7 @@ private struct ClipboardSettingsEditor: View {
 
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("存储位置")
+                    Text("统一存储")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
@@ -414,18 +798,9 @@ private struct ClipboardSettingsEditor: View {
                 }
 
                 Spacer(minLength: 10)
-
-                HStack(spacing: 8) {
-                    iconButton(systemName: "folder", help: "选择存储位置", action: chooseCacheStoragePath)
-
-                    iconButton(
-                        systemName: "arrow.uturn.backward",
-                        help: "恢复默认位置",
-                        action: resetCacheStoragePath
-                    )
-                    .disabled(cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .opacity(cacheStoragePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1)
-                }
+                Text("由 MacTools 管理")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
@@ -434,118 +809,17 @@ private struct ClipboardSettingsEditor: View {
                 .overlay(MacToolsGlassTheme.divider)
                 .opacity(0.9)
 
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 10) {
-                    Text("缓存上限")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
-
-                    Spacer(minLength: 10)
-
-                    Text(ClipboardCacheLimit.displayValue(for: maxCacheMegabytes))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
-                }
-
-                Picker("缓存上限", selection: cacheLimitBinding) {
-                    ForEach(ClipboardCacheLimit.allowedMegabytes, id: \.self) { megabytes in
-                        Text("\(megabytes)M").tag(megabytes)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-
-                if let saveMessage {
-                    Text(saveMessage)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            SettingsRow(title: "图片对象", value: "按内容去重 · 自动回收")
         }
-        .onChange(of: currentSettings) { _, settings in
-            cacheStoragePath = settings.cacheStoragePath
-            maxCacheMegabytes = settings.maxCacheMegabytes
-        }
-    }
-
-    private var cacheLimitBinding: Binding<Int> {
-        Binding(
-            get: { ClipboardCacheLimit.normalizedMegabytes(maxCacheMegabytes) },
-            set: { newValue in
-                maxCacheMegabytes = ClipboardCacheLimit.normalizedMegabytes(newValue)
-                save()
-            }
-        )
     }
 
     private var cacheStorageDisplay: String {
         ClipboardCacheStorageDisplay.displayPath(
-            configuredPath: cacheStoragePath,
+            configuredPath: "",
             defaultDirectory: defaultCacheDirectory
         )
     }
 
-    private func iconButton(
-        systemName: String,
-        help: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(MacToolsGlassTheme.textSecondary)
-        .help(help)
-        .accessibilityLabel(Text(help))
-    }
-
-    private func chooseCacheStoragePath() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.prompt = "保存"
-        panel.message = "选择剪贴板图片缓存的存储位置"
-        panel.directoryURL = ClipboardCacheStorageDisplay.directoryURL(
-            configuredPath: cacheStoragePath,
-            defaultDirectory: defaultCacheDirectory
-        )
-
-        guard panel.runModal() == .OK, let selectedURL = panel.url else {
-            return
-        }
-
-        cacheStoragePath = selectedURL.path
-        save()
-    }
-
-    private func resetCacheStoragePath() {
-        cacheStoragePath = ""
-        save()
-    }
-
-    private func save() {
-        let updatedSettings = ClipboardSettings(
-            isRecordingEnabled: currentSettings.isRecordingEnabled,
-            maxHistoryCount: currentSettings.maxHistoryCount,
-            maxCacheMegabytes: maxCacheMegabytes,
-            cacheStoragePath: cacheStoragePath
-        )
-
-        do {
-            try saveClipboardSettings(updatedSettings)
-            saveMessage = "已保存"
-        } catch {
-            saveMessage = "保存失败"
-        }
-    }
 }
 
 private struct SuperRightClickSettingsEditor: View {
@@ -1160,17 +1434,19 @@ private struct WindowLayoutPreviewIcon: View {
 
 private struct TranslationSettingsEditor: View {
     let currentSettings: TranslationSettings
+    let credentialUnavailable: Bool
     @Binding var apiKey: String
     @Binding var model: String
     @Binding var endpointURLString: String
     @Binding var isAPIKeyRevealed: Bool
     @Binding var saveMessage: String?
-    let saveTranslationSettings: (TranslationSettings) throws -> Void
+    let saveTranslationSettings: (TranslationSettings) async throws -> Void
+    @State private var isSaving = false
 
     var body: some View {
         VStack(spacing: 0) {
             SettingsRow(title: "服务", value: "阿里云百炼")
-            SettingsRow(title: "状态", value: currentSettings.isConfigured ? "已配置" : "未配置")
+            SettingsRow(title: "状态", value: credentialStatusText)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
@@ -1203,6 +1479,7 @@ private struct TranslationSettingsEditor: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
+                    .disabled(isSaving)
 
                     if let saveMessage {
                         Text(saveMessage)
@@ -1216,6 +1493,11 @@ private struct TranslationSettingsEditor: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
         }
+    }
+
+    private var credentialStatusText: String {
+        if credentialUnavailable { return "Keychain 凭据不可访问" }
+        return currentSettings.isConfigured ? "已安全保存" : "未配置"
     }
 
     @ViewBuilder
@@ -1298,14 +1580,19 @@ private struct TranslationSettingsEditor: View {
         updatedSettings.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
         updatedSettings.endpointURLString = trimmedEndpoint
 
-        do {
-            try saveTranslationSettings(updatedSettings)
-            saveMessage = "已保存"
-            if updatedSettings.isConfigured {
-                isAPIKeyRevealed = false
+        isSaving = true
+        saveMessage = "正在保存…"
+        Task { @MainActor in
+            defer { isSaving = false }
+            do {
+                try await saveTranslationSettings(updatedSettings)
+                saveMessage = "已保存"
+                if updatedSettings.isConfigured {
+                    isAPIKeyRevealed = false
+                }
+            } catch {
+                saveMessage = "保存失败"
             }
-        } catch {
-            saveMessage = "保存失败"
         }
     }
 }

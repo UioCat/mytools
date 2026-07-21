@@ -8,7 +8,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hotKeyService = HotKeyService(registrar: CarbonHotKeyRegistrar())
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        configureAppearance(mode: environment.settings.appearanceMode)
+        let arguments = ProcessInfo.processInfo.arguments
+        let usesDarkVerificationAppearance = arguments.contains("--ui-verification-dark")
+        configureAppearance(
+            mode: usesDarkVerificationAppearance ? .dark : environment.settings.appearanceMode
+        )
         menuBarController.install()
         environment.onSettingsChanged = { [weak self] settings in
             self?.configureHotKeys(settings: settings)
@@ -16,6 +20,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         environment.start()
         configureHotKeys(settings: environment.settings)
+        let shouldOpenSettingsForVerification = ProcessInfo.processInfo.environment[
+            "MACTOOLS_UI_VERIFICATION_OPEN_SETTINGS"
+        ] == "1" || arguments.contains("--ui-verification-open-settings")
+        if shouldOpenSettingsForVerification {
+            environment.logger.info("opening settings for UI verification")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.environment.openSettingsForUIVerification()
+            }
+        }
         environment.logger.info("application did finish launching")
     }
 
