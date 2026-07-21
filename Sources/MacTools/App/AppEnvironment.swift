@@ -164,6 +164,9 @@ final class AppEnvironment {
                 self?.syncCoordinator.resetSyncData()
             },
             onConfirmCloudAccountSwitch: {},
+            onOpenClipboardStorageFolder: { [weak self] in
+                self?.openClipboardStorageFolder()
+            },
             onSelectSyncFolder: { [weak self] in self?.selectSyncFolder() },
             onOpenSyncFolder: { [weak self] in self?.openSyncFolder() },
             onRemoveSyncDevice: { [weak self] deviceID in
@@ -938,6 +941,10 @@ final class AppEnvironment {
     private func openSyncFolder() {
         guard let syncFolderURL else { return }
         NSWorkspace.shared.open(syncFolderURL)
+    }
+
+    private func openClipboardStorageFolder() {
+        NSWorkspace.shared.open(defaultClipboardCacheDirectory)
     }
 
     private static func resolveSyncFolderBookmark(_ bookmark: Data?) -> URL? {

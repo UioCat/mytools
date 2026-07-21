@@ -11,6 +11,7 @@ public struct SettingsView: View {
     public let permissionSummary: PermissionSummary
     public let openSystemSettings: () -> Void
     public let openPermissionSettings: (AppPermission) -> Void
+    public let openClipboardStorageFolder: () -> Void
     public let saveClipboardSettings: (ClipboardSettings) throws -> Void
     public let saveTranslationSettings: (TranslationSettings, Bool) async throws -> Void
     public let saveSuperRightClickSettings: (SuperRightClickSettings) throws -> Void
@@ -54,6 +55,7 @@ public struct SettingsView: View {
         permissionSummary: PermissionSummary,
         openSystemSettings: @escaping () -> Void,
         openPermissionSettings: @escaping (AppPermission) -> Void = { _ in },
+        openClipboardStorageFolder: @escaping () -> Void = {},
         saveClipboardSettings: @escaping (ClipboardSettings) throws -> Void = { _ in },
         saveTranslationSettings: @escaping (TranslationSettings, Bool) async throws -> Void = { _, _ in },
         saveSuperRightClickSettings: @escaping (SuperRightClickSettings) throws -> Void = { _ in },
@@ -78,6 +80,7 @@ public struct SettingsView: View {
         self.permissionSummary = permissionSummary
         self.openSystemSettings = openSystemSettings
         self.openPermissionSettings = openPermissionSettings
+        self.openClipboardStorageFolder = openClipboardStorageFolder
         self.saveClipboardSettings = saveClipboardSettings
         self.saveTranslationSettings = saveTranslationSettings
         self.saveSuperRightClickSettings = saveSuperRightClickSettings
@@ -217,7 +220,8 @@ public struct SettingsView: View {
         SettingsSection(title: "剪贴板", iconName: "doc.on.clipboard") {
             ClipboardSettingsEditor(
                 currentSettings: settings.clipboard,
-                defaultCacheDirectory: defaultClipboardCacheDirectory
+                defaultCacheDirectory: defaultClipboardCacheDirectory,
+                openStorageFolder: openClipboardStorageFolder
             )
         }
     }
@@ -354,6 +358,29 @@ public struct SettingsView: View {
     }
 }
 
+enum SyncFolderOpenDecision: Equatable {
+    case openFolder
+    case showFolderSelectionRequired
+}
+
+enum FolderOpenInteraction {
+    static func openClipboardStorage(openFolder: () -> Void) {
+        openFolder()
+    }
+
+    static func openSyncFolder(
+        folderPath: String?,
+        openFolder: () -> Void
+    ) -> SyncFolderOpenDecision {
+        guard let folderPath, !folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .showFolderSelectionRequired
+        }
+
+        openFolder()
+        return .openFolder
+    }
+}
+
 private struct SyncSettingsEditor: View {
     let currentSettings: SyncSettings
     let status: SyncStatus
@@ -371,6 +398,7 @@ private struct SyncSettingsEditor: View {
     let openFolder: () -> Void
     let removeDevice: (String) -> Void
     @State private var isDeleteConfirmationPresented = false
+    @State private var isFolderSelectionRequiredPresented = false
     @State private var devicePendingRemoval: SyncDeviceSummary?
 
     var body: some View {
@@ -536,8 +564,7 @@ private struct SyncSettingsEditor: View {
                 Button("立即同步", action: syncNow)
                     .disabled(!isEnabled || folderPath == nil)
 
-                Button("打开文件夹", action: openFolder)
-                    .disabled(folderPath == nil)
+                Button("打开文件夹", action: handleOpenFolder)
 
                 Spacer(minLength: 8)
 
@@ -576,6 +603,9 @@ private struct SyncSettingsEditor: View {
             }
         } message: { device in
             Text("移除“\(device.name)”后，该设备重新上线时会以新设备身份加入；设备本地数据不会删除。")
+        }
+        .alert("需要先选择文件夹", isPresented: $isFolderSelectionRequiredPresented) {
+            Button("知道了", role: .cancel) {}
         }
     }
 
@@ -626,6 +656,18 @@ private struct SyncSettingsEditor: View {
             return .red
         case .off, .unconfigured:
             return MacToolsGlassTheme.textTertiary
+        }
+    }
+
+    private func handleOpenFolder() {
+        switch FolderOpenInteraction.openSyncFolder(
+            folderPath: folderPath,
+            openFolder: openFolder
+        ) {
+        case .openFolder:
+            break
+        case .showFolderSelectionRequired:
+            isFolderSelectionRequiredPresented = true
         }
     }
 
@@ -774,6 +816,7 @@ private struct SettingsRow: View {
 private struct ClipboardSettingsEditor: View {
     let currentSettings: ClipboardSettings
     let defaultCacheDirectory: URL
+    let openStorageFolder: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -799,9 +842,27 @@ private struct ClipboardSettingsEditor: View {
                 }
 
                 Spacer(minLength: 10)
-                Text("由 MacTools 管理")
-                    .font(.system(size: 11, weight: .medium))
+                HStack(spacing: 6) {
+                    Text("由 MacTools 管理")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
+
+                    Button {
+                        FolderOpenInteraction.openClipboardStorage(openFolder: openStorageFolder)
+                    } label: {
+                        Image(systemName: "folder")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(
+                                width: MacToolsControlMetrics.inlineIconSize.width,
+                                height: MacToolsControlMetrics.inlineIconSize.height
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                    .help("打开统一存储文件夹")
+                    .accessibilityLabel(Text("打开统一存储文件夹"))
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
@@ -820,7 +881,6 @@ private struct ClipboardSettingsEditor: View {
             defaultDirectory: defaultCacheDirectory
         )
     }
-
 }
 
 private struct SuperRightClickSettingsEditor: View {

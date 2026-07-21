@@ -82,6 +82,7 @@
 - Inspect non-screenshot interfaces and confirm inline icon buttons, toolbar buttons, text actions, navigation rows, context actions, window-layout buttons, and settings action rows follow their documented semantic size without forcing unrelated controls to the same width.
 - Open settings and confirm permission status is visible.
 - Build with `MACOS_FORCE_ADHOC_SIGNING=1 scripts/package_app.sh`; confirm no CloudKit/iCloud Container/APNs entitlement or Provisioning Profile is required and the packaged app can choose a sync folder.
+- In clipboard settings, click the folder icon next to `由 MacTools 管理` and confirm Finder opens the displayed unified storage directory. With no sync folder selected, click `打开文件夹` and confirm only the `需要先选择文件夹` prompt appears; the folder picker must not open.
 - On first launch, confirm sync is off and the switch cannot be enabled before a folder is selected. Select an empty iCloud Drive parent folder and confirm MacTools creates exactly one `MacTools Sync` directory; selecting an existing protocol root must not create a nested directory.
 - Enable sync and confirm the status progresses from `正在同步` to `已同步`, showing logical use against the default `512 MB` limit and ordinary history against `500` without blocking local clipboard use.
 - Switch clipboard sync between `仅收藏与置顶` and `全部历史`; confirm the first mode excludes ordinary entries and the second mode synchronizes ordinary text, URL, and original clipboard images. Confirm file, folder, and image-file path entries never arrive on another Mac.
