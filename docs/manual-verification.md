@@ -5,8 +5,9 @@
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
+- Confirm the sidebar shows the current blue-purple ribbon icon without the slogan.
 - Confirm the equal-width category row below search contains exactly `全部`, `文本`, `图像`, and `收藏`; files and folders remain available through `全部`.
-- Click each category and use the Left/Right arrow keys to switch between adjacent categories.
+- Click each category and use the Left/Right arrow keys to verify adjacent transitions and both wrap-around transitions.
 - Click a clipboard item once and confirm it only becomes selected; click the same item again and confirm it performs the Enter action and pastes at the previously focused cursor location.
 - After selecting with the keyboard or changing category/search, click the highlighted item once and confirm it only re-arms mouse selection instead of pasting immediately.
 - Fill clipboard history beyond one screen, then hold the Up/Down arrow keys; confirm every newly selected row is automatically brought into view, including rows before and after a large image preview.
@@ -41,7 +42,7 @@
 - Select a clipboard item and press Enter; confirm it copies and attempts paste.
 - Use Cmd+Enter; confirm it copies without sending paste.
 - Short right-click in Finder; confirm the system menu appears.
-- Long right-click selected text; confirm the translation panel remains approximately `333 pt` wide and is about `196 pt` high for a short successful translation. Confirm the action area uses compact `44 pt` rows with `28 pt` icons and `15 pt` labels, remains readable and clickable, and no window-layout section appears.
+- Long right-click selected text; confirm the translation panel is `420 pt` wide and its height follows the rendered source and translation lines, starting at about `187 pt` for a short successful translation and stopping at the `620 pt` safety cap. Confirm the actions share one compact `44 pt` horizontal strip with `30 pt` pure-text buttons, `15 pt` labels, approximately `7 pt` above and below each button, no action icons, no unused bottom block, and no window-layout section.
 - In a browser, select styled heading text that Accessibility may expose as an object replacement character, then long right-click; confirm MacTools falls back to copying the selection and shows the real original text and translation instead of a `1 个` empty panel.
 - In a non-Finder app with no selected text or supported content, long right-click and confirm the `320 pt`-wide panel fits the configured window-layout list to its content with no unused bottom block; the standard eight-layout list is fully visible without a scrollbar.
 - In Finder with no selected item, long right-click the current window background and confirm the `320 pt`-wide panel shows `新建文件`, `复制当前路径`, `在终端打开`, then the configured window-layout list for the active Finder directory, with only normal inner padding below the final row and no large blank region.
@@ -69,8 +70,15 @@
 - Configure a Bailian API Key, enter Chinese in the translation tool, and confirm it translates to English.
 - Enter English or another non-Chinese language in the translation tool, and confirm it translates to Chinese.
 - Click the translation output copy button and confirm the translated text is copied.
+- Confirm the original-text speaker button is disabled while the translation input is empty. Enter Chinese or English, click the original speaker, and confirm the system voice uses the source language, the button changes to a blue stop control, and `正在朗读英语/中文 · 系统音色` appears below the input. Edit the input and confirm stale playback stops immediately.
+- After translating, click the translated-text speaker and confirm the system voice uses the translated language, the button changes to a blue stop control, and the matching speech status appears below the output. Switch between original and translated speech and confirm the previous playback stops first.
 - Click the translation output text, press Cmd+A then Cmd+C, and confirm the translated text is copied.
 - Long right-click selected text and confirm the context panel appears immediately with a translation loading state, then updates in place with the translated result following the same language direction.
+- Long right-click selected text and confirm the `原文` preview row has a speaker button before translation completes. After translation succeeds, confirm both `原文` and `译文` speaker buttons remain visible, use the correct language voices, and switch independently between speaker and blue stop states.
+- Confirm the translated super-right-click panel fully displays both bottom action buttons, each button is `40 pt` high, and the action section leaves equal `8 pt` spacing above and below the buttons.
+- Click `文本悬浮中转` and confirm the resulting `320 pt`-wide panel simultaneously shows the selected text and the complete `复制文本` action for short content; confirm long content scrolls without clipping the action.
+- Start speech in one translation surface, then click either original or translated speech in the other surface; confirm the first playback stops before the second begins and only the active request shows the stop state.
+- Inspect non-screenshot interfaces and confirm inline icon buttons, toolbar buttons, text actions, navigation rows, context actions, window-layout buttons, and settings action rows follow their documented semantic size without forcing unrelated controls to the same width.
 - Open settings and confirm permission status is visible.
 - Build with `MACOS_FORCE_ADHOC_SIGNING=1 scripts/package_app.sh`; confirm no CloudKit/iCloud Container/APNs entitlement or Provisioning Profile is required and the packaged app can choose a sync folder.
 - On first launch, confirm sync is off and the switch cannot be enabled before a folder is selected. Select an empty iCloud Drive parent folder and confirm MacTools creates exactly one `MacTools Sync` directory; selecting an existing protocol root must not create a nested directory.

@@ -79,4 +79,34 @@ final class TranslationWorkspaceContentTests: XCTestCase {
         XCTAssertNil(idle.copyableOutputText)
         XCTAssertNil(failed.copyableOutputText)
     }
+
+    func testWorkspaceExposesOriginalAndTranslatedSpeechRequests() {
+        let translated = TranslationWorkspaceContent(
+            settings: TranslationSettings(apiKey: "sk-test"),
+            state: .translated(" Hello ")
+        )
+        let idle = TranslationWorkspaceContent(
+            settings: TranslationSettings(apiKey: "sk-test"),
+            state: .idle
+        )
+
+        XCTAssertEqual(
+            translated.originalSpeechRequest(text: " 你好 "),
+            TranslationSpeechRequest(
+                text: "你好",
+                languageCode: "zh-CN",
+                source: .translationWorkspace
+            )
+        )
+        XCTAssertEqual(
+            translated.translatedSpeechRequest(originalText: "你好"),
+            TranslationSpeechRequest(
+                text: "Hello",
+                languageCode: "en-US",
+                source: .translationWorkspace
+            )
+        )
+        XCTAssertNil(translated.originalSpeechRequest(text: "   "))
+        XCTAssertNil(idle.translatedSpeechRequest(originalText: "hello"))
+    }
 }

@@ -28,6 +28,18 @@ final class SuperPanelSnapshotTests: XCTestCase {
             to: outputDirectory.appendingPathComponent("super-panel-text.png")
         )
 
+        let textTransitContent = SuperPanelContent.textTransit(
+            text: "brainstorming"
+        )
+        try writeSnapshot(
+            ContextActionView(
+                content: textTransitContent,
+                performAction: { _ in }
+            ),
+            content: textTransitContent,
+            to: outputDirectory.appendingPathComponent("super-panel-text-transit.png")
+        )
+
         let folderContent = SuperPanelContent.fileSystem(
             item: ClipboardItem(
                 id: UUID(),

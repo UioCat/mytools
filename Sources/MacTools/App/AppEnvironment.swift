@@ -69,6 +69,9 @@ final class AppEnvironment {
             }
         }
     )
+    private lazy var translationSpeechController = TranslationSpeechController(
+        engine: SystemTranslationSpeechEngine()
+    )
     private lazy var screenCaptureCoordinator = ScreenCaptureCoordinator(
         permissionService: permissionService,
         logger: logger,
@@ -112,6 +115,7 @@ final class AppEnvironment {
             settings: settings,
             syncModel: syncModel,
             translationCredentialModel: translationCredentialModel,
+            speechController: translationSpeechController,
             permissionService: permissionService,
             defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
             onSaveClipboardSettings: { [weak self] clipboardSettings in
@@ -186,6 +190,7 @@ final class AppEnvironment {
         windowLayoutButtons: { [weak self] in
             self?.settings.windowLayout.visibleButtons ?? []
         },
+        speechController: translationSpeechController,
         logger: logger
     )
     var onSettingsChanged: (AppSettings) -> Void = { _ in }

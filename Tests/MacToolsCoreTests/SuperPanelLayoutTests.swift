@@ -7,7 +7,7 @@ final class SuperPanelLayoutTests: XCTestCase {
         WindowLayoutButton(id: "layout.\($0)", title: "布局 \($0)", modes: [.maximize])
     }
 
-    func testTranslationPanelKeepsExpandedWidthAndUsesCompactActionHeight() {
+    func testTranslationPanelUsesExpandedWidthAndContentDrivenHeight() {
         let content = SuperPanelContent.text(
             originalText: "hello",
             translation: .success(
@@ -17,18 +17,53 @@ final class SuperPanelLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 1_000.0 / 3.0, height: 196)
+            CGSize(width: 420, height: 229)
         )
     }
 
-    func testTranslationActionsUseCompactReadableMetrics() {
-        XCTAssertEqual(SuperPanelLayout.translationActionRowHeight, 44)
-        XCTAssertEqual(SuperPanelLayout.translationActionIconSize, 28)
-        XCTAssertEqual(SuperPanelLayout.translationActionIconFontSize, 14)
-        XCTAssertEqual(SuperPanelLayout.translationActionTitleFontSize, 15)
-        XCTAssertEqual(SuperPanelLayout.translationActionSpacing, 10)
-        XCTAssertEqual(SuperPanelLayout.translationActionHorizontalPadding, 16)
-        XCTAssertEqual(SuperPanelLayout.translationActionVerticalPadding, 8)
+    func testTranslationActionsUseStandardTextActionMetrics() {
+        XCTAssertEqual(SuperPanelLayout.translationActionSectionHeight, 56)
+        XCTAssertEqual(SuperPanelLayout.translationActionButtonHeight, 40)
+        XCTAssertEqual(SuperPanelLayout.translationActionTitleFontSize, 14)
+        XCTAssertEqual(SuperPanelLayout.translationActionSpacing, 8)
+        XCTAssertEqual(SuperPanelLayout.translationActionSectionHorizontalPadding, 12)
+        XCTAssertEqual(SuperPanelLayout.translationActionButtonHorizontalPadding, 16)
+    }
+
+    func testTextTransitPanelUsesExpandedContentDrivenSize() {
+        let content = SuperPanelContent.textTransit(text: "brainstorming")
+
+        XCTAssertEqual(
+            SuperPanelLayout.panelSize(for: content),
+            CGSize(width: 320, height: 181)
+        )
+    }
+
+    func testTranslationPanelHeightTracksRenderedTextLines() {
+        let shortContent = SuperPanelContent.text(
+            originalText: "short",
+            translation: .success(
+                TranslationResponse(translatedText: "简短", providerID: "test")
+            )
+        )
+        let longContent = SuperPanelContent.text(
+            originalText: String(repeating: "sample translation text ", count: 12),
+            translation: .success(
+                TranslationResponse(
+                    translatedText: String(repeating: "示例译文", count: 24),
+                    providerID: "test"
+                )
+            )
+        )
+
+        XCTAssertGreaterThan(
+            SuperPanelLayout.panelSize(for: longContent).height,
+            SuperPanelLayout.panelSize(for: shortContent).height
+        )
+        XCTAssertLessThanOrEqual(
+            SuperPanelLayout.panelSize(for: longContent).height,
+            620
+        )
     }
 
     func testStandardLayoutPanelExpandsToFitEightButtons() {
@@ -38,7 +73,7 @@ final class SuperPanelLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 293)
+            CGSize(width: 320, height: 308)
         )
     }
 
@@ -66,7 +101,7 @@ final class SuperPanelLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 399)
+            CGSize(width: 320, height: 412)
         )
     }
 
@@ -95,7 +130,7 @@ final class SuperPanelLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 515)
+            CGSize(width: 320, height: 526)
         )
     }
 
@@ -125,7 +160,7 @@ final class SuperPanelLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 532)
+            CGSize(width: 320, height: 543)
         )
     }
 
@@ -136,7 +171,7 @@ final class SuperPanelLayoutTests: XCTestCase {
         XCTAssertLessThan(widePath.count, 30)
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 532)
+            CGSize(width: 320, height: 543)
         )
     }
 
@@ -147,7 +182,7 @@ final class SuperPanelLayoutTests: XCTestCase {
         XCTAssertGreaterThan(narrowPath.count, 30)
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 515)
+            CGSize(width: 320, height: 526)
         )
     }
 

@@ -53,6 +53,7 @@ struct RuntimeMainWorkspaceView: View {
     @ObservedObject var model: ClipboardPanelModel
     @ObservedObject var syncModel: SyncViewModel
     @ObservedObject var translationCredentialModel: TranslationCredentialViewModel
+    let speechController: TranslationSpeechController
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> AppSettings
@@ -80,6 +81,7 @@ struct RuntimeMainWorkspaceView: View {
         settings: AppSettings,
         syncModel: SyncViewModel,
         translationCredentialModel: TranslationCredentialViewModel,
+        speechController: TranslationSpeechController,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> AppSettings,
@@ -100,6 +102,7 @@ struct RuntimeMainWorkspaceView: View {
     ) {
         self.router = router
         self.model = model
+        self.speechController = speechController
         self.permissionService = permissionService
         self.syncModel = syncModel
         self.translationCredentialModel = translationCredentialModel
@@ -126,7 +129,10 @@ struct RuntimeMainWorkspaceView: View {
     }
 
     var body: some View {
-        MainWorkspaceView(selectedModule: $router.selectedModule) {
+        MainWorkspaceView(
+            selectedModule: $router.selectedModule,
+            brandIcon: Image(nsImage: MenuBarLogoImage.make())
+        ) {
             RuntimeSettingsView(
                 settings: currentSettings,
                 syncModel: syncModel,
@@ -177,7 +183,10 @@ struct RuntimeMainWorkspaceView: View {
                 onDismiss: onDismiss
             )
         } translation: {
-            RuntimeTranslationModuleView(settings: currentSettings)
+            RuntimeTranslationModuleView(
+                settings: currentSettings,
+                speechController: speechController
+            )
         }
         .onAppear {
             if router.selectedModule == .clipboard {
@@ -345,12 +354,38 @@ struct RuntimeSettingsView: View {
 
 struct RuntimeTranslationModuleView: View {
     let settings: AppSettings
+    @ObservedObject var speechController: TranslationSpeechController
     @State private var inputText = ""
     @State private var isInputComposingText = false
     @State private var workspaceState: TranslationWorkspaceState = .idle
+    @State private var translatedOriginalText = ""
 
     private var content: TranslationWorkspaceContent {
         TranslationWorkspaceContent(settings: settings.translation, state: workspaceState)
+    }
+
+    private var originalSpeechRequest: TranslationSpeechRequest? {
+        content.originalSpeechRequest(text: inputText)
+    }
+
+    private var translatedSpeechRequest: TranslationSpeechRequest? {
+        content.translatedSpeechRequest(originalText: translatedOriginalText)
+    }
+
+    private var isSpeakingOriginal: Bool {
+        guard let originalSpeechRequest else {
+            return false
+        }
+
+        return speechController.state.isSpeaking(originalSpeechRequest)
+    }
+
+    private var isSpeakingTranslation: Bool {
+        guard let translatedSpeechRequest else {
+            return false
+        }
+
+        return speechController.state.isSpeaking(translatedSpeechRequest)
     }
 
     private let inputEditorLayout = TranslationInputEditorLayout.standard
@@ -378,13 +413,25 @@ struct RuntimeTranslationModuleView: View {
         }
         .liquidGlassGroup(spacing: 12)
         .padding(18)
+        .onChange(of: inputText) { _, _ in
+            speechController.stop(ifSource: .translationWorkspace)
+        }
+        .onDisappear {
+            speechController.stop(ifSource: .translationWorkspace)
+        }
     }
 
     private var translationInputSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(content.inputTitle)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(MacToolsGlassTheme.textPrimary)
+            HStack(spacing: 10) {
+                Text(content.inputTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                Spacer(minLength: 0)
+
+                speechButton(for: originalSpeechRequest, textRole: "原文")
+            }
 
             ZStack(alignment: .topLeading) {
                 if TranslationInputPlaceholderPolicy.isPlaceholderVisible(
@@ -414,12 +461,16 @@ struct RuntimeTranslationModuleView: View {
             .padding(10)
             .liquidGlassModule(cornerRadius: 16)
 
+            if isSpeakingOriginal, let originalSpeechRequest {
+                speechStatus(for: originalSpeechRequest)
+            }
+
             HStack(spacing: 10) {
                 Button {
                     translateInputText()
                 } label: {
                     Label(content.translateButtonTitle, systemImage: "arrow.right.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: MacToolsControlMetrics.textActionFontSize, weight: .semibold))
                         .frame(minWidth: 92)
                 }
                 .buttonStyle(GlassPrimaryButtonStyle(cornerRadius: 14))
@@ -448,17 +499,19 @@ struct RuntimeTranslationModuleView: View {
 
                 Spacer(minLength: 0)
 
+                speechButton(for: translatedSpeechRequest, textRole: "译文")
+
                 Button {
                     copyOutputText()
                 } label: {
                     Label(content.outputCopyButtonTitle, systemImage: "doc.on.doc")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: MacToolsControlMetrics.textActionFontSize, weight: .semibold))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(content.copyableOutputText == nil ? MacToolsGlassTheme.textDisabled : MacToolsGlassTheme.textSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .liquidGlassButtonStyle(cornerRadius: 12, showsIdleSurface: content.copyableOutputText != nil)
+                .padding(.horizontal, MacToolsControlMetrics.textActionHorizontalPadding)
+                .frame(height: MacToolsControlMetrics.textActionHeight)
+                .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: content.copyableOutputText != nil)
                 .disabled(content.copyableOutputText == nil)
             }
 
@@ -472,10 +525,65 @@ struct RuntimeTranslationModuleView: View {
             )
             .padding(14)
             .liquidGlassModule(cornerRadius: 16)
+
+            if isSpeakingTranslation, let translatedSpeechRequest {
+                speechStatus(for: translatedSpeechRequest)
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .liquidGlassModule(cornerRadius: 22)
+        .animation(.easeInOut(duration: 0.16), value: isSpeakingTranslation)
+    }
+
+    private func speechButton(
+        for request: TranslationSpeechRequest?,
+        textRole: String
+    ) -> some View {
+        let isSpeaking = request.map(speechController.state.isSpeaking) ?? false
+        let title = isSpeaking ? "停止朗读\(textRole)" : "朗读\(textRole)"
+
+        return Button {
+            guard let request else {
+                return
+            }
+            speechController.toggle(request)
+        } label: {
+            Image(systemName: isSpeaking ? "stop.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(
+                    width: MacToolsControlMetrics.inlineIconSize.width,
+                    height: MacToolsControlMetrics.inlineIconSize.height
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            request == nil
+                ? MacToolsGlassTheme.textTertiary
+                : (isSpeaking ? Color.white : MacToolsGlassTheme.textSecondary)
+        )
+        .liquidGlassButtonStyle(
+            cornerRadius: 12,
+            isSelected: isSpeaking,
+            minimumSize: MacToolsControlMetrics.inlineIconSize,
+            showsIdleSurface: request != nil
+        )
+        .disabled(request == nil)
+        .accessibilityLabel(title)
+        .help(title)
+    }
+
+    private func speechStatus(for request: TranslationSpeechRequest) -> some View {
+        Label(
+            "正在朗读\(TranslationSpeechLanguagePolicy.displayName(for: request.languageCode)) · 系统音色",
+            systemImage: "waveform"
+        )
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(MacToolsGlassTheme.activeBlue)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 2)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     private func copyOutputText() {
@@ -493,6 +601,7 @@ struct RuntimeTranslationModuleView: View {
             return
         }
 
+        speechController.stop(ifSource: .translationWorkspace)
         workspaceState = .translating
         Task {
             let service = TranslationService(
@@ -503,6 +612,7 @@ struct RuntimeTranslationModuleView: View {
             await MainActor.run {
                 switch result {
                 case .success(let response):
+                    translatedOriginalText = text
                     workspaceState = .translated(response.translatedText)
                 case .failure(let error):
                     workspaceState = .failed(Self.message(for: error))

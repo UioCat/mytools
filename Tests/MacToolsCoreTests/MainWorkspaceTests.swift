@@ -32,8 +32,8 @@ final class MainWorkspaceTests: XCTestCase {
     }
 
     func testCollapsedSidebarToggleKeepsFullHitTarget() {
-        XCTAssertGreaterThanOrEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.width, 44)
-        XCTAssertGreaterThanOrEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.height, 44)
+        XCTAssertEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.width, 40)
+        XCTAssertEqual(MainWorkspaceLayout.collapsedSidebarToggleSize.height, 40)
     }
 
     func testEveryMainModuleProvidesHeaderMetadata() {

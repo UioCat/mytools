@@ -2,13 +2,19 @@ import SwiftUI
 
 public struct ContextActionView: View {
     public let content: SuperPanelContent
+    private let speechState: TranslationSpeechState
+    private let performSpeech: (TranslationSpeechRequest) -> Void
     private let performAction: (SuperPanelActionID) -> Void
 
     public init(
         content: SuperPanelContent,
+        speechState: TranslationSpeechState = .idle,
+        performSpeech: @escaping (TranslationSpeechRequest) -> Void = { _ in },
         performAction: @escaping (SuperPanelActionID) -> Void
     ) {
         self.content = content
+        self.speechState = speechState
+        self.performSpeech = performSpeech
         self.performAction = performAction
     }
 
@@ -103,12 +109,32 @@ public struct ContextActionView: View {
         }
     }
 
+    @ViewBuilder
     private var actionSection: some View {
+        if content.kind == .text {
+            translationActionSection
+        } else {
+            standardActionSection
+        }
+    }
+
+    private var translationActionSection: some View {
+        HStack(spacing: SuperPanelLayout.translationActionSpacing) {
+            ForEach(primaryActions) { action in
+                TranslationActionButton(action: action, performAction: performAction)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, SuperPanelLayout.translationActionSectionHorizontalPadding)
+        .frame(height: SuperPanelLayout.translationActionSectionHeight)
+    }
+
+    private var standardActionSection: some View {
         VStack(spacing: 0) {
             ForEach(Array(primaryActions.enumerated()), id: \.element.id) { index, action in
                 SuperPanelActionRow(
                     action: action,
-                    isCompact: content.kind == .text,
                     performAction: performAction
                 )
 
@@ -168,7 +194,7 @@ public struct ContextActionView: View {
     }
 
     private func previewRow(_ row: SuperPanelPreviewRow) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             Text(row.label)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(MacToolsGlassTheme.textTertiary)
@@ -180,9 +206,43 @@ public struct ContextActionView: View {
                 .lineLimit(SuperPanelPreviewLineLimitPolicy.lineLimit(for: content.kind, row: row))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
+
+            if let speechRequest = row.speechRequest {
+                speechButton(for: speechRequest, textRole: row.label)
+            }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 8)
+    }
+
+    private func speechButton(
+        for request: TranslationSpeechRequest,
+        textRole: String
+    ) -> some View {
+        let isSpeaking = speechState.isSpeaking(request)
+        let title = isSpeaking ? "停止朗读\(textRole)" : "朗读\(textRole)"
+
+        return Button {
+            performSpeech(request)
+        } label: {
+            Image(systemName: isSpeaking ? "stop.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(
+                    width: MacToolsControlMetrics.inlineIconSize.width,
+                    height: MacToolsControlMetrics.inlineIconSize.height
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSpeaking ? Color.white : MacToolsGlassTheme.textSecondary)
+        .liquidGlassButtonStyle(
+            cornerRadius: 10,
+            isSelected: isSpeaking,
+            minimumSize: MacToolsControlMetrics.inlineIconSize,
+            showsIdleSurface: true
+        )
+        .accessibilityLabel(title)
+        .help(title)
     }
 
     private var iconColor: Color {
@@ -232,9 +292,50 @@ public struct ContextActionView: View {
 
 }
 
+private struct TranslationActionButton: View {
+    let action: SuperPanelActionDescriptor
+    let performAction: (SuperPanelActionID) -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            performAction(action.id)
+        } label: {
+            Text(action.title)
+                .font(.system(
+                    size: SuperPanelLayout.translationActionTitleFontSize,
+                    weight: .semibold
+                ))
+                .foregroundStyle(isPrimary ? Color.white : MacToolsGlassTheme.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, SuperPanelLayout.translationActionButtonHorizontalPadding)
+                .frame(height: SuperPanelLayout.translationActionButtonHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(buttonBackground)
+                )
+                .frame(height: SuperPanelLayout.translationActionSectionHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+
+    private var isPrimary: Bool {
+        action.id == .copyTranslatedText
+    }
+
+    private var buttonBackground: Color {
+        if isPrimary {
+            return MacToolsGlassTheme.activeBlue.opacity(isHovering ? 0.84 : 1)
+        }
+        return isHovering ? MacToolsGlassTheme.rowHover : MacToolsGlassTheme.fieldFill
+    }
+}
+
 private struct SuperPanelActionRow: View {
     let action: SuperPanelActionDescriptor
-    let isCompact: Bool
     let performAction: (SuperPanelActionID) -> Void
 
     @State private var isHovering = false
@@ -276,33 +377,31 @@ private struct SuperPanelActionRow: View {
     }
 
     private var rowHeight: CGFloat {
-        isCompact
-            ? SuperPanelLayout.translationActionRowHeight
-            : SuperPanelLayout.standardPrimaryActionRowHeight
+        SuperPanelLayout.standardPrimaryActionRowHeight
     }
 
     private var iconSize: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionIconSize : 34
+        34
     }
 
     private var iconFontSize: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionIconFontSize : 18
+        18
     }
 
     private var titleFontSize: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionTitleFontSize : 20
+        18
     }
 
     private var rowSpacing: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionSpacing : 16
+        16
     }
 
     private var horizontalPadding: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionHorizontalPadding : 22
+        22
     }
 
     private var verticalPadding: CGFloat {
-        isCompact ? SuperPanelLayout.translationActionVerticalPadding : 11
+        11
     }
 
     private var iconBackground: Color {
@@ -356,8 +455,7 @@ private struct WindowLayoutActionButton: View {
             }
             .foregroundStyle(MacToolsGlassTheme.textPrimary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .frame(minHeight: 36)
+            .frame(height: MacToolsControlMetrics.windowLayoutButtonHeight)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isHovering ? MacToolsGlassTheme.activeBlue.opacity(0.16) : Color.white.opacity(0.055))

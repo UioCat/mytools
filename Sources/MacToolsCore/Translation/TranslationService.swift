@@ -29,7 +29,7 @@ public final class TranslationService {
     }
 }
 
-private enum TranslationLanguageRouter {
+enum TranslationLanguageRouter {
     static func targetLanguage(for text: String) -> String {
         isLikelyChinese(text) ? "en" : "zh"
     }

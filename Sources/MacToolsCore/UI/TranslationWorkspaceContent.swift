@@ -71,6 +71,45 @@ public struct TranslationWorkspaceContent: Equatable {
         return trimmedText.isEmpty ? nil : text
     }
 
+    public func originalSpeechRequest(
+        text: String,
+        source: TranslationSpeechSource = .translationWorkspace
+    ) -> TranslationSpeechRequest? {
+        let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedText.isEmpty else {
+            return nil
+        }
+
+        return TranslationSpeechRequest(
+            text: normalizedText,
+            languageCode: TranslationSpeechLanguagePolicy.originalLanguageCode(for: normalizedText),
+            source: source
+        )
+    }
+
+    public func translatedSpeechRequest(
+        originalText: String,
+        source: TranslationSpeechSource = .translationWorkspace
+    ) -> TranslationSpeechRequest? {
+        guard let outputText = copyableOutputText else {
+            return nil
+        }
+
+        let normalizedOutput = outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return TranslationSpeechRequest(
+            text: normalizedOutput,
+            languageCode: TranslationSpeechLanguagePolicy.translatedLanguageCode(forOriginalText: originalText),
+            source: source
+        )
+    }
+
+    public func speechRequest(
+        originalText: String,
+        source: TranslationSpeechSource = .translationWorkspace
+    ) -> TranslationSpeechRequest? {
+        translatedSpeechRequest(originalText: originalText, source: source)
+    }
+
     public var isOutputPlaceholder: Bool {
         switch state {
         case .idle, .translating:

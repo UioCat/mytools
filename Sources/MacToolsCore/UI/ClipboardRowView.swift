@@ -495,6 +495,6 @@ struct ClipboardFavoriteButtonPresentation: Equatable {
         self.backgroundOpacity = isHovered ? 0.40 : 0
         self.strokeOpacity = isHovered ? 0.18 : 0
         self.scale = isHovered ? 1.06 : 1
-        self.hitSize = CGSize(width: 30, height: 30)
+        self.hitSize = MacToolsControlMetrics.inlineIconSize
     }
 }

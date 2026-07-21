@@ -27,14 +27,14 @@ final class ClipboardListViewTests: XCTestCase {
         )
     }
 
-    func testClipboardCategoryArrowNavigationStopsAtFirstAndLastModes() {
+    func testClipboardCategoryArrowNavigationWrapsAtFirstAndLastModes() {
         XCTAssertEqual(
             ClipboardPanelModeNavigator.mode(adjacentTo: .all, direction: .previous),
-            .all
+            .favorites
         )
         XCTAssertEqual(
             ClipboardPanelModeNavigator.mode(adjacentTo: .favorites, direction: .next),
-            .favorites
+            .all
         )
     }
 
@@ -148,6 +148,7 @@ final class ClipboardListViewTests: XCTestCase {
         XCTAssertEqual(idle.iconName, "star")
         XCTAssertEqual(hovered.iconName, "star")
         XCTAssertEqual(idle.helpText, "加入收藏")
+        XCTAssertEqual(idle.hitSize, CGSize(width: 32, height: 32))
         XCTAssertEqual(idle.hitSize, hovered.hitSize)
         XCTAssertGreaterThan(hovered.backgroundOpacity, idle.backgroundOpacity)
         XCTAssertGreaterThan(hovered.strokeOpacity, idle.strokeOpacity)
