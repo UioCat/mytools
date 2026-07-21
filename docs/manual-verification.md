@@ -12,6 +12,7 @@
 - After selecting with the keyboard or changing category/search, click the highlighted item once and confirm it only re-arms mouse selection instead of pasting immediately.
 - Fill clipboard history beyond one screen, then hold the Up/Down arrow keys; confirm every newly selected row is automatically brought into view, including rows before and after a large image preview.
 - Confirm the main panel opens at `720 × 480`, two-thirds of the previous `1080 × 720` default, and can be resized down to approximately `600 × 414`.
+- Drag the main panel away from the centered position, dismiss it, and reopen settings, clipboard, and translation through both their shortcuts and menu bar entries; confirm every entry preserves the last dragged position until MacTools quits, then relaunch and confirm the first presentation is centered again.
 - Confirm clipboard history uses one integrated Spotlight-style search header, flat compact result rows, and native Liquid Glass only on the selected row and interactive controls.
 - Confirm the selected clipboard row uses a visibly deeper adaptive neutral gray while its title, metadata, index, and favorite control remain legible.
 - Confirm each clipboard row shows only paste time at bottom-left; the index and character count or image dimensions form a separate right-aligned column, with the favorite button isolated in the outermost column.

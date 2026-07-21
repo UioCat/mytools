@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+enum MainPanelPositioningDecision: Equatable {
+    case center
+    case preserveCurrentFrame
+}
+
+enum MainPanelPositioningPolicy {
+    static func decision(hasExistingPanel: Bool) -> MainPanelPositioningDecision {
+        hasExistingPanel ? .preserveCurrentFrame : .center
+    }
+}
+
 public final class MainPanelController {
     public static let windowStyleMask: NSWindow.StyleMask = [.borderless, .resizable]
     static let usesSystemWindowShadow = false
@@ -22,6 +33,10 @@ public final class MainPanelController {
     }
 
     public func show() {
+        let positioningDecision = MainPanelPositioningPolicy.decision(
+            hasExistingPanel: panel != nil
+        )
+
         if panel == nil {
             let panel = EscapeDismissPanel(
                 contentRect: NSRect(origin: .zero, size: initialSize),
@@ -54,7 +69,9 @@ public final class MainPanelController {
             self.panel = panel
         }
 
-        panel?.center()
+        if positioningDecision == .center {
+            panel?.center()
+        }
         NSApp.activate(ignoringOtherApps: true)
         panel?.makeKeyAndOrderFront(nil)
     }

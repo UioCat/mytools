@@ -3,6 +3,17 @@ import XCTest
 @testable import MacToolsCore
 
 final class MainPanelControllerTests: XCTestCase {
+    func testMainPanelCentersOnlyForItsFirstPresentation() {
+        XCTAssertEqual(
+            MainPanelPositioningPolicy.decision(hasExistingPanel: false),
+            .center
+        )
+        XCTAssertEqual(
+            MainPanelPositioningPolicy.decision(hasExistingPanel: true),
+            .preserveCurrentFrame
+        )
+    }
+
     func testMainPanelKeepsResizeWithoutRectangularSystemShadow() {
         let styleMask = MainPanelController.windowStyleMask
 
