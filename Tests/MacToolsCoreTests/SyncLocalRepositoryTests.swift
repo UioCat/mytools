@@ -248,6 +248,47 @@ final class SyncLocalRepositoryTests: XCTestCase {
         XCTAssertTrue(try replica.sync.receipts().isEmpty)
     }
 
+    func testReceiptMatchesOnlyExactReplicaIdentity() {
+        let receipt = SyncReplicaReceipt(
+            deviceID: "device-a",
+            generation: 2,
+            revision: 7,
+            manifestDigest: "digest-a",
+            appliedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        XCTAssertTrue(receipt.matches(
+            deviceID: "device-a",
+            generation: 2,
+            revision: 7,
+            manifestDigest: "digest-a"
+        ))
+        XCTAssertFalse(receipt.matches(
+            deviceID: "device-b",
+            generation: 2,
+            revision: 7,
+            manifestDigest: "digest-a"
+        ))
+        XCTAssertFalse(receipt.matches(
+            deviceID: "device-a",
+            generation: 3,
+            revision: 7,
+            manifestDigest: "digest-a"
+        ))
+        XCTAssertFalse(receipt.matches(
+            deviceID: "device-a",
+            generation: 2,
+            revision: 8,
+            manifestDigest: "digest-a"
+        ))
+        XCTAssertFalse(receipt.matches(
+            deviceID: "device-a",
+            generation: 2,
+            revision: 7,
+            manifestDigest: "digest-b"
+        ))
+    }
+
     func testTombstoneCompactsOnlyAfterEveryVisibleDeviceAcknowledgesSourceRevision() throws {
         let replica = try makeReplica(deviceID: "device-a")
         defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }

@@ -18,6 +18,19 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         XCTAssertTrue(source.contains("draft.excludingContentIDs("))
     }
 
+    func testSyncCycleOnlyAppliesPeerReplicasWithoutMatchingReceipts() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+        )
+
+        XCTAssertTrue(source.contains("let receiptsByDeviceID"))
+        XCTAssertTrue(source.contains("let unappliedPeerReplicas"))
+        XCTAssertEqual(
+            source.components(separatedBy: "for replica in unappliedPeerReplicas").count - 1,
+            3
+        )
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

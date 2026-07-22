@@ -312,6 +312,30 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                 ownReplica.manifest.revision
             )
         }
+        let receiptsByDeviceID = Dictionary(
+            uniqueKeysWithValues: try localRepository.receipts().map { ($0.deviceID, $0) }
+        )
+        let peerReplicas = replicas.filter { $0.manifest.deviceID != deviceID }
+        let alreadyAppliedPeerReplicas = peerReplicas.filter { replica in
+            receiptsByDeviceID[replica.manifest.deviceID]?.matches(
+                deviceID: replica.manifest.deviceID,
+                generation: replica.manifest.generation,
+                revision: replica.manifest.revision,
+                manifestDigest: replica.manifestDigest
+            ) == true
+        }
+        let alreadyAppliedDeviceIDs = Set(
+            alreadyAppliedPeerReplicas.map(\.manifest.deviceID)
+        )
+        let unappliedPeerReplicas = peerReplicas.filter { replica in
+            !alreadyAppliedDeviceIDs.contains(replica.manifest.deviceID)
+        }
+        for replica in alreadyAppliedPeerReplicas {
+            seenRevisions[replica.manifest.deviceID] = max(
+                seenRevisions[replica.manifest.deviceID] ?? 0,
+                replica.manifest.revision
+            )
+        }
 
         var exportContentCache = SyncExportContentCache()
         var draft = try localRepository.exportBundle(
@@ -333,8 +357,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         var hasInvalidRemoteContent = false
         var incompleteDeviceIDs: Set<String> = []
 
-        for replica in replicas {
-            guard replica.manifest.deviceID != deviceID else { continue }
+        for replica in unappliedPeerReplicas {
             for record in replica.clipboard.records where contentByID[record.contentID] == nil {
                 do {
                     if let data = try store.contentData(contentID: record.contentID, kind: record.kind) {
@@ -355,7 +378,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             }
         }
 
-        for replica in replicas where replica.manifest.deviceID != deviceID {
+        for replica in unappliedPeerReplicas {
             try localRepository.apply(tombstones: replica.tombstones)
         }
         let tombstonedRecordNames = try localRepository.tombstonedRecordNames(
@@ -469,7 +492,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         )
 
         var remoteSettings: AppSettings?
-        for replica in replicas where replica.manifest.deviceID != deviceID {
+        for replica in unappliedPeerReplicas {
             let filtered = SyncClipboardSnapshot(
                 deviceID: replica.clipboard.deviceID,
                 generation: replica.clipboard.generation,

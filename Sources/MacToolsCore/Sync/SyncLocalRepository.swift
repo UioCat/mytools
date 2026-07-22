@@ -21,6 +21,18 @@ public struct SyncReplicaReceipt: Equatable, Sendable {
         self.manifestDigest = manifestDigest
         self.appliedAt = appliedAt
     }
+
+    public func matches(
+        deviceID: String,
+        generation: Int,
+        revision: Int64,
+        manifestDigest: String
+    ) -> Bool {
+        self.deviceID == deviceID
+            && self.generation == generation
+            && self.revision == revision
+            && self.manifestDigest == manifestDigest
+    }
 }
 
 public final class SyncLocalRepository: @unchecked Sendable {
