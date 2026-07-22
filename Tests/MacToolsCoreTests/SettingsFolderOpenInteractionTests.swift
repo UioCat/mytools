@@ -49,11 +49,14 @@ final class SettingsFolderOpenInteractionTests: XCTestCase {
         XCTAssertEqual(openCount, 1)
 
         let settingsSource = try source(at: "Sources/MacToolsCore/UI/SettingsView.swift")
+        let clipboardSettingsSource = try source(
+            at: "Sources/MacToolsCore/UI/ClipboardSettingsEditor.swift"
+        )
         let runtimeSource = try source(at: "Sources/MacTools/App/RuntimeViews.swift")
         let environmentSource = try source(at: "Sources/MacTools/App/AppEnvironment.swift")
 
-        XCTAssertTrue(settingsSource.contains("Image(systemName: \"folder\")"))
-        XCTAssertTrue(settingsSource.contains(".help(\"打开统一存储文件夹\")"))
+        XCTAssertTrue(clipboardSettingsSource.contains("Image(systemName: \"folder\")"))
+        XCTAssertTrue(clipboardSettingsSource.contains(".help(\"打开统一存储文件夹\")"))
         XCTAssertTrue(settingsSource.contains("openStorageFolder: openClipboardStorageFolder"))
         XCTAssertTrue(runtimeSource.contains("openClipboardStorageFolder: onOpenClipboardStorageFolder"))
         XCTAssertTrue(environmentSource.contains("NSWorkspace.shared.open(defaultClipboardCacheDirectory)"))
