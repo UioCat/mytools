@@ -32,6 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         environment.logger.info("application did finish launching")
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        environment.logger.flush()
+    }
+
     private func configureHotKeys(settings: AppSettings) {
         hotKeyService.configure(settings: settings) { [weak self] target in
             self?.handleHotKey(target)
