@@ -23,6 +23,62 @@ private actor ClipboardPollingWorker {
     }
 }
 
+private actor AppMaintenanceWorker {
+    private let repository: ClipboardRepository
+    private let payloadStore: PayloadStore
+    private let usesPersistentDatabase: Bool
+    private let logger: Logger
+    private var hasRun = false
+
+    init(
+        repository: ClipboardRepository,
+        payloadStore: PayloadStore,
+        usesPersistentDatabase: Bool,
+        logger: Logger
+    ) {
+        self.repository = repository
+        self.payloadStore = payloadStore
+        self.usesPersistentDatabase = usesPersistentDatabase
+        self.logger = logger
+    }
+
+    func run(now: Date = Date()) {
+        guard !hasRun else { return }
+        hasRun = true
+
+        do {
+            try payloadStore.removeStagingFiles(
+                olderThan: now.addingTimeInterval(-24 * 60 * 60)
+            )
+        } catch {
+            logger.error(
+                "payload staging cleanup failed: \(String(reflecting: type(of: error)))"
+            )
+        }
+        guard usesPersistentDatabase else { return }
+
+        do {
+            try repository.reconcilePayloadStorage()
+        } catch {
+            logger.error(
+                "payload storage reconciliation failed: \(String(reflecting: type(of: error)))"
+            )
+        }
+        do {
+            let removedEvictionCount = try repository.cleanupOrphanedLocalEvictions()
+            if removedEvictionCount > 0 {
+                logger.info(
+                    "removed orphaned local retention markers: count=\(removedEvictionCount)"
+                )
+            }
+        } catch {
+            logger.error(
+                "local retention marker cleanup failed: \(String(reflecting: type(of: error)))"
+            )
+        }
+    }
+}
+
 @MainActor
 final class AppEnvironment {
     let logger = Logger()
@@ -33,6 +89,7 @@ final class AppEnvironment {
     private(set) var settings: AppSettings
     private let repository: ClipboardRepository
     private let clipboardPollingWorker: ClipboardPollingWorker
+    private let maintenanceWorker: AppMaintenanceWorker
     private let payloadStore: PayloadStore
     private let syncLocalRepository: SyncLocalRepository
     private var syncFolderURL: URL?
@@ -257,28 +314,14 @@ final class AppEnvironment {
         )
         let payloadStore = PayloadStore(rootDirectory: payloadDirectory)
         let repository = ClipboardRepository(database: database, payloadStore: payloadStore)
-        try? payloadStore.removeStagingFiles(olderThan: Date().addingTimeInterval(-24 * 60 * 60))
-        if usesPersistentDatabase {
-            do {
-                try repository.reconcilePayloadStorage()
-            } catch {
-                logger.error(
-                    "payload storage reconciliation failed: \(String(reflecting: type(of: error)))"
-                )
-            }
-            do {
-                let removedEvictionCount = try repository.cleanupOrphanedLocalEvictions()
-                if removedEvictionCount > 0 {
-                    logger.info("removed orphaned local retention markers: count=\(removedEvictionCount)")
-                }
-            } catch {
-                logger.error(
-                    "local retention marker cleanup failed: \(String(reflecting: type(of: error)))"
-                )
-            }
-        }
         self.repository = repository
         self.payloadStore = payloadStore
+        self.maintenanceWorker = AppMaintenanceWorker(
+            repository: repository,
+            payloadStore: payloadStore,
+            usesPersistentDatabase: usesPersistentDatabase,
+            logger: logger
+        )
         self.syncLocalRepository = SyncLocalRepository(
             database: database,
             clipboardRepository: repository,
@@ -317,6 +360,10 @@ final class AppEnvironment {
         loadTranslationCredentialIfNeeded()
         syncCoordinator.setRootURL(syncFolderURL)
         syncCoordinator.setEnabled(settings.sync.isEnabled)
+        let maintenanceWorker = maintenanceWorker
+        Task {
+            await maintenanceWorker.run()
+        }
     }
 
     func openMainPanel() {
