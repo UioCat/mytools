@@ -21,10 +21,12 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
     }
 
     func testMaintenanceWorkerPreservesCleanupOrderAndSingleRunGuard() throws {
-        let source = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
-        let workerStart = try XCTUnwrap(source.range(of: "private actor AppMaintenanceWorker"))
-        let environmentStart = try XCTUnwrap(source.range(of: "@MainActor\nfinal class AppEnvironment"))
-        let worker = source[workerStart.lowerBound..<environmentStart.lowerBound]
+        let source = try sourceFile("Sources/MacTools/App/AppEnvironmentWorkers.swift")
+        let workerStart = try XCTUnwrap(source.range(of: "actor AppMaintenanceWorker"))
+        let pasteAttemptStart = try XCTUnwrap(
+            source.range(of: "@MainActor\nfinal class PasteActivationAttempt")
+        )
+        let worker = source[workerStart.lowerBound..<pasteAttemptStart.lowerBound]
 
         XCTAssertTrue(worker.contains("guard !hasRun else { return }"))
         let staging = try XCTUnwrap(worker.range(of: "removeStagingFiles"))
@@ -35,9 +37,9 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
     }
 
     func testAutomaticPasteKeepsActivationAndTimeoutPathsWithoutDeprecatedOption() throws {
-        let source = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
+        let source = try sourceFile("Sources/MacTools/App/AppEnvironmentWorkers.swift")
 
-        XCTAssertTrue(source.contains("private final class PasteActivationAttempt"))
+        XCTAssertTrue(source.contains("final class PasteActivationAttempt"))
         XCTAssertTrue(source.contains("milliseconds(80)"))
         XCTAssertTrue(source.contains("milliseconds(800)"))
         XCTAssertTrue(source.contains("targetApplication.activate(options: [.activateAllWindows])"))
