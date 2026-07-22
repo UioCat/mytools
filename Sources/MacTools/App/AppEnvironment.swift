@@ -299,7 +299,6 @@ final class AppEnvironment {
             onDeleteCloudData: { [weak self] in
                 self?.syncCoordinator.resetSyncData()
             },
-            onConfirmCloudAccountSwitch: {},
             onOpenClipboardStorageFolder: { [weak self] in
                 self?.openClipboardStorageFolder()
             },

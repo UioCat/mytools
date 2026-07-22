@@ -64,7 +64,6 @@ struct RuntimeMainWorkspaceView: View {
     let onSaveSyncSettings: (SyncSettings) throws -> AppSettings
     let onSyncNow: () -> Void
     let onDeleteCloudData: () -> Void
-    let onConfirmCloudAccountSwitch: () -> Void
     let onOpenClipboardStorageFolder: () -> Void
     let onSelectSyncFolder: () -> Void
     let onOpenSyncFolder: () -> Void
@@ -93,7 +92,6 @@ struct RuntimeMainWorkspaceView: View {
         onSaveSyncSettings: @escaping (SyncSettings) throws -> AppSettings,
         onSyncNow: @escaping () -> Void,
         onDeleteCloudData: @escaping () -> Void,
-        onConfirmCloudAccountSwitch: @escaping () -> Void,
         onOpenClipboardStorageFolder: @escaping () -> Void,
         onSelectSyncFolder: @escaping () -> Void,
         onOpenSyncFolder: @escaping () -> Void,
@@ -117,7 +115,6 @@ struct RuntimeMainWorkspaceView: View {
         self.onSaveSyncSettings = onSaveSyncSettings
         self.onSyncNow = onSyncNow
         self.onDeleteCloudData = onDeleteCloudData
-        self.onConfirmCloudAccountSwitch = onConfirmCloudAccountSwitch
         self.onOpenClipboardStorageFolder = onOpenClipboardStorageFolder
         self.onSelectSyncFolder = onSelectSyncFolder
         self.onOpenSyncFolder = onOpenSyncFolder
@@ -171,7 +168,6 @@ struct RuntimeMainWorkspaceView: View {
                 },
                 onSyncNow: onSyncNow,
                 onDeleteCloudData: onDeleteCloudData,
-                onConfirmCloudAccountSwitch: onConfirmCloudAccountSwitch,
                 onOpenClipboardStorageFolder: onOpenClipboardStorageFolder,
                 onSelectSyncFolder: onSelectSyncFolder,
                 onOpenSyncFolder: onOpenSyncFolder,
@@ -276,7 +272,6 @@ struct RuntimeSettingsView: View {
     let onSaveSyncSettings: (SyncSettings) throws -> Void
     let onSyncNow: () -> Void
     let onDeleteCloudData: () -> Void
-    let onConfirmCloudAccountSwitch: () -> Void
     let onOpenClipboardStorageFolder: () -> Void
     let onSelectSyncFolder: () -> Void
     let onOpenSyncFolder: () -> Void
@@ -298,7 +293,6 @@ struct RuntimeSettingsView: View {
         onSaveSyncSettings: @escaping (SyncSettings) throws -> Void,
         onSyncNow: @escaping () -> Void,
         onDeleteCloudData: @escaping () -> Void,
-        onConfirmCloudAccountSwitch: @escaping () -> Void,
         onOpenClipboardStorageFolder: @escaping () -> Void,
         onSelectSyncFolder: @escaping () -> Void,
         onOpenSyncFolder: @escaping () -> Void,
@@ -318,7 +312,6 @@ struct RuntimeSettingsView: View {
         self.onSaveSyncSettings = onSaveSyncSettings
         self.onSyncNow = onSyncNow
         self.onDeleteCloudData = onDeleteCloudData
-        self.onConfirmCloudAccountSwitch = onConfirmCloudAccountSwitch
         self.onOpenClipboardStorageFolder = onOpenClipboardStorageFolder
         self.onSelectSyncFolder = onSelectSyncFolder
         self.onOpenSyncFolder = onOpenSyncFolder
@@ -347,7 +340,6 @@ struct RuntimeSettingsView: View {
             saveSyncSettings: onSaveSyncSettings,
             syncNow: onSyncNow,
             deleteCloudData: onDeleteCloudData,
-            confirmCloudAccountSwitch: onConfirmCloudAccountSwitch,
             selectSyncFolder: onSelectSyncFolder,
             openSyncFolder: onOpenSyncFolder,
             removeSyncDevice: onRemoveSyncDevice,

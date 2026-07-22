@@ -20,7 +20,6 @@ public struct SettingsView: View {
     public let saveSyncSettings: (SyncSettings) throws -> Void
     public let syncNow: () -> Void
     public let deleteCloudData: () -> Void
-    public let confirmCloudAccountSwitch: () -> Void
     public let selectSyncFolder: () -> Void
     public let openSyncFolder: () -> Void
     public let removeSyncDevice: (String) -> Void
@@ -64,7 +63,6 @@ public struct SettingsView: View {
         saveSyncSettings: @escaping (SyncSettings) throws -> Void = { _ in },
         syncNow: @escaping () -> Void = {},
         deleteCloudData: @escaping () -> Void = {},
-        confirmCloudAccountSwitch: @escaping () -> Void = {},
         selectSyncFolder: @escaping () -> Void = {},
         openSyncFolder: @escaping () -> Void = {},
         removeSyncDevice: @escaping (String) -> Void = { _ in },
@@ -89,7 +87,6 @@ public struct SettingsView: View {
         self.saveSyncSettings = saveSyncSettings
         self.syncNow = syncNow
         self.deleteCloudData = deleteCloudData
-        self.confirmCloudAccountSwitch = confirmCloudAccountSwitch
         self.selectSyncFolder = selectSyncFolder
         self.openSyncFolder = openSyncFolder
         self.removeSyncDevice = removeSyncDevice
