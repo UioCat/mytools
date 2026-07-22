@@ -32,6 +32,38 @@ Resolve route references relative to the skill's `routes/` directory or list ski
 
 ---
 
+## [ERR-20260722-002] 同步周期源代码契约仍读取旧文件
+
+**Logged**: 2026-07-22T18:29:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+单次同步实现迁移到核心运行器后，源代码契约测试仍读取协调器文件，导致操作次数断言全部为零。
+
+### Error
+```
+ICloudDriveSyncCoordinatorSourceTests: 3 tests, 7 assertion failures
+```
+
+### Context
+- 新运行器已经编译成功。
+- 失败断言只统计旧文件中的导出、回执和目录扫描调用。
+
+### Suggested Fix
+让契约测试读取 `DriveSyncCycleRunner.swift`，并增加执行完整周期的集成测试。
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/ICloudDriveSyncCoordinatorSourceTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-22T18:29:00+08:00
+- **Notes**: 更新契约测试的源文件目标，并以临时存储周期测试补充行为验证。
+
+---
+
 ## [ERR-20260722-001] drive-sync-usage-symlink-classification
 
 **Logged**: 2026-07-22T18:04:00+08:00

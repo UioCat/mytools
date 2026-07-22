@@ -4,7 +4,7 @@ import XCTest
 final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
     func testSyncCycleReusesContentAcrossTwoExportsWithoutThirdFullExport() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+            "Sources/MacToolsCore/Sync/DriveSyncCycleRunner.swift"
         )
 
         XCTAssertEqual(
@@ -20,7 +20,7 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
 
     func testSyncCycleOnlyAppliesPeerReplicasWithoutMatchingReceipts() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+            "Sources/MacToolsCore/Sync/DriveSyncCycleRunner.swift"
         )
 
         XCTAssertTrue(source.contains("let receiptsByDeviceID"))
@@ -33,7 +33,7 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
 
     func testSyncCycleUsesAtMostTwoUnifiedStorageInventoryScans() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+            "Sources/MacToolsCore/Sync/DriveSyncCycleRunner.swift"
         )
 
         XCTAssertEqual(
@@ -42,6 +42,17 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         )
         XCTAssertFalse(source.contains("store.storedObjects()"))
         XCTAssertFalse(source.contains("store.usage("))
+    }
+
+    func testCoordinatorDelegatesSingleCycleWorkToCoreRunner() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+        )
+
+        XCTAssertTrue(source.contains("private let cycleRunner: DriveSyncCycleRunner"))
+        XCTAssertTrue(source.contains("try cycleRunner.run("))
+        XCTAssertFalse(source.contains("localRepository.exportBundle("))
+        XCTAssertFalse(source.contains("store.storageInventory()"))
     }
 
     private func sourceFile(_ path: String) throws -> String {
