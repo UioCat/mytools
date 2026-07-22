@@ -59,4 +59,20 @@ final class PackageAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("using ad-hoc signing"))
         XCTAssertTrue(script.contains("--sign -"))
     }
+
+    func testPackageScriptRemovesPersonalBuildPathsFromReleaseBinary() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scriptURL = repositoryRoot.appendingPathComponent("scripts/package_app.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+        XCTAssertTrue(script.contains("mktemp -d"))
+        XCTAssertTrue(script.contains("--scratch-path \"$BUILD_DIR\""))
+        XCTAssertTrue(script.contains("-file-prefix-map"))
+        XCTAssertTrue(script.contains("-debug-prefix-map"))
+        XCTAssertTrue(script.contains("\"$ROOT_DIR=.\""))
+        XCTAssertFalse(script.contains("BUILD_DIR=\"$ROOT_DIR/.build/release\""))
+    }
 }

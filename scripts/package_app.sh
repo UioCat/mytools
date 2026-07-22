@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$ROOT_DIR/.build/release"
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/MacTools-release.XXXXXX")"
 APP_DIR="$ROOT_DIR/build/MacTools.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
@@ -11,6 +11,11 @@ BUNDLE_ID="${MACOS_BUNDLE_ID:-local.mactools.mvp}"
 APP_VERSION="${MACOS_APP_VERSION:-0.1.0}"
 BUILD_NUMBER="${MACOS_BUILD_NUMBER:-1}"
 FORCE_ADHOC_SIGNING="${MACOS_FORCE_ADHOC_SIGNING:-0}"
+
+cleanup_build_directory() {
+  rm -rf -- "$BUILD_DIR"
+}
+trap cleanup_build_directory EXIT
 
 if [[ ! "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
   echo "error: MACOS_APP_VERSION must contain one to three numeric components." >&2
@@ -38,11 +43,18 @@ if [[ "$FORCE_ADHOC_SIGNING" == "0" ]]; then
   fi
 fi
 
-swift build -c release --product MacTools
+swift build \
+  --scratch-path "$BUILD_DIR" \
+  -c release \
+  --product MacTools \
+  -Xswiftc -file-prefix-map \
+  -Xswiftc "$ROOT_DIR=." \
+  -Xswiftc -debug-prefix-map \
+  -Xswiftc "$ROOT_DIR=."
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
-cp "$BUILD_DIR/MacTools" "$MACOS_DIR/MacTools"
+cp "$BUILD_DIR/release/MacTools" "$MACOS_DIR/MacTools"
 cp "$ROOT_DIR/Sources/MacTools/Resources/MenuBarIcon.png" "$RESOURCES_DIR/MenuBarIcon.png"
 cp "$ROOT_DIR/Sources/MacTools/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
