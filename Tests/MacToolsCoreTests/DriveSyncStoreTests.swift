@@ -162,8 +162,17 @@ final class DriveSyncStoreTests: XCTestCase {
                 capacityBytes: SyncStorageLimit.megabytes512.byteLimit,
                 ordinaryHistoryCount: 1
             )
+            let inventory = try store.storageInventory()
 
             XCTAssertEqual(objects.count, 1)
+            XCTAssertEqual(inventory.objects, objects)
+            XCTAssertEqual(
+                inventory.usage(
+                    capacityBytes: SyncStorageLimit.megabytes512.byteLimit,
+                    ordinaryHistoryCount: 1
+                ),
+                usage
+            )
             XCTAssertEqual(usage.textBytes, objects[0].byteCount)
             XCTAssertEqual(usage.imageBytes, 0)
             XCTAssertGreaterThan(usage.metadataBytes, 0)
@@ -172,6 +181,26 @@ final class DriveSyncStoreTests: XCTestCase {
                 usage.textBytes + usage.imageBytes + usage.metadataBytes
             )
             XCTAssertEqual(usage.ordinaryHistoryCount, 1)
+        }
+    }
+
+    func testStorageInventoryCanAccountForGarbageRemovalWithoutRescanning() throws {
+        try withStore { store, _ in
+            _ = try store.prepare()
+            _ = try store.write(
+                makeBundle(deviceID: "device-a", revision: 1, text: "garbage"),
+                seenRevisions: [:],
+                updatedAt: Date(timeIntervalSince1970: 100)
+            )
+            let inventory = try store.storageInventory()
+            let contentID = try XCTUnwrap(inventory.objects.first?.contentID)
+
+            let updated = inventory.removingObjects(withContentIDs: [contentID])
+
+            XCTAssertTrue(updated.objects.isEmpty)
+            XCTAssertEqual(updated.textBytes, 0)
+            XCTAssertEqual(updated.imageBytes, inventory.imageBytes)
+            XCTAssertEqual(updated.metadataBytes, inventory.metadataBytes)
         }
     }
 

@@ -31,6 +31,19 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         )
     }
 
+    func testSyncCycleUsesAtMostTwoUnifiedStorageInventoryScans() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+        )
+
+        XCTAssertEqual(
+            source.components(separatedBy: "store.storageInventory()").count - 1,
+            2
+        )
+        XCTAssertFalse(source.contains("store.storedObjects()"))
+        XCTAssertFalse(source.contains("store.usage("))
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

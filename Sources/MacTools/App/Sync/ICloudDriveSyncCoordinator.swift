@@ -282,7 +282,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                 try? requestDownloadIfNeeded(at: url)
             }
         }
-        let storedObjectsBeforeWrite = try store.storedObjects()
+        var storageInventory = try store.storageInventory()
+        let storedObjectsBeforeWrite = storageInventory.objects
         var storedBytesByContentID: [String: Int64] = [:]
         for object in storedObjectsBeforeWrite {
             storedBytesByContentID[object.contentID] = max(
@@ -430,7 +431,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         let effectiveRemoteEvictionIDs = Set(effectiveRemoteEvictions.map(\.contentID))
         candidates.removeAll { effectiveRemoteEvictionIDs.contains($0.contentID) }
 
-        let currentUsage = try store.usage(
+        let currentUsage = storageInventory.usage(
             capacityBytes: configuration.storageLimit.byteLimit,
             ordinaryHistoryCount: 0
         )
@@ -592,6 +593,9 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             try deviceOverrideRepository.setSeenRevisions(seenRevisions)
             writtenBundle = finalBundle
         }
+        if writtenBundle != nil {
+            storageInventory = try store.storageInventory()
+        }
 
         var referencedContentIDs: Set<String> = []
         for replica in replicas where writtenBundle == nil || replica.manifest.deviceID != deviceID {
@@ -602,7 +606,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         if let writtenBundle {
             referencedContentIDs.formUnion(writtenBundle.clipboard.records.map(\.contentID))
         }
-        let storedObjects = try store.storedObjects()
+        let storedObjects = storageInventory.objects
         var removedGarbageIDs: Set<String> = []
         if replicaFailures.isEmpty {
             let garbageIDs = try localRepository.garbageCollectionCandidates(
@@ -616,7 +620,10 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
         try localRepository.acknowledgeGarbageCollected(contentIDs: removedGarbageIDs)
 
-        let usage = try store.usage(
+        let finalStorageInventory = storageInventory.removingObjects(
+            withContentIDs: removedGarbageIDs
+        )
+        let usage = finalStorageInventory.usage(
             capacityBytes: configuration.storageLimit.byteLimit,
             ordinaryHistoryCount: decision.ordinaryCount
         )

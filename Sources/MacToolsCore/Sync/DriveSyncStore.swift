@@ -48,6 +48,56 @@ public struct SyncStoredObject: Equatable, Sendable {
     }
 }
 
+public struct SyncStorageInventory: Equatable, Sendable {
+    public var objects: [SyncStoredObject]
+    public var imageBytes: Int64
+    public var textBytes: Int64
+    public var metadataBytes: Int64
+
+    public init(
+        objects: [SyncStoredObject],
+        imageBytes: Int64,
+        textBytes: Int64,
+        metadataBytes: Int64
+    ) {
+        self.objects = objects
+        self.imageBytes = imageBytes
+        self.textBytes = textBytes
+        self.metadataBytes = metadataBytes
+    }
+
+    public func usage(
+        capacityBytes: Int64,
+        ordinaryHistoryCount: Int
+    ) -> SyncStorageUsage {
+        SyncStorageUsage(
+            usedBytes: imageBytes + textBytes + metadataBytes,
+            capacityBytes: capacityBytes,
+            ordinaryHistoryCount: ordinaryHistoryCount,
+            imageBytes: imageBytes,
+            textBytes: textBytes,
+            metadataBytes: metadataBytes
+        )
+    }
+
+    public func removingObjects(withContentIDs contentIDs: Set<String>) -> Self {
+        guard !contentIDs.isEmpty else { return self }
+        var updated = self
+        for object in objects where contentIDs.contains(object.contentID) {
+            switch object.kind {
+            case .imageData:
+                updated.imageBytes = max(0, updated.imageBytes - object.byteCount)
+            case .text, .url:
+                updated.textBytes = max(0, updated.textBytes - object.byteCount)
+            default:
+                break
+            }
+        }
+        updated.objects.removeAll { contentIDs.contains($0.contentID) }
+        return updated
+    }
+}
+
 public struct DriveSyncReplicaFailure: Equatable, Sendable {
     public var deviceID: String
     public var error: DriveSyncStoreError
@@ -344,14 +394,20 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     public func usage(capacityBytes: Int64, ordinaryHistoryCount: Int) throws -> SyncStorageUsage {
+        try storageInventory().usage(
+            capacityBytes: capacityBytes,
+            ordinaryHistoryCount: ordinaryHistoryCount
+        )
+    }
+
+    public func storageInventory() throws -> SyncStorageInventory {
+        var objects: [SyncStoredObject] = []
         var imageBytes: Int64 = 0
         var textBytes: Int64 = 0
         var metadataBytes: Int64 = 0
         guard fileManager.fileExists(atPath: rootURL.path) else {
-            return SyncStorageUsage(
-                usedBytes: 0,
-                capacityBytes: capacityBytes,
-                ordinaryHistoryCount: ordinaryHistoryCount,
+            return SyncStorageInventory(
+                objects: [],
                 imageBytes: 0,
                 textBytes: 0,
                 metadataBytes: 0
@@ -374,11 +430,21 @@ public final class DriveSyncStore: @unchecked Sendable {
             } else {
                 metadataBytes += bytes
             }
+            guard let directoryKind else { continue }
+            let expectedExtension = directoryKind == .imageData ? "png" : "json"
+            guard url.pathExtension == expectedExtension else { continue }
+            let contentID = url.deletingPathExtension().lastPathComponent
+            guard Self.isValidContentID(contentID) else { continue }
+            objects.append(
+                SyncStoredObject(
+                    contentID: contentID,
+                    kind: directoryKind,
+                    byteCount: bytes
+                )
+            )
         }
-        return SyncStorageUsage(
-            usedBytes: imageBytes + textBytes + metadataBytes,
-            capacityBytes: capacityBytes,
-            ordinaryHistoryCount: ordinaryHistoryCount,
+        return SyncStorageInventory(
+            objects: objects.sorted { $0.contentID < $1.contentID },
             imageBytes: imageBytes,
             textBytes: textBytes,
             metadataBytes: metadataBytes
@@ -407,10 +473,7 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     public func storedObjects() throws -> [SyncStoredObject] {
-        var objects: [SyncStoredObject] = []
-        try appendStoredObjects(in: objectsTextURL, kind: .text, extension: "json", to: &objects)
-        try appendStoredObjects(in: objectsImagesURL, kind: .imageData, extension: "png", to: &objects)
-        return objects.sorted { $0.contentID < $1.contentID }
+        try storageInventory().objects
     }
 
     public func removeObject(_ object: SyncStoredObject) throws {
@@ -718,33 +781,6 @@ public final class DriveSyncStore: @unchecked Sendable {
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ).filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
-
-    private func appendStoredObjects(
-        in directory: URL,
-        kind: ClipboardContentKind,
-        extension fileExtension: String,
-        to result: inout [SyncStoredObject]
-    ) throws {
-        guard fileManager.fileExists(atPath: directory.path) else { return }
-        let enumerator = fileManager.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        )
-        while let url = enumerator?.nextObject() as? URL {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-            guard values.isRegularFile == true, url.pathExtension == fileExtension else { continue }
-            let contentID = url.deletingPathExtension().lastPathComponent
-            guard Self.isValidContentID(contentID) else { continue }
-            result.append(
-                SyncStoredObject(
-                    contentID: contentID,
-                    kind: kind,
-                    byteCount: Int64(values.fileSize ?? 0)
-                )
-            )
-        }
     }
 
     private static func isValidContentID(_ value: String) -> Bool {
