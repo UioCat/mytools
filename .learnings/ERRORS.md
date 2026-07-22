@@ -32,6 +32,39 @@ Resolve route references relative to the skill's `routes/` directory or list ski
 
 ---
 
+## [ERR-20260722-001] drive-sync-usage-symlink-classification
+
+**Logged**: 2026-07-22T18:04:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+临时目录中的同步文字对象被 `usage()` 计入元数据，而 `storedObjects()` 正确识别为文字对象。
+
+### Error
+```
+XCTAssertEqual failed: ("0") is not equal to ("141")
+```
+
+### Context
+- 新增存储清单行为锁定测试后稳定复现。
+- 测试根目录由系统临时目录生成，路径可能在 `/var` 与 `/private/var` 之间解析。
+- 失败位置为 `Tests/MacToolsCoreTests/DriveSyncStoreTests.swift` 的文字对象字节分类断言。
+
+### Suggested Fix
+确认枚举 URL 与预先构造对象目录的规范路径是否一致；统一存储清单应按相对路径组件分类，避免依赖字符串绝对路径前缀。
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/Sync/DriveSyncStore.swift, Tests/MacToolsCoreTests/DriveSyncStoreTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-22T18:06:19+08:00
+- **Notes**: 已改为按同步协议相对结构 `objects/{text|images}/sha256` 分类，不再比较可能分别为 `/var` 与 `/private/var` 的绝对路径；聚焦回归测试通过。
+
+---
+
 ## [ERR-20260714-003] liquid glass offscreen snapshot rendering
 
 **Logged**: 2026-07-14T19:45:00+08:00

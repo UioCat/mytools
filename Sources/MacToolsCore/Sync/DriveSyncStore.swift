@@ -366,9 +366,10 @@ public final class DriveSyncStore: @unchecked Sendable {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             guard values.isRegularFile == true else { continue }
             let bytes = Int64(values.fileSize ?? 0)
-            if url.path.hasPrefix(objectsImagesURL.path + "/") {
+            let directoryKind = storedObjectDirectoryKind(for: url)
+            if directoryKind == .imageData {
                 imageBytes += bytes
-            } else if url.path.hasPrefix(objectsTextURL.path + "/") {
+            } else if directoryKind == .text {
                 textBytes += bytes
             } else {
                 metadataBytes += bytes
@@ -382,6 +383,20 @@ public final class DriveSyncStore: @unchecked Sendable {
             textBytes: textBytes,
             metadataBytes: metadataBytes
         )
+    }
+
+    private func storedObjectDirectoryKind(for url: URL) -> ClipboardContentKind? {
+        let components = url.pathComponents
+        guard let objectsIndex = components.lastIndex(of: "objects"),
+              components.indices.contains(objectsIndex + 2),
+              components[objectsIndex + 2] == "sha256" else {
+            return nil
+        }
+        switch components[objectsIndex + 1] {
+        case "text": return .text
+        case "images": return .imageData
+        default: return nil
+        }
     }
 
     public func removeReplicaData() throws {

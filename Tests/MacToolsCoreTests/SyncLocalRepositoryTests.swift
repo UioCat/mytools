@@ -59,6 +59,120 @@ final class SyncLocalRepositoryTests: XCTestCase {
         XCTAssertEqual(try store.storedObjects().count, 1)
     }
 
+    func testRepeatedExportsWithStableCutoffRemainEquivalent() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        try replica.clipboard.upsert(textItem(id: UUID(), text: "stable text"))
+        let imageData = Self.pngData()
+        let image = ClipboardItem(
+            id: UUID(),
+            kind: .imageData,
+            displayTitle: "stable image",
+            searchableText: "stable image",
+            text: nil,
+            originalPath: nil,
+            cachedFilePath: nil,
+            thumbnailPath: nil,
+            sourceApp: "Tests",
+            contentHash: ClipboardContentHasher.sha256String(for: imageData),
+            createdAt: Date(timeIntervalSince1970: 100),
+            lastUsedAt: nil,
+            useCount: 0,
+            isPinned: false,
+            isFavorite: false
+        )
+        try replica.clipboard.upsertPNG(image, data: imageData)
+        let cutoff = Date(timeIntervalSince1970: 500)
+
+        let first = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 3,
+            scope: .allHistory,
+            at: cutoff
+        )
+        let second = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 3,
+            scope: .allHistory,
+            at: cutoff
+        )
+
+        XCTAssertEqual(second, first)
+    }
+
+    func testExcludedClipboardContentStaysPendingWhenOtherRecordsAreAcknowledged() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let uploaded = textItem(id: UUID(), text: "uploaded")
+        let blocked = textItem(id: UUID(), text: "blocked")
+        try replica.clipboard.upsert(uploaded)
+        try replica.clipboard.upsert(blocked)
+        let blockedContentID = try XCTUnwrap(blocked.contentHash)
+        let cutoff = Date().addingTimeInterval(1)
+
+        let bundle = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 1,
+            scope: .allHistory,
+            excludingContentIDs: [blockedContentID],
+            at: cutoff
+        )
+
+        XCTAssertEqual(bundle.clipboard.records.map(\.recordName), [uploaded.id.uuidString])
+        XCTAssertEqual(bundle.contents.map(\.contentID), [try XCTUnwrap(uploaded.contentHash)])
+        try replica.sync.acknowledgeSnapshot(
+            upTo: bundle.outboxCutoff,
+            excludingClipboardRecordNames: [blocked.id.uuidString],
+            uploadedContentIDs: Set(bundle.contents.map(\.contentID))
+        )
+        XCTAssertTrue(try replica.sync.hasPendingChanges())
+        XCTAssertFalse(try replica.sync.hasPendingChanges(
+            excludingClipboardRecordNames: [blocked.id.uuidString]
+        ))
+    }
+
+    func testReplicaReceiptsReplaceOnlyTheirDeviceAndResetWithGeneration() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let storeID = UUID()
+        try replica.sync.bindStore(storeID)
+        let firstAppliedAt = Date(timeIntervalSince1970: 100)
+        let replacementAppliedAt = Date(timeIntervalSince1970: 200)
+        let peerReceipt = SyncReplicaReceipt(
+            deviceID: "device-b",
+            generation: 1,
+            revision: 4,
+            manifestDigest: "digest-b",
+            appliedAt: firstAppliedAt
+        )
+        try replica.sync.recordReceipt(
+            SyncReplicaReceipt(
+                deviceID: "device-a",
+                generation: 1,
+                revision: 1,
+                manifestDigest: "digest-a-1",
+                appliedAt: firstAppliedAt
+            )
+        )
+        try replica.sync.recordReceipt(peerReceipt)
+
+        let replacement = SyncReplicaReceipt(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 2,
+            manifestDigest: "digest-a-2",
+            appliedAt: replacementAppliedAt
+        )
+        try replica.sync.recordReceipt(replacement)
+
+        XCTAssertEqual(try replica.sync.receipts(), [replacement, peerReceipt])
+        XCTAssertTrue(try replica.sync.adoptGeneration(2, storeID: storeID))
+        XCTAssertTrue(try replica.sync.receipts().isEmpty)
+    }
+
     func testTombstoneCompactsOnlyAfterEveryVisibleDeviceAcknowledgesSourceRevision() throws {
         let replica = try makeReplica(deviceID: "device-a")
         defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }

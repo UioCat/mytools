@@ -148,6 +148,33 @@ final class DriveSyncStoreTests: XCTestCase {
         }
     }
 
+    func testStoredObjectBytesMatchTextUsageCategory() throws {
+        try withStore { store, _ in
+            _ = try store.prepare()
+            _ = try store.write(
+                makeBundle(deviceID: "device-a", revision: 1, text: "usage"),
+                seenRevisions: [:],
+                updatedAt: Date(timeIntervalSince1970: 100)
+            )
+
+            let objects = try store.storedObjects()
+            let usage = try store.usage(
+                capacityBytes: SyncStorageLimit.megabytes512.byteLimit,
+                ordinaryHistoryCount: 1
+            )
+
+            XCTAssertEqual(objects.count, 1)
+            XCTAssertEqual(usage.textBytes, objects[0].byteCount)
+            XCTAssertEqual(usage.imageBytes, 0)
+            XCTAssertGreaterThan(usage.metadataBytes, 0)
+            XCTAssertEqual(
+                usage.usedBytes,
+                usage.textBytes + usage.imageBytes + usage.metadataBytes
+            )
+            XCTAssertEqual(usage.ordinaryHistoryCount, 1)
+        }
+    }
+
     func testValidLocalContentRepairsCorruptedSharedObject() throws {
         try withStore { store, _ in
             _ = try store.prepare()
