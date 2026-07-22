@@ -1,5 +1,5 @@
 @MainActor
-public final class ScreenCapturePreparationCache<Value> {
+public final class ScreenCapturePreparationCache<Value: Sendable> {
     private let loader: () async throws -> Value
     private var task: Task<Value, Error>?
     private var generation = 0

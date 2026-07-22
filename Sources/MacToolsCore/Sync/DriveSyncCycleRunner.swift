@@ -16,7 +16,7 @@ public struct DriveSyncCycleConfiguration: Sendable {
     }
 }
 
-public struct DriveSyncCycleResult {
+public struct DriveSyncCycleResult: Sendable {
     public let status: SyncStatus
     public let remoteSettings: AppSettings?
     public let devices: [SyncDeviceSummary]

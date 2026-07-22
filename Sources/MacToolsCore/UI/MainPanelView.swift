@@ -636,9 +636,11 @@ private final class KeyboardEventMonitorNSView: NSView {
         }
     }
 
-    deinit {
-        if let monitor {
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, let monitor {
             NSEvent.removeMonitor(monitor)
+            self.monitor = nil
         }
+        super.viewWillMove(toWindow: newWindow)
     }
 }

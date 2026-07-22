@@ -1,4 +1,4 @@
-public enum ScreenCaptureMode: Equatable {
+public enum ScreenCaptureMode: Equatable, Sendable {
     case screenshot
     case recording
 

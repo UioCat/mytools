@@ -80,6 +80,84 @@ private actor AppMaintenanceWorker {
 }
 
 @MainActor
+private final class PasteActivationAttempt {
+    private let targetApplication: NSRunningApplication
+    private let notificationCenter: NotificationCenter
+    private let logger: Logger
+    private let paste: () -> Void
+    private let onFinish: (PasteActivationAttempt) -> Void
+    private var observer: NSObjectProtocol?
+    private var didPaste = false
+
+    init(
+        targetApplication: NSRunningApplication,
+        notificationCenter: NotificationCenter,
+        logger: Logger,
+        paste: @escaping () -> Void,
+        onFinish: @escaping (PasteActivationAttempt) -> Void
+    ) {
+        self.targetApplication = targetApplication
+        self.notificationCenter = notificationCenter
+        self.logger = logger
+        self.paste = paste
+        self.onFinish = onFinish
+    }
+
+    func start() {
+        let targetProcessIdentifier = targetApplication.processIdentifier
+        observer = notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let activatedProcessIdentifier = (
+                notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication
+            )?.processIdentifier
+            guard activatedProcessIdentifier == targetProcessIdentifier else { return }
+
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(80))
+                self?.pasteOnce(reason: "activation notification")
+            }
+        }
+
+        targetApplication.unhide()
+        targetApplication.activate(options: [.activateAllWindows])
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            self?.pasteOnce(reason: "activation timeout fallback")
+        }
+    }
+
+    func cancel() {
+        guard !didPaste else { return }
+        didPaste = true
+        removeObserver()
+        onFinish(self)
+    }
+
+    private func pasteOnce(reason: String) {
+        guard !didPaste else { return }
+        didPaste = true
+        removeObserver()
+
+        logger.info(
+            "sending paste to \(targetApplication.localizedName ?? "unknown") via \(reason)"
+        )
+        paste()
+        onFinish(self)
+    }
+
+    private func removeObserver() {
+        guard let observer else { return }
+        notificationCenter.removeObserver(observer)
+        self.observer = nil
+    }
+}
+
+@MainActor
 final class AppEnvironment {
     let logger = Logger()
     private let preferenceRepository: PreferenceRepository
@@ -142,6 +220,7 @@ final class AppEnvironment {
     private var clipboardTimer: Timer?
     private var superRightClickMonitor: SuperRightClickMonitor?
     private var appBeforePanel: NSRunningApplication?
+    private var pasteActivationAttempt: PasteActivationAttempt?
     private var credentialLoadGeneration = 0
     private var credentialLoadFinished = false
     private var legacySettingsURL: URL?
@@ -781,6 +860,8 @@ final class AppEnvironment {
     }
 
     private func pasteAfterActivatingTarget(_ targetApplication: NSRunningApplication?) {
+        pasteActivationAttempt?.cancel()
+        pasteActivationAttempt = nil
         guard let targetApplication else {
             logger.error("paste target missing; sending paste after fallback delay")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -789,46 +870,20 @@ final class AppEnvironment {
             return
         }
 
-        let notificationCenter = NSWorkspace.shared.notificationCenter
-        var observer: NSObjectProtocol?
-        var didPaste = false
-
-        func pasteOnce(reason: String) {
-            guard !didPaste else {
-                return
+        let attempt = PasteActivationAttempt(
+            targetApplication: targetApplication,
+            notificationCenter: NSWorkspace.shared.notificationCenter,
+            logger: logger,
+            paste: { [weak self] in
+                self?.clipboardModel.paste()
+            },
+            onFinish: { [weak self] attempt in
+                guard self?.pasteActivationAttempt === attempt else { return }
+                self?.pasteActivationAttempt = nil
             }
-
-            didPaste = true
-            if let observer {
-                notificationCenter.removeObserver(observer)
-            }
-
-            logger.info("sending paste to \(targetApplication.localizedName ?? "unknown") via \(reason)")
-            clipboardModel.paste()
-        }
-
-        observer = notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { notification in
-            let activatedApplication = notification
-                .userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            guard activatedApplication?.processIdentifier == targetApplication.processIdentifier else {
-                return
-            }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                pasteOnce(reason: "activation notification")
-            }
-        }
-
-        targetApplication.unhide()
-        targetApplication.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            pasteOnce(reason: "activation timeout fallback")
-        }
+        )
+        pasteActivationAttempt = attempt
+        attempt.start()
     }
 
     private func canPostPasteEvent() -> Bool {

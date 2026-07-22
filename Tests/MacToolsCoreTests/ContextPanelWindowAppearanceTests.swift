@@ -3,6 +3,7 @@ import XCTest
 @testable import MacToolsCore
 
 final class ContextPanelWindowAppearanceTests: XCTestCase {
+    @MainActor
     func testContextPanelHasNoTitledChromeOrRectangularSystemShadow() {
         let styleMask = ContextPanelWindowAppearance.windowStyleMask
 
@@ -21,6 +22,7 @@ final class ContextPanelWindowAppearanceTests: XCTestCase {
         XCTAssertNil(panel.standardWindowButton(.closeButton))
     }
 
+    @MainActor
     func testContextPanelBackingLayerClipsOutsideTheRoundedGlassShape() throws {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 210))
 

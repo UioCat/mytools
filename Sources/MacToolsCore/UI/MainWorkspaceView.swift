@@ -21,7 +21,8 @@ public enum ClipboardSearchFocusPolicy {
     }
 }
 
-public struct MainWorkspaceSidebarChrome {
+/// SwiftUI reads this environment value on the main actor; the closure only mutates view state.
+public struct MainWorkspaceSidebarChrome: @unchecked Sendable {
     public let isSidebarVisible: Bool
     public let toggleSidebar: () -> Void
 

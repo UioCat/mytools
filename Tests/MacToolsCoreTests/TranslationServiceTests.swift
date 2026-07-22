@@ -171,7 +171,7 @@ final class TranslationServiceTests: XCTestCase {
     }
 }
 
-private final class RecordingTranslationProvider: TranslationProvider {
+private final class RecordingTranslationProvider: TranslationProvider, @unchecked Sendable {
     let providerID = "test"
     private(set) var requests: [TranslationRequest] = []
     private let response: Result<TranslationResponse, TranslationError>
@@ -186,7 +186,7 @@ private final class RecordingTranslationProvider: TranslationProvider {
     }
 }
 
-private final class RecordingTranslationHTTPClient: TranslationHTTPClient {
+private final class RecordingTranslationHTTPClient: TranslationHTTPClient, @unchecked Sendable {
     private(set) var requests: [URLRequest] = []
     private let response: Result<TranslationHTTPResponse, Error>
 

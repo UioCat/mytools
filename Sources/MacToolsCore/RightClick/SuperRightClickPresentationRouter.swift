@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SuperRightClickSourceApplication: Equatable {
+public struct SuperRightClickSourceApplication: Equatable, Sendable {
     public var localizedName: String?
     public var bundleIdentifier: String?
     public var processIdentifier: Int32?
@@ -20,7 +20,7 @@ public struct SuperRightClickSourceApplication: Equatable {
     }
 }
 
-public enum SuperRightClickPresentationRoute: Equatable {
+public enum SuperRightClickPresentationRoute: Equatable, Sendable {
     case text
     case fileSystem
     case finderCurrentFolder

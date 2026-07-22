@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ClipboardPayload: Equatable {
+public struct ClipboardPayload: Equatable, Sendable {
     public var text: String?
     public var fileURLs: [URL]
     public var imageData: Data?

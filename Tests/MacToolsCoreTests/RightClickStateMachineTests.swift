@@ -350,7 +350,7 @@ private final class FakePasteEventSender: PasteEventSender {
     }
 }
 
-private final class FakeSelectionCapture: SelectionCapturing {
+private final class FakeSelectionCapture: SelectionCapturing, @unchecked Sendable {
     private(set) var captureCount = 0
     private let payload: ClipboardPayload
 
@@ -364,7 +364,7 @@ private final class FakeSelectionCapture: SelectionCapturing {
     }
 }
 
-private final class RecordingTranslationProvider: TranslationProvider {
+private final class RecordingTranslationProvider: TranslationProvider, @unchecked Sendable {
     let providerID = "test"
     private(set) var requests: [TranslationRequest] = []
 

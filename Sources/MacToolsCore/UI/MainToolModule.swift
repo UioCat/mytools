@@ -1,6 +1,6 @@
 import Foundation
 
-public enum MainToolModule: String, CaseIterable, Identifiable {
+public enum MainToolModule: String, CaseIterable, Identifiable, Sendable {
     case settings
     case clipboard
     case translation
@@ -45,11 +45,11 @@ public enum MainToolModule: String, CaseIterable, Identifiable {
     }
 }
 
-public enum PanelKeyCommand: Equatable {
+public enum PanelKeyCommand: Equatable, Sendable {
     case dismiss
 }
 
-public enum ToolModulePresentation {
+public enum ToolModulePresentation: Sendable {
     case window
     case embedded
 }

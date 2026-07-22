@@ -4,13 +4,14 @@ import Foundation
 import MacToolsCore
 import ScreenCaptureKit
 
-protocol ScreenRecording: AnyObject {
+protocol ScreenRecording: AnyObject, Sendable {
     var isRecording: Bool { get }
     func start(selection: ScreenCaptureSelection, destination: URL) async throws
     func stop() async throws -> URL
 }
 
-final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStreamDelegate {
+/// Mutable capture state is handed off through `outputQueue` and stopped before finalization.
+final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let captureService: SystemScreenCaptureService
     private let outputQueue = DispatchQueue(label: "com.mactools.screen-recording")
     private let outputQueueKey = DispatchSpecificKey<Void>()

@@ -214,7 +214,7 @@ public struct SystemPermissionChecker: PermissionChecking {
 
     public func requestAccessibilityPermission() -> Bool {
         #if canImport(ApplicationServices)
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let promptKey = "AXTrustedCheckOptionPrompt"
         let options = [promptKey: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
         #else

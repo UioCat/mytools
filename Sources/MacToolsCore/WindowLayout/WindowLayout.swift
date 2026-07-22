@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-public struct WindowLayoutPreviewSegment: Equatable {
+public struct WindowLayoutPreviewSegment: Equatable, Sendable {
     public var x: CGFloat
     public var y: CGFloat
     public var width: CGFloat
@@ -15,7 +15,7 @@ public struct WindowLayoutPreviewSegment: Equatable {
     }
 }
 
-public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable, Identifiable {
+public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable, Identifiable, Sendable {
     case leftHalf
     case rightHalf
     case leftThird
@@ -83,7 +83,7 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
     }
 }
 
-public struct WindowLayoutButton: Codable, Equatable, Hashable, Identifiable {
+public struct WindowLayoutButton: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String
     public var title: String
     public var modes: [WindowLayoutMode]
@@ -131,7 +131,7 @@ public struct WindowLayoutButton: Codable, Equatable, Hashable, Identifiable {
     }
 }
 
-public struct WindowLayoutModeShortcuts: Codable, Equatable, Hashable, Identifiable {
+public struct WindowLayoutModeShortcuts: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var mode: WindowLayoutMode
     public var shortcuts: [HotKeyBinding]
 
@@ -150,7 +150,7 @@ public struct WindowLayoutModeShortcuts: Codable, Equatable, Hashable, Identifia
     }
 }
 
-struct WindowLayoutModeGroup: Equatable, Identifiable {
+struct WindowLayoutModeGroup: Equatable, Identifiable, Sendable {
     var title: String
     var modes: [WindowLayoutMode]
 
@@ -166,7 +166,7 @@ enum WindowLayoutSettingsLayout {
     ]
 }
 
-public struct WindowLayoutSettings: Codable, Equatable {
+public struct WindowLayoutSettings: Codable, Equatable, Sendable {
     public var isEnabled: Bool
     public var enabledModes: [WindowLayoutMode]
     public var customButtons: [WindowLayoutButton]

@@ -3,7 +3,7 @@ import ApplicationServices
 import Darwin
 import Foundation
 
-public protocol FinderCurrentFolderResolving {
+public protocol FinderCurrentFolderResolving: Sendable {
     func currentFolderURL(processIdentifier: Int32?) async -> URL?
 }
 
@@ -264,7 +264,8 @@ struct FinderScriptingProcessRunner: Sendable {
     }
 }
 
-public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolving {
+/// The resolver is immutable after initialization; its closures execute one request at a time.
+public final class SystemFinderCurrentFolderResolver: FinderCurrentFolderResolving, @unchecked Sendable {
     private let desktopDirectory: URL
     private let accessibilityDocument: (Int32) -> FinderAccessibilityDocumentResult
     private let automationAuthorization: () async -> Bool

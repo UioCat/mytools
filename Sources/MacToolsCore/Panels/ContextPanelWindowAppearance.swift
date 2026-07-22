@@ -5,6 +5,7 @@ public enum ContextPanelWindowAppearance {
     public static let usesSystemWindowShadow = false
     public static let windowCornerRadius: CGFloat = 22
 
+    @MainActor
     public static func configureRoundedBackingLayer(_ view: NSView) {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor

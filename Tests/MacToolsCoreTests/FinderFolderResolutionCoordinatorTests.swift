@@ -10,12 +10,12 @@ final class FinderFolderResolutionCoordinatorTests: XCTestCase {
         let firstCallback = expectation(description: "first callback is suppressed")
         firstCallback.isInverted = true
         let secondCallback = expectation(description: "second callback completes")
-        var firstContinuation: CheckedContinuation<Void, Never>?
+        let firstContinuation = LockedContinuation<Void>()
 
         coordinator.replace(
             operation: {
                 await withCheckedContinuation { continuation in
-                    firstContinuation = continuation
+                    firstContinuation.store(continuation)
                     firstStarted.fulfill()
                 }
                 firstFinished.fulfill()
@@ -39,7 +39,7 @@ final class FinderFolderResolutionCoordinatorTests: XCTestCase {
         )
         await fulfillment(of: [secondCallback], timeout: 1)
 
-        firstContinuation?.resume()
+        firstContinuation.resume(returning: ())
         await fulfillment(of: [firstFinished, firstCallback], timeout: 0.2)
     }
 
@@ -49,12 +49,12 @@ final class FinderFolderResolutionCoordinatorTests: XCTestCase {
         let operationFinished = expectation(description: "operation finished")
         let callback = expectation(description: "callback is suppressed")
         callback.isInverted = true
-        var continuation: CheckedContinuation<Void, Never>?
+        let continuation = LockedContinuation<Void>()
 
         coordinator.replace(
             operation: {
                 await withCheckedContinuation { storedContinuation in
-                    continuation = storedContinuation
+                    continuation.store(storedContinuation)
                     operationStarted.fulfill()
                 }
                 operationFinished.fulfill()
@@ -67,8 +67,27 @@ final class FinderFolderResolutionCoordinatorTests: XCTestCase {
         await fulfillment(of: [operationStarted], timeout: 1)
 
         coordinator.cancel()
-        continuation?.resume()
+        continuation.resume(returning: ())
 
         await fulfillment(of: [operationFinished, callback], timeout: 0.2)
+    }
+}
+
+private final class LockedContinuation<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Never>?
+
+    func store(_ continuation: CheckedContinuation<Value, Never>) {
+        lock.lock()
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func resume(returning value: Value) {
+        lock.lock()
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: value)
     }
 }

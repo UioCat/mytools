@@ -1,6 +1,6 @@
 import Foundation
 
-public struct BailianTranslationConfiguration: Equatable {
+public struct BailianTranslationConfiguration: Equatable, Sendable {
     public var apiKey: String
     public var model: String
     public var endpointURL: URL
@@ -12,7 +12,7 @@ public struct BailianTranslationConfiguration: Equatable {
     }
 }
 
-public struct TranslationHTTPResponse: Equatable {
+public struct TranslationHTTPResponse: Equatable, Sendable {
     public var data: Data
     public var statusCode: Int
 
@@ -22,7 +22,7 @@ public struct TranslationHTTPResponse: Equatable {
     }
 }
 
-public protocol TranslationHTTPClient {
+public protocol TranslationHTTPClient: Sendable {
     func send(_ request: URLRequest) async throws -> TranslationHTTPResponse
 }
 
@@ -39,13 +39,11 @@ public struct URLSessionTranslationHTTPClient: TranslationHTTPClient {
     }
 }
 
-public final class BailianTranslationProvider: TranslationProvider {
+public final class BailianTranslationProvider: TranslationProvider, Sendable {
     public let providerID = "bailian"
 
     private let configuration: BailianTranslationConfiguration?
     private let httpClient: TranslationHTTPClient
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 
     public init(
         configuration: BailianTranslationConfiguration?,
@@ -90,7 +88,7 @@ public final class BailianTranslationProvider: TranslationProvider {
                 targetLang: Self.languageName(for: translationRequest.targetLanguage) ?? translationRequest.targetLanguage
             )
         )
-        request.httpBody = try encoder.encode(body)
+        request.httpBody = try JSONEncoder().encode(body)
         return request
     }
 
@@ -103,7 +101,7 @@ public final class BailianTranslationProvider: TranslationProvider {
         }
 
         do {
-            let payload = try decoder.decode(BailianChatCompletionResponse.self, from: response.data)
+            let payload = try JSONDecoder().decode(BailianChatCompletionResponse.self, from: response.data)
             guard let translatedText = payload.choices.first?.message.content, !translatedText.isEmpty else {
                 return .failure(.providerFailure("Bailian API response did not include translated text."))
             }
@@ -115,7 +113,7 @@ public final class BailianTranslationProvider: TranslationProvider {
     }
 
     private func errorMessage(from data: Data) -> String? {
-        guard let payload = try? decoder.decode(BailianErrorResponse.self, from: data) else {
+        guard let payload = try? JSONDecoder().decode(BailianErrorResponse.self, from: data) else {
             return nil
         }
 

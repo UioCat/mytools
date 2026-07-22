@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 import MacToolsCore
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 enum ScreenCaptureError: Error, Equatable {
     case displayUnavailable
@@ -25,7 +25,8 @@ extension ScreenStillCapturing {
     func invalidatePreparation() {}
 }
 
-struct ScreenCaptureSource {
+/// ScreenCaptureKit accepts these configuration objects across its own capture queues.
+struct ScreenCaptureSource: @unchecked Sendable {
     let filter: SCContentFilter
     let configuration: SCStreamConfiguration
 }

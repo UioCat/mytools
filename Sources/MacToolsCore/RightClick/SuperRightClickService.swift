@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SuperRightClickResult: Equatable {
+public struct SuperRightClickResult: Equatable, Sendable {
     public var item: ClipboardItem
     public var sourceApplication: SuperRightClickSourceApplication?
     public var translation: Result<TranslationResponse, TranslationError>?
@@ -19,7 +19,7 @@ public struct SuperRightClickResult: Equatable {
     }
 }
 
-public final class SuperRightClickService {
+public actor SuperRightClickService {
     private let settings: SuperRightClickSettings
     private let selectionCapture: SelectionCapturing
     private let classifier: ClipboardClassifier

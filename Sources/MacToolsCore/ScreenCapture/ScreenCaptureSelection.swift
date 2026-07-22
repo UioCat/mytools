@@ -1,6 +1,6 @@
 import CoreGraphics
 
-public struct ScreenCaptureSelection: Equatable {
+public struct ScreenCaptureSelection: Equatable, Sendable {
     public static let minimumSideLength: CGFloat = 8
 
     public let displayID: UInt32

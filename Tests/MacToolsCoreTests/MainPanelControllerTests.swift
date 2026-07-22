@@ -14,6 +14,7 @@ final class MainPanelControllerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testMainPanelKeepsResizeWithoutRectangularSystemShadow() {
         let styleMask = MainPanelController.windowStyleMask
 
@@ -32,6 +33,7 @@ final class MainPanelControllerTests: XCTestCase {
         XCTAssertNil(panel.standardWindowButton(.closeButton))
     }
 
+    @MainActor
     func testRoundedBackingLayerClipsAppKitAndBackdropContent() throws {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 620))
 

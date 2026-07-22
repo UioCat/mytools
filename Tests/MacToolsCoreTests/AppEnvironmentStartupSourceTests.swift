@@ -34,6 +34,16 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
         XCTAssertLessThan(reconciliation.lowerBound, evictionCleanup.lowerBound)
     }
 
+    func testAutomaticPasteKeepsActivationAndTimeoutPathsWithoutDeprecatedOption() throws {
+        let source = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
+
+        XCTAssertTrue(source.contains("private final class PasteActivationAttempt"))
+        XCTAssertTrue(source.contains("milliseconds(80)"))
+        XCTAssertTrue(source.contains("milliseconds(800)"))
+        XCTAssertTrue(source.contains("targetApplication.activate(options: [.activateAllWindows])"))
+        XCTAssertFalse(source.contains("activateIgnoringOtherApps"))
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -3,6 +3,12 @@ import CoreGraphics
 import Foundation
 import MacToolsCore
 
+/// The event tap source is installed on the main run loop before these values are forwarded.
+private struct MainRunLoopEventTapInput: @unchecked Sendable {
+    let event: CGEvent
+    let proxy: CGEventTapProxy
+}
+
 @MainActor
 final class SuperRightClickMonitor {
     private let service: SuperRightClickService
@@ -93,8 +99,9 @@ final class SuperRightClickMonitor {
             return Unmanaged.passUnretained(event)
         }
 
+        let input = MainRunLoopEventTapInput(event: event, proxy: proxy)
         let shouldSuppress = MainActor.assumeIsolated {
-            handleEventOnMainActor(type: type, event: event, proxy: proxy)
+            handleEventOnMainActor(type: type, event: input.event, proxy: input.proxy)
         }
 
         return shouldSuppress ? nil : Unmanaged.passUnretained(event)

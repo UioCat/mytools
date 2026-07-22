@@ -47,6 +47,7 @@ final class WindowLayoutSettingsPresentationTests: XCTestCase {
         XCTAssertLessThan(target.maxY, screen.maxY)
     }
 
+    @MainActor
     func testShortcutCaptureTextIsCenteredHorizontallyAndVertically() throws {
         let field = WindowLayoutShortcutCaptureTextField()
         let bounds = CGRect(x: 0, y: 0, width: 360, height: 32)

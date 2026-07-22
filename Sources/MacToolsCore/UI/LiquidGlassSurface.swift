@@ -115,11 +115,11 @@ struct LiquidGlassPanelModifier: ViewModifier {
     }
 }
 
-public enum LiquidGlassWindowPanelSurfacePlacement: Equatable {
+public enum LiquidGlassWindowPanelSurfacePlacement: Equatable, Sendable {
     case afterSizing
 }
 
-public enum LiquidGlassWindowPanelAlignment: Equatable {
+public enum LiquidGlassWindowPanelAlignment: Equatable, Sendable {
     case topLeading
 
     var swiftUIAlignment: Alignment {
@@ -130,7 +130,7 @@ public enum LiquidGlassWindowPanelAlignment: Equatable {
     }
 }
 
-public struct LiquidGlassWindowPanelFrame: Equatable {
+public struct LiquidGlassWindowPanelFrame: Equatable, Sendable {
     public let minWidth: CGFloat
     public let idealWidth: CGFloat
     public let maxWidth: CGFloat

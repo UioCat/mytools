@@ -12,6 +12,7 @@ enum MainPanelPositioningPolicy {
     }
 }
 
+@MainActor
 public final class MainPanelController {
     public static let windowStyleMask: NSWindow.StyleMask = [.borderless, .resizable]
     static let usesSystemWindowShadow = false
@@ -94,6 +95,7 @@ public final class MainPanelController {
     }
 }
 
+@MainActor
 private final class EscapeDismissPanel: NSPanel {
     var onDismiss: (() -> Void)?
     private let resolver = PanelKeyCommandResolver()

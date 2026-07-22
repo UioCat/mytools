@@ -38,7 +38,7 @@ public struct ClipboardFieldClock: Codable, Equatable, Sendable {
     }
 }
 
-public struct ClipboardItem: Codable, Equatable, Identifiable {
+public struct ClipboardItem: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var kind: ClipboardContentKind
     public var displayTitle: String

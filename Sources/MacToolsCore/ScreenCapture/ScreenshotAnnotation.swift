@@ -1,6 +1,6 @@
 import CoreGraphics
 
-public enum ScreenshotAnnotationTool: String, CaseIterable, Codable, Equatable, Hashable {
+public enum ScreenshotAnnotationTool: String, CaseIterable, Codable, Equatable, Hashable, Sendable {
     case line
     case freehand
     case arrow
@@ -8,7 +8,7 @@ public enum ScreenshotAnnotationTool: String, CaseIterable, Codable, Equatable, 
     case mosaic
 }
 
-public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable {
+public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable, Sendable {
     public let red: CGFloat
     public let green: CGFloat
     public let blue: CGFloat
@@ -56,7 +56,7 @@ public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable {
     }
 }
 
-public enum ScreenshotAnnotationLineWidth: String, CaseIterable, Codable, Equatable {
+public enum ScreenshotAnnotationLineWidth: String, CaseIterable, Codable, Equatable, Sendable {
     case thin
     case medium
     case thick
@@ -87,7 +87,7 @@ public enum ScreenshotAnnotationArrowStyle {
     }
 }
 
-public enum ScreenshotAnnotation: Equatable {
+public enum ScreenshotAnnotation: Equatable, Sendable {
     case line(
         start: CGPoint,
         end: CGPoint,
@@ -113,7 +113,7 @@ public enum ScreenshotAnnotation: Equatable {
     case mosaic(CGRect)
 }
 
-public struct ScreenshotFreehandStroke: Equatable {
+public struct ScreenshotFreehandStroke: Equatable, Sendable {
     public private(set) var points: [CGPoint] = []
     private var pathLength: CGFloat = 0
 
@@ -145,7 +145,7 @@ public struct ScreenshotFreehandStroke: Equatable {
     }
 }
 
-public struct ScreenshotAnnotationStore: Equatable {
+public struct ScreenshotAnnotationStore: Equatable, Sendable {
     public private(set) var annotations: [ScreenshotAnnotation] = []
 
     public init() {}

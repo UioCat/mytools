@@ -1190,7 +1190,9 @@ private struct WindowLayoutModeActionCell: View {
                     "",
                     isOn: Binding(
                         get: { isPresentedInPanel },
-                        set: togglePanelVisibility
+                        set: { isEnabled in
+                            togglePanelVisibility(isEnabled)
+                        }
                     )
                 )
                 .labelsHidden()
@@ -1799,8 +1801,11 @@ private final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegat
         updateMonitor()
     }
 
-    deinit {
-        removeMonitor()
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            removeMonitor()
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     func controlTextDidBeginEditing(_ notification: Notification) {
@@ -1945,6 +1950,7 @@ private final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegat
     }
 }
 
+@MainActor
 private protocol TranslationAPIKeyCommandHandlingField: AnyObject {
     var onCommandKeyEquivalent: ((NSEvent) -> Bool)? { get set }
 }

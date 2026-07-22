@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TranslationRequest: Equatable {
+public struct TranslationRequest: Equatable, Sendable {
     public var text: String
     public var sourceLanguage: String?
     public var targetLanguage: String
@@ -12,7 +12,7 @@ public struct TranslationRequest: Equatable {
     }
 }
 
-public struct TranslationResponse: Equatable {
+public struct TranslationResponse: Equatable, Sendable {
     public var translatedText: String
     public var providerID: String
 
@@ -22,13 +22,13 @@ public struct TranslationResponse: Equatable {
     }
 }
 
-public enum TranslationError: Error, Equatable {
+public enum TranslationError: Error, Equatable, Sendable {
     case providerNotConfigured
     case networkUnavailable
     case providerFailure(String)
 }
 
-public protocol TranslationProvider {
+public protocol TranslationProvider: Sendable {
     var providerID: String { get }
 
     func translate(_ request: TranslationRequest) async -> Result<TranslationResponse, TranslationError>

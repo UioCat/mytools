@@ -1,6 +1,6 @@
 import CoreGraphics
 
-public struct TranslationInputEditorLayout: Equatable {
+public struct TranslationInputEditorLayout: Equatable, Sendable {
     public let placeholderLeadingPadding: CGFloat
     public let placeholderTopPadding: CGFloat
     public let textContainerWidthInset: CGFloat
@@ -38,7 +38,7 @@ public struct TranslationInputEditorLayout: Equatable {
     }
 }
 
-public struct TranslationWorkspaceLayout: Equatable {
+public struct TranslationWorkspaceLayout: Equatable, Sendable {
     public let inputEditorMinimumHeight: CGFloat
     public let outputEditorMinimumHeight: CGFloat
 

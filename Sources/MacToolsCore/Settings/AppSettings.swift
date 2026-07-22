@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HotKeyBinding: Codable, Equatable, Hashable {
+public struct HotKeyBinding: Codable, Equatable, Hashable, Sendable {
     public var key: String
     public var modifiers: [String]
 
@@ -118,7 +118,7 @@ public struct HotKeyBinding: Codable, Equatable, Hashable {
     private static let modifierDisplayOrder = ["Control", "Option", "Shift", "Command"]
 }
 
-public struct ClipboardSettings: Codable, Equatable {
+public struct ClipboardSettings: Codable, Equatable, Sendable {
     public static let fixedHistoryLimit = 500
 
     public var isRecordingEnabled: Bool
@@ -230,7 +230,7 @@ public enum ClipboardCacheLimit {
     }
 }
 
-public struct SuperRightClickSettings: Codable, Equatable {
+public struct SuperRightClickSettings: Codable, Equatable, Sendable {
     public var isEnabled: Bool
     public var longPressMilliseconds: Int
 
@@ -294,7 +294,7 @@ public enum SuperRightClickResponseSpeed {
     }
 }
 
-public struct TranslationSettings: Codable, Equatable {
+public struct TranslationSettings: Codable, Equatable, Sendable {
     public static let defaultProviderID = "bailian"
     public static let defaultModel = "qwen-mt-turbo"
     public static let defaultEndpointURLString = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
@@ -370,7 +370,7 @@ public struct TranslationSettings: Codable, Equatable {
     }
 }
 
-public struct ScreenCaptureSettings: Codable, Equatable {
+public struct ScreenCaptureSettings: Codable, Equatable, Sendable {
     public var annotationTool: ScreenshotAnnotationTool
     public var annotationColor: ScreenshotAnnotationColor
     public var annotationLineWidth: ScreenshotAnnotationLineWidth
@@ -554,7 +554,7 @@ public enum SyncStatus: Equatable, Sendable {
     }
 }
 
-public struct AppSettings: Codable, Equatable {
+public struct AppSettings: Codable, Equatable, Sendable {
     public var mainPanelShortcut: HotKeyBinding
     public var clipboardShortcut: HotKeyBinding
     public var reservedTool2Shortcut: HotKeyBinding

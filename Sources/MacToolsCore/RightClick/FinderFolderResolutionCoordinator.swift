@@ -7,8 +7,8 @@ public final class FinderFolderResolutionCoordinator {
 
     public init() {}
 
-    public func replace<Value>(
-        operation: @escaping () async -> Value,
+    public func replace<Value: Sendable>(
+        operation: @escaping @Sendable () async -> Value,
         completion: @escaping (Value) -> Void
     ) {
         task?.cancel()

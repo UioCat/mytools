@@ -1,7 +1,7 @@
 import Foundation
 import NaturalLanguage
 
-public final class TranslationService {
+public actor TranslationService {
     private let provider: TranslationProvider
 
     public init(provider: TranslationProvider) {
