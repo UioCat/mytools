@@ -313,11 +313,13 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             )
         }
 
+        var exportContentCache = SyncExportContentCache()
         var draft = try localRepository.exportBundle(
             deviceID: deviceID,
             generation: generation,
             revision: nextRevision,
-            scope: configuration.clipboardScope
+            scope: configuration.clipboardScope,
+            contentCache: &exportContentCache
         )
         var contentByID = Dictionary(uniqueKeysWithValues: draft.contents.map { ($0.contentID, $0.data) })
         var missingRemoteContent = peerReplicaFailures.contains {
@@ -363,7 +365,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             deviceID: deviceID,
             generation: generation,
             revision: nextRevision,
-            scope: configuration.clipboardScope
+            scope: configuration.clipboardScope,
+            contentCache: &exportContentCache
         )
         var unavailableLocalRecordNames = draft.unavailableClipboardRecordNames
         var allRecords = draft.clipboard.records
@@ -536,12 +539,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         var writtenBundle: SyncExportBundle?
         if needsWrite {
             seenRevisions[deviceID] = nextRevision
-            let finalBundle = try localRepository.exportBundle(
-                deviceID: deviceID,
-                generation: generation,
-                revision: nextRevision,
-                scope: configuration.clipboardScope,
-                excludingContentIDs: excludedContentIDs.union(blockedImageContentIDs)
+            let finalBundle = draft.excludingContentIDs(
+                excludedContentIDs.union(blockedImageContentIDs)
             )
             unavailableLocalRecordNames.formUnion(finalBundle.unavailableClipboardRecordNames)
             let manifest = try store.write(

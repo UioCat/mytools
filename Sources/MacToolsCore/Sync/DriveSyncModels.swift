@@ -228,6 +228,29 @@ public struct SyncExportContent: Equatable, Sendable {
     }
 }
 
+public struct SyncExportContentCache: Sendable {
+    private struct Key: Hashable, Sendable {
+        var kind: String
+        var contentID: String
+    }
+
+    private var contentsByKey: [Key: SyncExportContent] = [:]
+    public private(set) var materializedContentCount = 0
+
+    public init() {}
+
+    func content(kind: ClipboardContentKind, contentID: String) -> SyncExportContent? {
+        contentsByKey[Key(kind: kind.rawValue, contentID: contentID)]
+    }
+
+    mutating func store(_ content: SyncExportContent) {
+        let key = Key(kind: content.kind.rawValue, contentID: content.contentID)
+        guard contentsByKey[key] == nil else { return }
+        contentsByKey[key] = content
+        materializedContentCount += 1
+    }
+}
+
 public struct SyncExportBundle: Equatable, Sendable {
     public var clipboard: SyncClipboardSnapshot
     public var preferences: SyncPreferencesSnapshot
@@ -250,6 +273,18 @@ public struct SyncExportBundle: Equatable, Sendable {
         self.contents = contents
         self.outboxCutoff = outboxCutoff
         self.unavailableClipboardRecordNames = unavailableClipboardRecordNames
+    }
+
+    public func excludingContentIDs(_ excludedContentIDs: Set<String>) -> Self {
+        guard !excludedContentIDs.isEmpty else { return self }
+        var filtered = self
+        filtered.clipboard.records.removeAll {
+            excludedContentIDs.contains($0.contentID)
+        }
+        filtered.contents.removeAll {
+            excludedContentIDs.contains($0.contentID)
+        }
+        return filtered
     }
 }
 

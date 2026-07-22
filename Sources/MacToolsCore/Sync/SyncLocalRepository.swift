@@ -206,6 +206,27 @@ public final class SyncLocalRepository: @unchecked Sendable {
         excludingContentIDs: Set<String> = [],
         at cutoff: Date = Date()
     ) throws -> SyncExportBundle {
+        var contentCache = SyncExportContentCache()
+        return try exportBundle(
+            deviceID: deviceID,
+            generation: generation,
+            revision: revision,
+            scope: scope,
+            excludingContentIDs: excludingContentIDs,
+            contentCache: &contentCache,
+            at: cutoff
+        )
+    }
+
+    public func exportBundle(
+        deviceID: String,
+        generation: Int,
+        revision: Int64,
+        scope: ClipboardSyncScope,
+        excludingContentIDs: Set<String> = [],
+        contentCache: inout SyncExportContentCache,
+        at cutoff: Date = Date()
+    ) throws -> SyncExportBundle {
         let allItems = try clipboardRepository.search("", limit: Int.max)
         var records: [SyncClipboardRecord] = []
         var contentsByID: [String: SyncExportContent] = [:]
@@ -222,45 +243,53 @@ public final class SyncLocalRepository: @unchecked Sendable {
             guard !excludingContentIDs.contains(contentID) else { continue }
 
             let content: SyncExportContent
-            switch item.kind {
-            case .text, .url:
-                guard let text = item.text else {
-                    unavailableClipboardRecordNames.insert(item.id.uuidString)
+            if let cachedContent = contentCache.content(kind: item.kind, contentID: contentID) {
+                content = cachedContent
+            } else {
+                switch item.kind {
+                case .text, .url:
+                    guard let text = item.text else {
+                        unavailableClipboardRecordNames.insert(item.id.uuidString)
+                        continue
+                    }
+                    let value = SyncTextContentObject(
+                        contentID: contentID,
+                        kind: item.kind,
+                        text: text,
+                        byteCount: Int64(Data(text.utf8).count)
+                    )
+                    content = SyncExportContent(
+                        contentID: contentID,
+                        kind: item.kind,
+                        data: try SyncSnapshotCodec.encode(value)
+                    )
+                case .imageData:
+                    guard let path = item.cachedFilePath else {
+                        unavailableClipboardRecordNames.insert(item.id.uuidString)
+                        continue
+                    }
+                    let data: Data
+                    do {
+                        data = try Data(
+                            contentsOf: URL(fileURLWithPath: path),
+                            options: [.mappedIfSafe]
+                        )
+                    } catch {
+                        unavailableClipboardRecordNames.insert(item.id.uuidString)
+                        continue
+                    }
+                    guard Int64(data.count) <= SyncRetentionPolicy.maximumImageBytes else {
+                        continue
+                    }
+                    guard ClipboardContentHasher.sha256String(for: data) == contentID else {
+                        unavailableClipboardRecordNames.insert(item.id.uuidString)
+                        continue
+                    }
+                    content = SyncExportContent(contentID: contentID, kind: item.kind, data: data)
+                default:
                     continue
                 }
-                let value = SyncTextContentObject(
-                    contentID: contentID,
-                    kind: item.kind,
-                    text: text,
-                    byteCount: Int64(Data(text.utf8).count)
-                )
-                content = SyncExportContent(
-                    contentID: contentID,
-                    kind: item.kind,
-                    data: try SyncSnapshotCodec.encode(value)
-                )
-            case .imageData:
-                guard let path = item.cachedFilePath else {
-                    unavailableClipboardRecordNames.insert(item.id.uuidString)
-                    continue
-                }
-                let data: Data
-                do {
-                    data = try Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe])
-                } catch {
-                    unavailableClipboardRecordNames.insert(item.id.uuidString)
-                    continue
-                }
-                guard Int64(data.count) <= SyncRetentionPolicy.maximumImageBytes else {
-                    continue
-                }
-                guard ClipboardContentHasher.sha256String(for: data) == contentID else {
-                    unavailableClipboardRecordNames.insert(item.id.uuidString)
-                    continue
-                }
-                content = SyncExportContent(contentID: contentID, kind: item.kind, data: data)
-            default:
-                continue
+                contentCache.store(content)
             }
 
             contentsByID[contentID] = content

@@ -102,6 +102,81 @@ final class SyncLocalRepositoryTests: XCTestCase {
         XCTAssertEqual(second, first)
     }
 
+    func testExportContentCacheMaterializesEachContentOnlyOncePerCycle() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        try replica.clipboard.upsert(textItem(id: UUID(), text: "cached text"))
+        let imageData = Self.pngData()
+        let image = ClipboardItem(
+            id: UUID(),
+            kind: .imageData,
+            displayTitle: "cached image",
+            searchableText: "cached image",
+            text: nil,
+            originalPath: nil,
+            cachedFilePath: nil,
+            thumbnailPath: nil,
+            sourceApp: "Tests",
+            contentHash: ClipboardContentHasher.sha256String(for: imageData),
+            createdAt: Date(timeIntervalSince1970: 100),
+            lastUsedAt: nil,
+            useCount: 0,
+            isPinned: false,
+            isFavorite: false
+        )
+        try replica.clipboard.upsertPNG(image, data: imageData)
+        var cache = SyncExportContentCache()
+        let cutoff = Date(timeIntervalSince1970: 500)
+
+        let first = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 3,
+            scope: .allHistory,
+            contentCache: &cache,
+            at: cutoff
+        )
+        let second = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 3,
+            scope: .allHistory,
+            contentCache: &cache,
+            at: cutoff
+        )
+
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(cache.materializedContentCount, 2)
+    }
+
+    func testFilteredExportBundleOnlyRemovesExcludedContent() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let kept = textItem(id: UUID(), text: "kept")
+        let excluded = textItem(id: UUID(), text: "excluded")
+        try replica.clipboard.upsert(kept)
+        try replica.clipboard.upsert(excluded)
+        let bundle = try replica.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 3,
+            scope: .allHistory,
+            at: Date(timeIntervalSince1970: 500)
+        )
+
+        let filtered = bundle.excludingContentIDs([try XCTUnwrap(excluded.contentHash)])
+
+        XCTAssertEqual(filtered.clipboard.records.map(\.recordName), [kept.id.uuidString])
+        XCTAssertEqual(filtered.contents.map(\.contentID), [try XCTUnwrap(kept.contentHash)])
+        XCTAssertEqual(filtered.preferences, bundle.preferences)
+        XCTAssertEqual(filtered.tombstones, bundle.tombstones)
+        XCTAssertEqual(filtered.outboxCutoff, bundle.outboxCutoff)
+        XCTAssertEqual(
+            filtered.unavailableClipboardRecordNames,
+            bundle.unavailableClipboardRecordNames
+        )
+    }
+
     func testExcludedClipboardContentStaysPendingWhenOtherRecordsAreAcknowledged() throws {
         let replica = try makeReplica(deviceID: "device-a")
         defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
