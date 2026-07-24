@@ -34,4 +34,26 @@ final class ContextPanelWindowAppearanceTests: XCTestCase {
         XCTAssertTrue(layer.masksToBounds)
         XCTAssertEqual(layer.backgroundColor, NSColor.clear.cgColor)
     }
+
+    @MainActor
+    func testContextPanelPresentationPolicyKeepsPanelAboveApplicationsAcrossSpaces() {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 210),
+            styleMask: ContextPanelWindowAppearance.windowStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .normal
+        panel.collectionBehavior = []
+        panel.hidesOnDeactivate = true
+
+        ContextPanelWindowAppearance.configurePresentationPolicy(panel)
+
+        XCTAssertEqual(panel.level, .popUpMenu)
+        XCTAssertTrue(panel.collectionBehavior.contains(.transient))
+        XCTAssertTrue(panel.collectionBehavior.contains(.ignoresCycle))
+        XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllApplications))
+        XCTAssertFalse(panel.hidesOnDeactivate)
+    }
 }

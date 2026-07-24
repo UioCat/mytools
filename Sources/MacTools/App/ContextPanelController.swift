@@ -132,7 +132,10 @@ final class ContextPanelController {
         if reposition {
             panel?.setFrameOrigin(panelOrigin(for: panel?.frame.size ?? contentSize))
         }
-        panel?.orderFrontRegardless()
+        if let panel {
+            ContextPanelWindowAppearance.configurePresentationPolicy(panel)
+            panel.orderFrontRegardless()
+        }
         startOutsideClickDismissMonitors()
     }
 
@@ -160,8 +163,7 @@ final class ContextPanelController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = ContextPanelWindowAppearance.usesSystemWindowShadow
-        panel.level = .floating
-        panel.collectionBehavior = [.transient, .ignoresCycle]
+        ContextPanelWindowAppearance.configurePresentationPolicy(panel)
         panel.isMovableByWindowBackground = true
         return panel
     }

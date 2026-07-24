@@ -44,6 +44,8 @@
 - Select a clipboard item and press Enter; confirm it copies and attempts paste.
 - Use Cmd+Enter; confirm it copies without sending paste.
 - Short right-click in Finder; confirm the system menu appears.
+- Keep another app active and long right-click in a normal window, a full-screen window, and a Stage Manager window group; confirm the super-right-click panel appears above the target app every time without moving keyboard focus to MacTools.
+- Repeat after opening another app's floating utility window, then open a system context menu or click outside the panel; confirm the super-right-click panel initially appears above the utility window, the later system menu can appear in front, and the panel still dismisses on the outside click.
 - Long right-click selected text; confirm the translation panel is `420 pt` wide and its height follows the rendered source and translation lines, starting at about `187 pt` for a short successful translation and stopping at the `620 pt` safety cap. Confirm the actions share one compact `44 pt` horizontal strip with `30 pt` pure-text buttons, `15 pt` labels, approximately `7 pt` above and below each button, no action icons, no unused bottom block, and no window-layout section.
 - In a browser, select styled heading text that Accessibility may expose as an object replacement character, then long right-click; confirm MacTools falls back to copying the selection and shows the real original text and translation instead of a `1 个` empty panel.
 - In a non-Finder app with no selected text or supported content, long right-click and confirm the `320 pt`-wide panel fits the configured window-layout list to its content with no unused bottom block; the standard eight-layout list is fully visible without a scrollbar.
