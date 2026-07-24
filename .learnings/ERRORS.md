@@ -32,6 +32,38 @@ Resolve route references relative to the skill's `routes/` directory or list ski
 
 ---
 
+## [ERR-20260724-001] 临时证书检查命令触发安全策略
+
+**Logged**: 2026-07-24T17:12:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+使用带 `rm -f` 清理逻辑的临时证书验证命令被命令安全策略拒绝。
+
+### Error
+```
+Rejected: rm -f style commands are not permitted. Use a safer approach
+```
+
+### Context
+- 为排查 Apple Development 证书为何未被代码签名策略识别，尝试用临时 PEM 文件调用 `security verify-cert`。
+- 命令在创建进程前被拒绝，没有创建临时文件，也没有修改证书、钥匙串或项目产物。
+
+### Suggested Fix
+优先使用不落盘的 `security find-identity`、`security find-certificate` 和 `openssl x509` 只读检查；确需临时文件时使用受控临时目录并避免受限清理形式。
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-07-24T17:12:00+08:00
+- **Notes**: 改用不创建临时文件的证书用途、有效期和身份策略检查。
+
+---
+
 ## [ERR-20260722-002] 同步周期源代码契约仍读取旧文件
 
 **Logged**: 2026-07-22T18:29:00+08:00
