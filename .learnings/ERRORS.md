@@ -1,5 +1,37 @@
 # Errors
 
+## [ERR-20260724-003] 设计文档补丁上下文不匹配
+
+**Logged**: 2026-07-24T17:47:32+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+更新 ad-hoc Keychain 设计结论时，补丁引用的句子与文件中的实际段落不完全一致。
+
+### Error
+```
+apply_patch verification failed: Failed to find expected lines
+```
+
+### Context
+- 尝试一次性修改设计状态、方案结论、验证结论和参考链接。
+- 文件未被修改，不影响源代码和运行时状态。
+
+### Suggested Fix
+先读取目标文档的实际段落，再拆分为使用精确上下文的最小补丁。
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/superpowers/specs/2026-07-24-stable-adhoc-keychain-design.md
+
+### Resolution
+- **Resolved**: 2026-07-24T17:47:32+08:00
+- **Notes**: 重新读取文档并改用精确段落补丁。
+
+---
+
 ## [ERR-20260714-001] ios-macos-development route lookup
 
 **Logged**: 2026-07-14T19:16:00+08:00

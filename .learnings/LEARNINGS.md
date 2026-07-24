@@ -1,5 +1,32 @@
 # Learnings
 
+## [LRN-20260724-002] knowledge_gap
+
+**Logged**: 2026-07-24T17:47:32+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: config
+
+### Summary
+identifier-only 自定义 DR 不能让 ad-hoc 构建通过默认 Keychain ACL 获得稳定身份。
+
+### Details
+两个构建使用不同 cdhash，但都显示相同 Bundle ID 和 `designated => identifier "local.mactools.mvp"`。构建 A 对新 Keychain 条目选择“始终允许”后，构建 B 仍再次触发 `securityd` Keychain 授权。Apple TN3127 说明 ad-hoc 签名身份与具体代码版本绑定，`SecTrustedApplication` 的受信任应用数据也包含用于唯一识别应用的加密哈希。
+
+### Suggested Action
+需要跨构建稳定访问 Keychain 时，必须使用稳定证书身份；如果拒绝证书，只能明确选择较弱的存储边界，不能把固定 Bundle ID 或显示相同的自定义 DR 当作验证证据。
+
+### Metadata
+- Source: error
+- Related Files: scripts/package_app.sh, Sources/MacTools/App/Sync/KeychainCredentialStore.swift
+- Tags: keychain, ad-hoc, code-signing, designated-requirement
+
+### Resolution
+- **Resolved**: 2026-07-24T17:47:32+08:00
+- **Notes**: 双构建验证失败后撤回实现，并将该方案标记为不可实施。
+
+---
+
 ## [LRN-20260714-001] correction
 
 **Logged**: 2026-07-14T19:54:00+08:00
