@@ -32,6 +32,38 @@ Resolve route references relative to the skill's `routes/` directory or list ski
 
 ---
 
+## [ERR-20260724-002] 带空格技能路径的 sed 命令引号错误
+
+**Logged**: 2026-07-24T17:22:45+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+连续读取技能文件时把第二条 `sed` 命令误写入带空格的路径参数，导致文件不存在错误。
+
+### Error
+```
+sed: .../SKILL.md; sed -n ...: No such file or directory
+```
+
+### Context
+- 读取 self-improvement 技能文件时，组合命令的引号边界错误。
+- 命令仅执行读取，没有修改项目或系统状态。
+
+### Suggested Fix
+将带空格的绝对路径先赋给专用变量，再用单条 `sed` 命令读取完整文件。
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-07-24T17:22:45+08:00
+- **Notes**: 改用 `skill_path` 变量并成功读取完整技能文件。
+
+---
+
 ## [ERR-20260724-001] 临时证书检查命令触发安全策略
 
 **Logged**: 2026-07-24T17:12:00+08:00
