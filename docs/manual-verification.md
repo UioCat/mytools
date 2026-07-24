@@ -36,6 +36,7 @@
 - While recording, press `Option + 3` again and confirm the existing recording remains active without opening a second selector.
 - Place the selection overlay, editor, and recording control over both light and dark content; confirm no titlebar residue, rectangular system shadow, gray outline, or backing layer appears outside the intended rounded surfaces.
 - Copy text and confirm it appears in clipboard search.
+- Copy a multi-cell range from Excel and confirm clipboard history records editable text rather than an image; paste it into a spreadsheet and confirm the Tab- and newline-separated row/column structure is preserved.
 - Copy a file and confirm filename/path appears.
 - Copy a folder and confirm folder actions show Copy Path and Open in Terminal.
 - Copy image data and confirm it is stored under `Store/Payloads/objects/` and referenced by the unified database.

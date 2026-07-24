@@ -13,20 +13,6 @@ public final class ClipboardClassifier {
             return classifyFileURL(firstURL, sourceApp: sourceApp, contentHash: contentHash, now: now)
         }
 
-        if let imageData = payload.imageData, !imageData.isEmpty {
-            let title = sourceApp.map { "Image from \($0)" } ?? "Image from Clipboard"
-            return makeItem(
-                kind: .imageData,
-                displayTitle: title,
-                searchableText: sourceApp ?? "image",
-                text: nil,
-                originalPath: nil,
-                sourceApp: sourceApp,
-                contentHash: contentHash,
-                now: now
-            )
-        }
-
         if let text = payload.text, !text.isEmpty {
             let kind: ClipboardContentKind = URL(string: text)?.scheme == nil ? .text : .url
             return makeItem(
@@ -34,6 +20,20 @@ public final class ClipboardClassifier {
                 displayTitle: String(text.prefix(80)),
                 searchableText: text,
                 text: text,
+                originalPath: nil,
+                sourceApp: sourceApp,
+                contentHash: contentHash,
+                now: now
+            )
+        }
+
+        if let imageData = payload.imageData, !imageData.isEmpty {
+            let title = sourceApp.map { "Image from \($0)" } ?? "Image from Clipboard"
+            return makeItem(
+                kind: .imageData,
+                displayTitle: title,
+                searchableText: sourceApp ?? "image",
+                text: nil,
                 originalPath: nil,
                 sourceApp: sourceApp,
                 contentHash: contentHash,

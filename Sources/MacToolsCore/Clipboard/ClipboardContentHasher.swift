@@ -7,12 +7,12 @@ public enum ClipboardContentHasher {
             return sha256String(for: "file:\(firstURL.standardizedFileURL.path)")
         }
 
-        if let imageData = payload.imageData, !imageData.isEmpty {
-            return sha256String(for: imageData)
-        }
-
         if let text = payload.text, !text.isEmpty {
             return sha256String(for: "text:\(text)")
+        }
+
+        if let imageData = payload.imageData, !imageData.isEmpty {
+            return sha256String(for: imageData)
         }
 
         return nil

@@ -46,6 +46,35 @@ final class ClipboardClassifierTests: XCTestCase {
         XCTAssertEqual(first.contentHash, second.contentHash)
     }
 
+    func testPrefersTextWhenPayloadAlsoContainsImageData() {
+        let item = ClipboardClassifier().classify(
+            payload: ClipboardPayload(
+                text: "Name\tCount\nApple\t2",
+                imageData: Data([0x89, 0x50, 0x4E, 0x47])
+            ),
+            sourceApp: "Microsoft Excel"
+        )
+
+        XCTAssertEqual(item.kind, .text)
+        XCTAssertEqual(item.displayTitle, "Name\tCount\nApple\t2")
+        XCTAssertEqual(item.searchableText, "Name\tCount\nApple\t2")
+        XCTAssertEqual(item.text, "Name\tCount\nApple\t2")
+    }
+
+    func testMixedPayloadHashMatchesSelectedTextRepresentation() {
+        let textOnlyHash = ClipboardContentHasher.sha256(
+            for: ClipboardPayload(text: "Name\tCount\nApple\t2")
+        )
+        let mixedPayloadHash = ClipboardContentHasher.sha256(
+            for: ClipboardPayload(
+                text: "Name\tCount\nApple\t2",
+                imageData: Data([0x89, 0x50, 0x4E, 0x47])
+            )
+        )
+
+        XCTAssertEqual(mixedPayloadHash, textOnlyHash)
+    }
+
     func testClassifiesFolderPath() throws {
         let folderURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
