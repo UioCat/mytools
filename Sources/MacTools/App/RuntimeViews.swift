@@ -330,7 +330,7 @@ struct RuntimeSettingsView: View {
             translationCredentialUnavailable: translationCredentialUnavailable,
             permissionSummary: permissionSummary,
             openSystemSettings: permissionService.openSystemSettings,
-            openPermissionSettings: permissionService.openSystemSettings(for:),
+            openPermissionSettings: permissionService.requestPermissionAndOpenSystemSettings(for:),
             openClipboardStorageFolder: onOpenClipboardStorageFolder,
             saveClipboardSettings: onSaveClipboardSettings,
             saveTranslationSettings: onSaveTranslationSettings,

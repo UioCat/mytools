@@ -129,9 +129,18 @@ public extension PermissionChecking {
 
 public final class PermissionService {
     private let checker: PermissionChecking
+    private let openSystemSettingsURL: (URL) -> Void
 
-    public init(checker: PermissionChecking = SystemPermissionChecker()) {
+    public init(
+        checker: PermissionChecking = SystemPermissionChecker(),
+        openSystemSettingsURL: ((URL) -> Void)? = nil
+    ) {
         self.checker = checker
+        self.openSystemSettingsURL = openSystemSettingsURL ?? { url in
+            #if canImport(AppKit)
+            _ = NSWorkspace.shared.open(url)
+            #endif
+        }
     }
 
     public func summary() -> PermissionSummary {
@@ -174,9 +183,22 @@ public final class PermissionService {
             return
         }
 
-        #if canImport(AppKit)
-        NSWorkspace.shared.open(url)
-        #endif
+        openSystemSettingsURL(url)
+    }
+
+    public func requestPermissionAndOpenSystemSettings(for permission: AppPermission) {
+        switch permission {
+        case .accessibility:
+            _ = checker.requestAccessibilityPermission()
+        case .inputMonitoring:
+            _ = checker.requestInputMonitoringPermission()
+        case .postEvent:
+            _ = checker.requestPostEventPermission()
+        case .screenRecording:
+            _ = checker.requestScreenRecordingPermission()
+        }
+
+        openSystemSettings(for: permission)
     }
 
     public static func systemSettingsURL(for permission: AppPermission) -> URL? {

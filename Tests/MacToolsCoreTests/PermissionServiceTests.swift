@@ -115,6 +115,60 @@ final class PermissionServiceTests: XCTestCase {
         XCTAssertEqual(checker.postEventRequestCount, 0)
     }
 
+    func testPermissionSettingsActionsRequestPermissionAndOpenMatchingPane() {
+        let checker = FakePermissionChecker(
+            hasAccessibility: false,
+            hasInputMonitoring: false,
+            hasPostEvent: false
+        )
+        var openedURLs: [URL] = []
+        let service = PermissionService(
+            checker: checker,
+            openSystemSettingsURL: { openedURLs.append($0) }
+        )
+
+        service.requestPermissionAndOpenSystemSettings(for: .accessibility)
+        service.requestPermissionAndOpenSystemSettings(for: .inputMonitoring)
+        service.requestPermissionAndOpenSystemSettings(for: .postEvent)
+        service.requestPermissionAndOpenSystemSettings(for: .screenRecording)
+
+        XCTAssertEqual(checker.accessibilityRequestCount, 1)
+        XCTAssertEqual(checker.inputMonitoringRequestCount, 1)
+        XCTAssertEqual(checker.postEventRequestCount, 1)
+        XCTAssertEqual(checker.screenRecordingRequestCount, 1)
+        XCTAssertEqual(
+            openedURLs,
+            [
+                PermissionService.systemSettingsURL(for: .accessibility),
+                PermissionService.systemSettingsURL(for: .inputMonitoring),
+                PermissionService.systemSettingsURL(for: .postEvent),
+                PermissionService.systemSettingsURL(for: .screenRecording)
+            ].compactMap(\.self)
+        )
+    }
+
+    func testRuntimeSettingsRoutesPermissionRowsThroughRequestAction() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let runtimeSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Sources/MacTools/App/RuntimeViews.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(
+            runtimeSource.contains(
+                "openPermissionSettings: permissionService.requestPermissionAndOpenSystemSettings(for:)"
+            )
+        )
+        XCTAssertFalse(
+            runtimeSource.contains(
+                "openPermissionSettings: permissionService.openSystemSettings(for:)"
+            )
+        )
+    }
+
     func testPermissionSpecificSystemSettingsURLs() throws {
         XCTAssertEqual(
             PermissionService.systemSettingsURL(for: .accessibility),
@@ -155,6 +209,7 @@ private final class FakePermissionChecker: PermissionChecking {
     private(set) var accessibilityRequestCount = 0
     private(set) var inputMonitoringRequestCount = 0
     private(set) var postEventRequestCount = 0
+    private(set) var screenRecordingRequestCount = 0
 
     init(
         hasAccessibility: Bool,
@@ -200,6 +255,7 @@ private final class FakePermissionChecker: PermissionChecking {
     }
 
     func requestScreenRecordingPermission() -> Bool {
-        hasScreenRecording
+        screenRecordingRequestCount += 1
+        return hasScreenRecording
     }
 }
