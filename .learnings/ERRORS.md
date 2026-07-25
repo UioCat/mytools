@@ -1,5 +1,101 @@
 # Errors
 
+## [ERR-20260725-005] 凭据字面量启发式误报测试占位值
+
+**Logged**: 2026-07-25T17:03:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+完成前凭据字面量启发式把现有 SQLite 脱敏测试中的受控占位值识别为可能的真实值。
+
+### Error
+```
+possible credential literal detected
+```
+
+### Context
+- 仓库规定需要结合上下文审查关键词扫描结果。
+- 唯一命中文件是 `SettingsStoreTests.swift`，其中同时断言该占位值不得进入 SQLite。
+
+### Suggested Fix
+先列出命中文件，再人工核对受控测试占位值；启发式只能辅助扫描，不能替代上下文判断。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Tests/MacToolsCoreTests/SettingsStoreTests.swift`
+
+### Resolution
+- **Resolved**: 2026-07-25T17:03:00+08:00
+- **Notes**: 确认两处命中均为同一个显式防泄漏测试占位值，没有真实凭据。
+
+---
+
+## [ERR-20260725-004] XCTest 自动闭包不支持 await
+
+**Logged**: 2026-07-25T16:15:22+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+异步协调器测试把 `await` 直接放进 `XCTAssertEqual` 参数，编译器拒绝 actor 调用。
+
+### Error
+```
+'await' in an autoclosure that does not support concurrency
+```
+
+### Context
+- `XCTAssertEqual` 的参数是同步自动闭包。
+- `CredentialAccessCoordinator.load` 是 actor 隔离方法，调用必须在自动闭包外完成。
+
+### Suggested Fix
+先 `await` 取得结果并保存到局部变量，再把普通值传给 XCTest 断言。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Tests/MacToolsCoreTests/CredentialAccessCoordinatorTests.swift`
+
+### Resolution
+- **Resolved**: 2026-07-25T16:15:22+08:00
+- **Notes**: 将异步加载结果移出断言自动闭包；新增 `loadLocal` 测试再次命中后统一采用局部变量模式。
+
+---
+
+## [ERR-20260725-003] Darwin.rename 闭包返回类型不一致
+
+**Logged**: 2026-07-25T16:07:29+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+本地凭据原子替换首次编译时，闭包失败分支与 `Darwin.rename` 的返回类型不一致。
+
+### Error
+```
+cannot convert value of type 'Int32' to closure result type 'Int'
+```
+
+### Context
+- `guard` 失败分支返回整数字面量 `-1`，Swift 将闭包结果推断为 `Int`。
+- `Darwin.rename` 返回 `Int32`，因此同一闭包的两个分支无法统一。
+
+### Suggested Fix
+将失败分支显式写为 `Int32(-1)`，保持闭包返回类型与 POSIX API 一致。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Sources/MacToolsCore/Settings/EncryptedCredentialStore.swift`
+
+### Resolution
+- **Resolved**: 2026-07-25T16:07:29+08:00
+- **Notes**: 使用显式 `Int32` 失败值并重新运行聚焦测试。
+
+---
+
 ## [ERR-20260725-002] 实施计划样例文件不存在
 
 **Logged**: 2026-07-25T15:57:30+08:00

@@ -64,7 +64,7 @@ struct TranslationSettingsEditor: View {
     }
 
     private var credentialStatusText: String {
-        if credentialUnavailable { return "Keychain 凭据不可访问" }
+        if credentialUnavailable { return "翻译凭据暂时不可用" }
         return currentSettings.isConfigured ? "已安全保存" : "未配置"
     }
 

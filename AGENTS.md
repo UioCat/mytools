@@ -108,7 +108,7 @@ scripts/diagnose_super_right_click.sh
 ## 隐私与密钥
 
 - 不得向源代码、测试、测试数据、快照或文档中添加凭据、Authorization 请求头、剪贴板内容、用户路径、录屏或运行时日志。
-- 当前翻译设置（包括百炼 API Key）以 `0600` 权限存储在 `~/Library/Application Support/MacTools/settings.json`。不得记录或暴露该值。凭据存储相关工作应将其迁移至钥匙串，不得引入更多明文存储位置。
+- 百炼 API Key 使用 `Store/Credentials/` 下权限为 `0600` 的 AES-GCM 信封保存，并可通过已选择的 iCloud Drive 同步目录保存加密 replica。固定派生材料是公开协议常量，不得描述为真正秘密；不得新增明文副本、把凭据写入 SQLite/普通同步快照，或在日志和错误中暴露值。旧 `settings.json` 与 Keychain 仅作为一次性只读迁移源。
 - 将 `Clipboard.sqlite`、`ClipboardCache/`、`settings.json`、`debug.log`、仓库本地 `log/`，以及包含类似剪贴板内容的测试数据视为敏感用户数据。
 - 测试中使用临时目录，文档中使用仓库相对路径。不得硬编码真实绝对用户路径。
 - 提交前扫描受源代码控制的范围，查找可能的密钥，且不得输出本地运行时数据：

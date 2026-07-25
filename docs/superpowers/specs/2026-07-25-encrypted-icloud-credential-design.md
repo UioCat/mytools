@@ -2,7 +2,8 @@
 
 ## 文档状态
 
-- 状态：设计已确认，待书面审阅后实施。
+- 状态：实现完成；自动化测试与 ad-hoc 打包已验证，首次旧钥匙串授权和物理双机 iCloud
+  传播待人工验收。
 - 适用平台：macOS 26+。
 - 目标凭据：百炼翻译提供方 `bailian` 的 `bailian.apiKey`。
 - 使用场景：个人自用的本地打包应用会频繁重新构建，并需要通过同一 iCloud Drive 同步目录在多台 Mac 间直接恢复凭据。
@@ -11,8 +12,8 @@
 
 ## 现状与原因
 
-`AppEnvironment.start()` 当前会立即调用 `loadTranslationCredentialIfNeeded()`，再由
-`CredentialAccessCoordinator` 读取 `KeychainCredentialStore`。现有服务名为
+改造前，`AppEnvironment.start()` 会立即调用 `loadTranslationCredentialIfNeeded()`，再由
+`CredentialAccessCoordinator` 读取 `KeychainCredentialStore`。旧服务名为
 `com.mactools.credentials.v1`，由 ad-hoc 签名应用访问时会受具体代码身份约束。
 
 固定 Bundle ID 和 identifier-only Designated Requirement 的方案已经使用两个不同

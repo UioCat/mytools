@@ -60,7 +60,7 @@ MacTools 默认不显示 Dock 图标，需要时通过菜单栏或全局快捷�
 
 - 在“设置 → 数据与同步”选择一个 iCloud Drive 普通文件夹；该方案不使用 CloudKit、应用专属 iCloud Container、APNs 或 Provisioning Profile，免费开发者账号和 ad-hoc 签名包也可使用。
 - 本地 SQLite 始终是运行时数据源，不会同步 `mactools.sqlite3`、`-wal`、`-shm` 或本地 Payload 目录。每台 Mac 只写自己的紧凑快照，共享文字和图片按 SHA-256 内容寻址去重。
-- 同步范围包含文字、URL、直接复制的原始图片、收藏/置顶状态和普通配置；Finder 文件路径不跨设备同步，百炼 API Key 只保留在每台 Mac 的本机 Keychain。
+- 同步范围包含文字、URL、直接复制的原始图片、收藏/置顶状态、普通配置和百炼 API Key 加密副本；Finder 文件路径不跨设备同步。
 - 云端普通历史全局最多 500 条；默认同步目录预算为 512 MiB，可选 256 MiB、512 MiB、1 GiB 或 2 GiB。单张图片最大 64 MiB，收藏和置顶不会被容量策略自动删除。
 - 无引用共享对象经过 24 小时稳定观察且所有可见设备快照可验证后才会回收；目录或文件尚未下载时暂停回收，不影响本地剪贴板使用。
 - 单个本地图片缺失或单个远端内容对象损坏时会隔离该记录，文字、配置和删除操作仍继续同步；持有正确本地内容的设备可按同一 SHA-256 原子修复损坏对象。
@@ -158,10 +158,11 @@ MacTools 只在使用对应功能时需要以下权限：
 | `Store/mactools.sqlite3` | 剪贴板元数据、普通配置、设备覆盖和同步状态 |
 | `Store/Payloads/objects/` | 经过校验并按 SHA-256 去重的原始剪贴板图片 |
 | `Store/Payloads/staging/` | 图片写入和迁移过程中的临时文件 |
+| `Store/Credentials/` | 百炼 API Key 的 AES-GCM 本地加密信封和一次性迁移标记 |
 | `settings.json`、`Clipboard.sqlite`、`ClipboardCache/` | 一次性迁移和回滚来源，不参与正常运行时读写 |
 | `debug.log` | 运行诊断日志 |
 
-百炼 API Key 只存入本机 Keychain，不进入 SQLite、同步快照或 iCloud Drive 内容对象，也不会随其他配置同步。同步目录中的普通文字和图片不做应用层加密，数据保护依赖用户的 iCloud 账号与系统权限。请勿将数据库、Payload、同步目录、旧迁移源、日志、录屏文件或真实剪贴板内容提交到公开仓库。
+百炼 API Key 不进入 SQLite、普通配置快照或共享内容对象；它使用 AES-GCM 加密信封保存在本地，并在已启用同步时写入 `credentials/replicas/`。升级后的首次启动只把旧 Keychain 或旧明文作为一次性只读迁移源，后续构建不再依赖 Keychain。加密派生材料随 App 公开分发，因此该加密主要避免文件被直接查看或误采集时暴露明文，不抵御拿到 App 与密文后的逆向解密。同步目录中的普通文字和图片仍不做应用层加密，数据保护依赖用户的 iCloud 账号与系统权限。请勿将数据库、Payload、同步目录、旧迁移源、日志、录屏文件或真实剪贴板内容提交到公开仓库。
 
 ## 开发者入口
 

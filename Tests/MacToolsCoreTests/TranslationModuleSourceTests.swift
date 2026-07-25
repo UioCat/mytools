@@ -18,12 +18,25 @@ final class TranslationModuleSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("textView.textColor = NSColor.white"))
     }
 
+    func testCredentialUnavailableStatusDoesNotClaimKeychainIsRuntimeStorage() throws {
+        let source = try sourceFile(
+            "Sources/MacToolsCore/UI/TranslationSettingsEditor.swift"
+        )
+
+        XCTAssertTrue(source.contains("翻译凭据暂时不可用"))
+        XCTAssertFalse(source.contains("Keychain 凭据不可访问"))
+    }
+
     private func runtimeViewsSource() throws -> String {
+        try sourceFile("Sources/MacTools/App/RuntimeViews.swift")
+    }
+
+    private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let sourceURL = repositoryRoot.appendingPathComponent("Sources/MacTools/App/RuntimeViews.swift")
+        let sourceURL = repositoryRoot.appendingPathComponent(path)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

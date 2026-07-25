@@ -1,5 +1,35 @@
 # Learnings
 
+## [LRN-20260725-001] best_practice
+
+**Logged**: 2026-07-25T16:12:38+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+设备 replica 的文件所有者与凭据逻辑时钟的修改来源是两个独立身份。
+
+### Details
+`credentials/replicas/<deviceID>.v1.json` 的 device ID 表示哪台设备可以写该文件；信封逻辑
+时钟中的 device ID 表示哪台设备产生了获胜修改。其他设备收敛后需要把原信封原样写入自己的
+replica，因此两者不能强制相等。
+
+### Suggested Action
+只校验 replica 文件名是有效设备 ID，并通过认证信封校验逻辑时钟；允许当前设备转存由其他
+设备产生的获胜信封。
+
+### Metadata
+- Source: error
+- Related Files: `Sources/MacToolsCore/Sync/CredentialReplicaStore.swift`
+- Tags: icloud-drive, replica, logical-clock, convergence
+
+### Resolution
+- **Resolved**: 2026-07-25T16:12:38+08:00
+- **Notes**: 用跨设备转存测试替换错误的身份相等约束。
+
+---
+
 ## [LRN-20260724-002] knowledge_gap
 
 **Logged**: 2026-07-24T17:47:32+08:00

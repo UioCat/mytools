@@ -22,6 +22,18 @@ public struct MacToolsStorePaths: Equatable {
         storeDirectory.appendingPathComponent("Payloads", isDirectory: true)
     }
 
+    public var credentialsDirectory: URL {
+        storeDirectory.appendingPathComponent("Credentials", isDirectory: true)
+    }
+
+    public var bailianCredentialURL: URL {
+        credentialsDirectory.appendingPathComponent("bailian-api-key.v1.json")
+    }
+
+    public var credentialMigrationMarkerURL: URL {
+        credentialsDirectory.appendingPathComponent("migration-v1.complete")
+    }
+
     public func runtimePayloadsDirectory(
         persistentStoreAvailable: Bool,
         temporaryDirectory: URL = FileManager.default.temporaryDirectory

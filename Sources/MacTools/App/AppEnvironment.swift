@@ -12,15 +12,16 @@ final class AppEnvironment {
     let logger = Logger()
     private let preferenceRepository: PreferenceRepository
     private let deviceOverrideRepository: DeviceOverrideRepository
-    private let credentialAccess: CredentialAccessCoordinator
-    private let translationCredentialModel: TranslationCredentialViewModel
-    private(set) var settings: AppSettings
+    private let encryptedCredentialStore: EncryptedCredentialStore
+    let credentialAccess: CredentialAccessCoordinator
+    let translationCredentialModel: TranslationCredentialViewModel
+    var settings: AppSettings
     private let repository: ClipboardRepository
     private let clipboardPollingWorker: ClipboardPollingWorker
     private let maintenanceWorker: AppMaintenanceWorker
     private let payloadStore: PayloadStore
     private let syncLocalRepository: SyncLocalRepository
-    private var syncFolderURL: URL?
+    var syncFolderURL: URL?
     private let defaultClipboardCacheDirectory: URL
     private let pasteActionService: PasteActionService
     private let permissionService = PermissionService()
@@ -30,10 +31,11 @@ final class AppEnvironment {
     private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
     private let syncModel = SyncViewModel()
-    private lazy var syncCoordinator = ICloudDriveSyncCoordinator(
+    lazy var syncCoordinator = ICloudDriveSyncCoordinator(
         localRepository: syncLocalRepository,
         deviceOverrideRepository: deviceOverrideRepository,
         payloadStore: payloadStore,
+        encryptedCredentialStore: encryptedCredentialStore,
         historyLimit: settings.clipboard.maxHistoryCount,
         clipboardScope: settings.sync.clipboardScope,
         storageLimit: settings.sync.storageLimit,
@@ -51,6 +53,11 @@ final class AppEnvironment {
         devicesHandler: { [weak self] devices in
             Task { @MainActor in
                 self?.syncModel.devices = devices
+            }
+        },
+        credentialStateHandler: { [weak self] state in
+            Task { @MainActor in
+                self?.handleCredentialCloudState(state)
             }
         }
     )
@@ -71,9 +78,10 @@ final class AppEnvironment {
     private var superRightClickMonitor: SuperRightClickMonitor?
     private var appBeforePanel: NSRunningApplication?
     private var pasteActivationAttempt: PasteActivationAttempt?
-    private var credentialLoadGeneration = 0
-    private var credentialLoadFinished = false
-    private var legacySettingsURL: URL?
+    var credentialLoadGeneration = 0
+    var credentialLoadFinished = false
+    var credentialLegacyLoadStarted = false
+    var legacySettingsURL: URL?
 
     private lazy var clipboardModel = ClipboardPanelModel(
         repository: repository,
@@ -187,7 +195,11 @@ final class AppEnvironment {
         let storePaths = MacToolsStorePaths(supportDirectory: supportDirectory)
         let legacySettingsStore = SettingsStore(fileURL: storePaths.legacySettingsURL)
         let legacySettings = (try? legacySettingsStore.load()) ?? .defaults
-        let credentialStore = KeychainCredentialStore(synchronizes: false)
+        let encryptedCredentialStore = EncryptedCredentialStore(
+            envelopeURL: storePaths.bailianCredentialURL,
+            migrationMarkerURL: storePaths.credentialMigrationMarkerURL
+        )
+        let legacyCredentialReader = LegacyKeychainCredentialReader()
 
         let database: ClipboardDatabase
         let usesPersistentDatabase: Bool
@@ -231,7 +243,13 @@ final class AppEnvironment {
         }
         self.preferenceRepository = preferenceRepository
         self.deviceOverrideRepository = deviceOverrideRepository
-        self.credentialAccess = CredentialAccessCoordinator(store: credentialStore)
+        self.encryptedCredentialStore = encryptedCredentialStore
+        self.credentialAccess = CredentialAccessCoordinator(
+            store: encryptedCredentialStore,
+            legacyReader: legacyCredentialReader,
+            deviceID: (try? deviceOverrideRepository.deviceID().uuidString)
+                ?? UUID().uuidString
+        )
         self.translationCredentialModel = TranslationCredentialViewModel(apiKey: legacyCredential)
         self.settings = loadedSettings
         self.syncFolderURL = syncFolderURL
@@ -285,9 +303,9 @@ final class AppEnvironment {
         }
         startClipboardPolling()
         startSuperRightClickMonitor()
-        loadTranslationCredentialIfNeeded()
         syncCoordinator.setRootURL(syncFolderURL)
-        syncCoordinator.setEnabled(settings.sync.isEnabled)
+        syncCoordinator.setEnabled(settings.sync.isEnabled, syncImmediately: false)
+        loadTranslationCredentialIfNeeded()
         let maintenanceWorker = maintenanceWorker
         Task {
             await maintenanceWorker.run()
@@ -356,49 +374,6 @@ final class AppEnvironment {
         mainPanel.resize(to: NSSize(width: 980, height: 900))
     }
 
-    private func loadTranslationCredentialIfNeeded() {
-        credentialLoadGeneration += 1
-        let generation = credentialLoadGeneration
-        credentialLoadFinished = false
-        let fallback = settings.translation.apiKey
-        let credentialAccess = credentialAccess
-        let legacySettingsURL = legacySettingsURL
-
-        Task { @MainActor [weak self] in
-            do {
-                let result = try await credentialAccess.load(.bailianAPIKey, fallback: fallback)
-                guard let self, generation == credentialLoadGeneration else { return }
-                credentialLoadFinished = true
-                settings.translation.apiKey = result.value
-                translationCredentialModel.apiKey = result.value
-                translationCredentialModel.isUnavailable = false
-                if result.shouldRedactLegacy, let legacySettingsURL {
-                    redactLegacyCredential(at: legacySettingsURL)
-                }
-                onSettingsChanged(settings)
-                startSuperRightClickMonitor()
-            } catch {
-                guard let self, generation == credentialLoadGeneration else { return }
-                credentialLoadFinished = true
-                settings.translation.apiKey = fallback
-                translationCredentialModel.apiKey = fallback
-                translationCredentialModel.isUnavailable = true
-                logger.error(
-                    "Bailian credential unavailable: \(String(reflecting: type(of: error)))"
-                )
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard let self,
-                  generation == credentialLoadGeneration,
-                  !credentialLoadFinished else { return }
-            translationCredentialModel.isUnavailable = true
-            logger.error("Bailian credential lookup is waiting for Keychain")
-        }
-    }
-
     func openScreenCapture() {
         screenCaptureCoordinator.start()
     }
@@ -449,20 +424,6 @@ final class AppEnvironment {
         scheduleSync()
 
         return updated
-    }
-
-    private func redactLegacyCredential(at url: URL) {
-        do {
-            let legacyStore = SettingsStore(fileURL: url)
-            var legacySettings = try legacyStore.load()
-            guard !legacySettings.translation.apiKey.isEmpty else { return }
-            legacySettings.translation.apiKey = ""
-            try legacyStore.save(legacySettings)
-        } catch {
-            logger.error(
-                "legacy credential redaction failed: \(String(reflecting: type(of: error)))"
-            )
-        }
     }
 
     private func saveClipboardSettings(_ clipboardSettings: ClipboardSettings) throws -> AppSettings {
@@ -594,14 +555,14 @@ final class AppEnvironment {
         }
     }
 
-    private func scheduleSync() {
+    func scheduleSync() {
         guard settings.sync.isEnabled else {
             return
         }
         syncCoordinator.syncNow()
     }
 
-    private func startSuperRightClickMonitor() {
+    func startSuperRightClickMonitor() {
         superRightClickMonitor?.stop()
         superRightClickMonitor = nil
 

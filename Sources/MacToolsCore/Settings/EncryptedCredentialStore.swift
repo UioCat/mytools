@@ -1,0 +1,213 @@
+import Darwin
+import Foundation
+
+public enum EncryptedCredentialStoreError: Error, Equatable, Sendable {
+    case unsupportedMigrationMarker(String)
+    case fileVerificationFailed
+    case atomicReplaceFailed(Int32)
+}
+
+public final class EncryptedCredentialStore: @unchecked Sendable {
+    public static let currentMigrationVersion = 1
+
+    private let envelopeURL: URL
+    private let migrationMarkerURL: URL
+    private let fileManager: FileManager
+    private let codec: CredentialEnvelopeCodec
+    private let lock = NSLock()
+
+    public init(
+        envelopeURL: URL,
+        migrationMarkerURL: URL,
+        fileManager: FileManager = .default,
+        codec: CredentialEnvelopeCodec = CredentialEnvelopeCodec()
+    ) {
+        self.envelopeURL = envelopeURL.standardizedFileURL
+        self.migrationMarkerURL = migrationMarkerURL.standardizedFileURL
+        self.fileManager = fileManager
+        self.codec = codec
+    }
+
+    public func readEnvelope(for credential: CredentialKey) throws -> CredentialEnvelope? {
+        try withLock {
+            try readEnvelopeUnlocked(for: credential)
+        }
+    }
+
+    public func readRecord(for credential: CredentialKey) throws -> CredentialEnvelopeRecord? {
+        try withLock {
+            guard let envelope = try readEnvelopeUnlocked(for: credential) else { return nil }
+            return try codec.open(envelope, for: credential)
+        }
+    }
+
+    public func write(
+        _ envelope: CredentialEnvelope,
+        for credential: CredentialKey
+    ) throws {
+        try withLock {
+            try writeUnlocked(envelope, for: credential)
+        }
+    }
+
+    public func update(
+        value: String?,
+        for credential: CredentialKey,
+        deviceID: String,
+        minimumCounter: Int64 = 0,
+        updatedAt: Date = Date()
+    ) throws -> CredentialReconciliationWinner {
+        try withLock {
+            let current = try readEnvelopeUnlocked(for: credential).map {
+                try codec.open($0, for: credential)
+            }
+            let nextCounter = max(current?.clock.counter ?? 0, minimumCounter) + 1
+            let envelope = try codec.seal(
+                value: value,
+                for: credential,
+                clock: ClipboardFieldClock(
+                    counter: nextCounter,
+                    deviceID: deviceID
+                ),
+                updatedAt: updatedAt
+            )
+            try writeUnlocked(envelope, for: credential)
+            return CredentialReconciliationWinner(
+                envelope: envelope,
+                record: try codec.open(envelope, for: credential)
+            )
+        }
+    }
+
+    public func reconcile(
+        replicas: [CredentialReplica],
+        for credential: CredentialKey
+    ) throws -> CredentialReconciliationWinner? {
+        try withLock {
+            let local: CredentialEnvelope?
+            do {
+                local = try readEnvelopeUnlocked(for: credential)
+            } catch let error as CredentialEnvelopeCodecError {
+                switch error {
+                case .unsupportedSchema, .unsupportedKeyVersion:
+                    throw error
+                default:
+                    guard !replicas.isEmpty else { throw error }
+                    local = nil
+                }
+            } catch {
+                guard !replicas.isEmpty else { throw error }
+                local = nil
+            }
+            let winner = try CredentialReconciler(codec: codec).winner(
+                local: local,
+                replicas: replicas,
+                for: credential
+            )
+            if let winner, winner.envelope != local {
+                try writeUnlocked(winner.envelope, for: credential)
+            }
+            return winner
+        }
+    }
+
+    public func isMigrationComplete() throws -> Bool {
+        try withLock {
+            guard fileManager.fileExists(atPath: migrationMarkerURL.path) else {
+                return false
+            }
+            try applyFilePermissions(at: migrationMarkerURL)
+            let marker = try String(
+                contentsOf: migrationMarkerURL,
+                encoding: .utf8
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard marker == String(Self.currentMigrationVersion) else {
+                throw EncryptedCredentialStoreError.unsupportedMigrationMarker(marker)
+            }
+            return true
+        }
+    }
+
+    public func markMigrationComplete() throws {
+        try withLock {
+            let data = Data("\(Self.currentMigrationVersion)\n".utf8)
+            try verifiedAtomicWrite(data, to: migrationMarkerURL)
+            guard try Data(contentsOf: migrationMarkerURL) == data else {
+                throw EncryptedCredentialStoreError.fileVerificationFailed
+            }
+        }
+    }
+
+    private func readEnvelopeUnlocked(
+        for credential: CredentialKey
+    ) throws -> CredentialEnvelope? {
+        guard fileManager.fileExists(atPath: envelopeURL.path) else { return nil }
+        try applyFilePermissions(at: envelopeURL)
+        let envelope = try codec.decode(Data(contentsOf: envelopeURL, options: [.mappedIfSafe]))
+        _ = try codec.open(envelope, for: credential)
+        return envelope
+    }
+
+    private func writeUnlocked(
+        _ envelope: CredentialEnvelope,
+        for credential: CredentialKey
+    ) throws {
+        _ = try codec.open(envelope, for: credential)
+        let data = try codec.encode(envelope)
+        try verifiedAtomicWrite(data, to: envelopeURL)
+        guard try readEnvelopeUnlocked(for: credential) == envelope else {
+            throw EncryptedCredentialStoreError.fileVerificationFailed
+        }
+    }
+
+    private func verifiedAtomicWrite(_ data: Data, to url: URL) throws {
+        let directory = url.deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
+
+        let stagingURL = directory.appendingPathComponent(
+            ".\(url.lastPathComponent).\(UUID().uuidString).tmp"
+        )
+        defer {
+            try? fileManager.removeItem(at: stagingURL)
+        }
+        try data.write(to: stagingURL, options: [.atomic])
+        try applyFilePermissions(at: stagingURL)
+        guard try Data(contentsOf: stagingURL) == data else {
+            throw EncryptedCredentialStoreError.fileVerificationFailed
+        }
+
+        let result = stagingURL.withUnsafeFileSystemRepresentation { sourcePath in
+            url.withUnsafeFileSystemRepresentation { destinationPath in
+                guard let sourcePath, let destinationPath else { return Int32(-1) }
+                return Darwin.rename(sourcePath, destinationPath)
+            }
+        }
+        guard result == 0 else {
+            throw EncryptedCredentialStoreError.atomicReplaceFailed(errno)
+        }
+        try applyFilePermissions(at: url)
+        guard try Data(contentsOf: url) == data else {
+            throw EncryptedCredentialStoreError.fileVerificationFailed
+        }
+    }
+
+    private func applyFilePermissions(at url: URL) throws {
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path
+        )
+    }
+
+    private func withLock<Value>(_ operation: () throws -> Value) rethrows -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return try operation()
+    }
+}

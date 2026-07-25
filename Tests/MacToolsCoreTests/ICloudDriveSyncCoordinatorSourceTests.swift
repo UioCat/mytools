@@ -55,6 +55,34 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("store.storageInventory()"))
     }
 
+    func testCoordinatorReconcilesCredentialInsideCoordinatedSyncAndBeforeDeviceRemoval() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+        )
+
+        XCTAssertTrue(source.contains("private let credentialSyncEngine: CredentialSyncEngine"))
+        XCTAssertTrue(source.contains("try synchronizeCredential(at: coordinatedRoot)"))
+        XCTAssertTrue(source.contains("store.removedDeviceIDs(generation: generation)"))
+
+        let removeStart = try XCTUnwrap(
+            source.range(of: "    func removeDevice(_ removedDeviceID: String)")
+        )
+        let runCyclesStart = try XCTUnwrap(
+            source.range(
+                of: "    private func runCycles()",
+                range: removeStart.upperBound..<source.endIndex
+            )
+        )
+        let removeBody = source[removeStart.lowerBound..<runCyclesStart.lowerBound]
+        let preserveCredential = try XCTUnwrap(
+            removeBody.range(of: "credentialSyncEngine.synchronize(")
+        )
+        let writeRemoval = try XCTUnwrap(
+            removeBody.range(of: "store.writeRemovedDevice(")
+        )
+        XCTAssertLessThan(preserveCredential.lowerBound, writeRemoval.lowerBound)
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

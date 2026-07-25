@@ -46,6 +46,40 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("activateIgnoringOtherApps"))
     }
 
+    func testCredentialStartupChecksLocalAndCloudBeforeLegacyMigration() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/AppEnvironment+Credentials.swift"
+        )
+
+        let localLoad = try XCTUnwrap(
+            source.range(of: "credentialAccess.loadLocal")
+        )
+        let cloudBootstrap = try XCTUnwrap(
+            source.range(of: "syncCoordinator.bootstrapCredential")
+        )
+        let legacyLoad = try XCTUnwrap(
+            source.range(
+                of: "credentialAccess.load(",
+                range: localLoad.upperBound..<source.endIndex
+            )
+        )
+
+        XCTAssertLessThan(localLoad.lowerBound, cloudBootstrap.lowerBound)
+        XCTAssertLessThan(cloudBootstrap.lowerBound, legacyLoad.lowerBound)
+        XCTAssertFalse(source.contains("waiting for Keychain"))
+    }
+
+    func testLegacyKeychainReaderIsReadOnly() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/Sync/KeychainCredentialStore.swift"
+        )
+
+        XCTAssertTrue(source.contains("SecItemCopyMatching"))
+        XCTAssertFalse(source.contains("SecItemAdd"))
+        XCTAssertFalse(source.contains("SecItemUpdate"))
+        XCTAssertFalse(source.contains("SecItemDelete"))
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

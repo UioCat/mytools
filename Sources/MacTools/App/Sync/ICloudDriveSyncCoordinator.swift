@@ -5,6 +5,15 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     typealias StatusHandler = @Sendable (SyncStatus) -> Void
     typealias RemoteSettingsHandler = @Sendable (AppSettings) -> Void
     typealias DevicesHandler = @Sendable ([SyncDeviceSummary]) -> Void
+    typealias CredentialStateHandler = @Sendable (CredentialCloudState) -> Void
+
+    enum CredentialCloudState: Sendable {
+        case record(CredentialEnvelopeRecord)
+        case noRecord
+        case waitingForDownload
+        case unavailable
+        case failed
+    }
 
     private struct Configuration {
         var isEnabled = false
@@ -26,9 +35,11 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     private let localRepository: SyncLocalRepository
     private let deviceOverrideRepository: DeviceOverrideRepository
     private let cycleRunner: DriveSyncCycleRunner
+    private let credentialSyncEngine: CredentialSyncEngine
     private let statusHandler: StatusHandler
     private let remoteSettingsHandler: RemoteSettingsHandler
     private let devicesHandler: DevicesHandler
+    private let credentialStateHandler: CredentialStateHandler
     private let queue = DispatchQueue(label: "com.mactools.icloud-drive-sync", qos: .utility)
     private let lock = NSLock()
     private var configuration: Configuration
@@ -39,13 +50,15 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         localRepository: SyncLocalRepository,
         deviceOverrideRepository: DeviceOverrideRepository,
         payloadStore: PayloadStore,
+        encryptedCredentialStore: EncryptedCredentialStore,
         historyLimit: Int,
         clipboardScope: ClipboardSyncScope,
         storageLimit: SyncStorageLimit,
         rootURL: URL?,
         statusHandler: @escaping StatusHandler,
         remoteSettingsHandler: @escaping RemoteSettingsHandler,
-        devicesHandler: @escaping DevicesHandler
+        devicesHandler: @escaping DevicesHandler,
+        credentialStateHandler: @escaping CredentialStateHandler
     ) {
         self.localRepository = localRepository
         self.deviceOverrideRepository = deviceOverrideRepository
@@ -58,9 +71,11 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                 try Self.requestDownloadIfNeeded(url)
             }
         )
+        self.credentialSyncEngine = CredentialSyncEngine(localStore: encryptedCredentialStore)
         self.statusHandler = statusHandler
         self.remoteSettingsHandler = remoteSettingsHandler
         self.devicesHandler = devicesHandler
+        self.credentialStateHandler = credentialStateHandler
         self.configuration = Configuration(
             rootURL: rootURL,
             historyLimit: historyLimit,
@@ -69,7 +84,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         )
     }
 
-    func setEnabled(_ enabled: Bool) {
+    func setEnabled(_ enabled: Bool, syncImmediately: Bool = true) {
         let snapshot = lock.withLock { () -> Configuration in
             configuration.isEnabled = enabled
             configuration.scheduleToken &+= 1
@@ -83,7 +98,9 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             statusHandler(.unconfigured)
             return
         }
-        syncNow()
+        if syncImmediately {
+            syncNow()
+        }
     }
 
     func updateConfiguration(
@@ -127,6 +144,31 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
 
         queue.async { [weak self] in
             self?.runCycles()
+        }
+    }
+
+    func bootstrapCredential() {
+        let snapshot = lock.withLock { configuration }
+        guard snapshot.isEnabled else {
+            credentialStateHandler(.unavailable)
+            return
+        }
+        guard let rootURL = snapshot.rootURL else {
+            credentialStateHandler(.unavailable)
+            return
+        }
+        queue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try self.withCoordinatedWrite(at: rootURL) { coordinatedRoot in
+                    try self.synchronizeCredential(at: coordinatedRoot)
+                }
+                self.publishCredential(result)
+            } catch let error as DriveSyncStoreError {
+                self.publishCredential(error)
+            } catch {
+                self.credentialStateHandler(.failed)
+            }
         }
     }
 
@@ -176,6 +218,14 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                     )
                     let removerDeviceID = try self.deviceOverrideRepository.deviceID().uuidString
                     guard removedDeviceID != removerDeviceID else { return }
+                    let alreadyRemovedDeviceIDs = try store.removedDeviceIDs(
+                        generation: generation
+                    )
+                    _ = try self.credentialSyncEngine.synchronize(
+                        rootURL: coordinatedRoot,
+                        currentDeviceID: removerDeviceID,
+                        removedDeviceIDs: alreadyRemovedDeviceIDs
+                    )
                     try self.localRepository.preserveTombstones(
                         fromRemovedDeviceID: removedDeviceID,
                         generation: generation
@@ -211,17 +261,28 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
 
             statusHandler(.syncing)
             do {
-                let result = try withCoordinatedWrite(at: rootURL) { coordinatedRoot in
-                    try cycleRunner.run(
+                let results = try withCoordinatedWrite(at: rootURL) { coordinatedRoot in
+                    let driveResult = try cycleRunner.run(
                         rootURL: coordinatedRoot,
                         configuration: snapshot.cycleConfiguration
                     )
+                    let credentialResult = Result {
+                        try synchronizeCredential(at: coordinatedRoot)
+                    }
+                    return (driveResult, credentialResult)
                 }
-                if let settings = result.remoteSettings {
+                if let settings = results.0.remoteSettings {
                     remoteSettingsHandler(settings)
                 }
-                devicesHandler(result.devices)
-                statusHandler(result.status)
+                devicesHandler(results.0.devices)
+                switch results.1 {
+                case let .success(credentialResult):
+                    let credentialStatus = publishCredential(credentialResult)
+                    statusHandler(credentialStatus ?? results.0.status)
+                case .failure:
+                    credentialStateHandler(.failed)
+                    statusHandler(.failed)
+                }
             } catch let error as DriveSyncStoreError {
                 if case let .itemNotDownloaded(url) = error {
                     try? Self.requestDownloadIfNeeded(url)
@@ -249,6 +310,57 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                 schedulePeriodicSync(token: snapshot.scheduleToken)
                 return
             }
+        }
+    }
+
+    private func synchronizeCredential(at rootURL: URL) throws -> CredentialSyncResult {
+        let store = DriveSyncStore(rootURL: rootURL)
+        let descriptor = try store.readProtocol()
+        try localRepository.bindStore(descriptor.storeID)
+        let generation = try localRepository.currentGeneration(
+            storeID: descriptor.storeID
+        )
+        let removedDeviceIDs = try store.removedDeviceIDs(generation: generation)
+        let deviceID = try deviceOverrideRepository.deviceID().uuidString
+        return try credentialSyncEngine.synchronize(
+            rootURL: rootURL,
+            currentDeviceID: deviceID,
+            removedDeviceIDs: removedDeviceIDs
+        )
+    }
+
+    @discardableResult
+    private func publishCredential(_ result: CredentialSyncResult) -> SyncStatus? {
+        for url in result.downloadURLs {
+            try? Self.requestDownloadIfNeeded(url)
+        }
+        if let record = result.winner?.record {
+            credentialStateHandler(.record(record))
+        } else if !result.downloadURLs.isEmpty {
+            credentialStateHandler(.waitingForDownload)
+        } else if !result.failures.isEmpty {
+            credentialStateHandler(.failed)
+        } else {
+            credentialStateHandler(.noRecord)
+        }
+
+        if !result.downloadURLs.isEmpty {
+            return .waitingForDownload
+        }
+        if !result.failures.isEmpty {
+            return .failed
+        }
+        return nil
+    }
+
+    private func publishCredential(_ error: DriveSyncStoreError) {
+        if case let .itemNotDownloaded(url) = error {
+            try? Self.requestDownloadIfNeeded(url)
+            credentialStateHandler(.waitingForDownload)
+        } else if case .missingProtocol = error {
+            credentialStateHandler(.unavailable)
+        } else {
+            credentialStateHandler(.failed)
         }
     }
 

@@ -9,7 +9,7 @@
 - 稳态同步目录默认限制 512 MiB；单个图片最多 64 MiB。
 - 收藏和置顶不自动删除；容量无法释放时暂停新增图片，其他同步继续。
 - 本地 SQLite/Payload 不直接放入 iCloud Drive。
-- Bailian API Key 不进入同步目录。
+- Bailian API Key 不进入普通配置快照或内容对象；使用独立 AES-GCM replica 在同步目录中跨设备恢复。
 
 ## Research Findings
 - 现有 `sync_outbox`、字段时钟、tombstone、DeviceReplica、重复 Record alias 和 Payload 生命周期均可复用。
@@ -28,6 +28,8 @@
 | manifest 保存 `seenRevisions` | tombstone 仅在所有有效设备确认后压缩 |
 | GC 遇到任一未下载/未验证快照即暂停 | 避免引用尚未到达时误删共享对象 |
 | 单记录内容故障隔离 | 本地图片缺失或远端对象损坏不能阻塞文字、配置和删除同步 |
+| 凭据独立加密 replica | 避免进入普通设置同步；本地缓存优先，删除用逻辑时钟墓碑收敛 |
+| 公开固定材料派生 AES-GCM 密钥 | ad-hoc 重建和另一台 Mac 可直接解密；只防止明文误读，不抵御逆向 |
 | 设置页沿用现有 Liquid Glass 卡片 | 保持产品信息架构和视觉语义一致 |
 
 ## Issues Encountered

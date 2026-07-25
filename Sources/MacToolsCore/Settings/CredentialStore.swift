@@ -1,17 +1,15 @@
 import Foundation
 
-public enum CredentialKey: String, Sendable {
+public enum CredentialKey: String, Codable, Equatable, Sendable {
     case bailianAPIKey = "bailian.apiKey"
 }
 
-public protocol CredentialStore: Sendable {
+public protocol LegacyCredentialReading: Sendable {
     func read(_ key: CredentialKey) throws -> String?
-    func save(_ value: String, for key: CredentialKey) throws
-    func delete(_ key: CredentialKey) throws
 }
 
 public enum CredentialAccessError: Error, Equatable, Sendable {
-    case migrationFailed
+    case migrationVerificationFailed
 }
 
 public actor CredentialAccessCoordinator {
@@ -25,36 +23,118 @@ public actor CredentialAccessCoordinator {
         }
     }
 
-    private let store: any CredentialStore
+    private let store: EncryptedCredentialStore
+    private let legacyReader: any LegacyCredentialReading
+    private let deviceID: String
+    private let now: @Sendable () -> Date
 
-    public init(store: any CredentialStore) {
+    public init(
+        store: EncryptedCredentialStore,
+        legacyReader: any LegacyCredentialReading,
+        deviceID: String,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.store = store
+        self.legacyReader = legacyReader
+        self.deviceID = deviceID
+        self.now = now
     }
 
-    public func load(_ key: CredentialKey, fallback: String) throws -> LoadResult {
-        var value = try store.read(key)
-        var shouldRedactLegacy = false
-        if value == nil, !fallback.isEmpty {
-            try store.save(fallback, for: key)
-            value = try store.read(key)
-            guard value != nil else {
-                throw CredentialAccessError.migrationFailed
-            }
-            shouldRedactLegacy = true
-        } else if value != nil, !fallback.isEmpty {
-            shouldRedactLegacy = true
+    public func load(
+        _ key: CredentialKey,
+        fallback: String
+    ) throws -> LoadResult {
+        let normalizedFallback = fallback.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        if let record = try store.readRecord(for: key) {
+            try markMigrationCompleteIfNeeded()
+            return LoadResult(
+                value: record.value ?? "",
+                shouldRedactLegacy: !normalizedFallback.isEmpty
+            )
         }
+        if try store.isMigrationComplete() {
+            return LoadResult(
+                value: "",
+                shouldRedactLegacy: !normalizedFallback.isEmpty
+            )
+        }
+        if !normalizedFallback.isEmpty {
+            let result = try store.update(
+                value: normalizedFallback,
+                for: key,
+                deviceID: deviceID,
+                updatedAt: now()
+            )
+            guard result.record.value == normalizedFallback else {
+                throw CredentialAccessError.migrationVerificationFailed
+            }
+            try? store.markMigrationComplete()
+            return LoadResult(
+                value: normalizedFallback,
+                shouldRedactLegacy: true
+            )
+        }
+
+        let legacyValue = try legacyReader.read(key)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let legacyValue, !legacyValue.isEmpty else {
+            try store.markMigrationComplete()
+            return LoadResult(value: "", shouldRedactLegacy: false)
+        }
+        let result = try store.update(
+            value: legacyValue,
+            for: key,
+            deviceID: deviceID,
+            updatedAt: now()
+        )
+        guard result.record.value == legacyValue else {
+            throw CredentialAccessError.migrationVerificationFailed
+        }
+        try? store.markMigrationComplete()
+        return LoadResult(value: legacyValue, shouldRedactLegacy: false)
+    }
+
+    public func loadLocal(
+        _ key: CredentialKey,
+        fallback: String
+    ) throws -> LoadResult? {
+        let shouldRedactLegacy = !fallback.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ).isEmpty
+        if let record = try store.readRecord(for: key) {
+            try markMigrationCompleteIfNeeded()
+            return LoadResult(
+                value: record.value ?? "",
+                shouldRedactLegacy: shouldRedactLegacy
+            )
+        }
+        guard try store.isMigrationComplete() else { return nil }
         return LoadResult(
-            value: value ?? "",
+            value: "",
             shouldRedactLegacy: shouldRedactLegacy
         )
     }
 
-    public func save(_ value: String, for key: CredentialKey) throws {
-        if value.isEmpty {
-            try store.delete(key)
-        } else {
-            try store.save(value, for: key)
+    @discardableResult
+    public func save(
+        _ value: String,
+        for key: CredentialKey
+    ) throws -> CredentialEnvelopeRecord {
+        let result = try store.update(
+            value: value,
+            for: key,
+            deviceID: deviceID,
+            updatedAt: now()
+        )
+        try? store.markMigrationComplete()
+        return result.record
+    }
+
+    private func markMigrationCompleteIfNeeded() throws {
+        if try !store.isMigrationComplete() {
+            try store.markMigrationComplete()
         }
     }
 }
