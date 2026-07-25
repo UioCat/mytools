@@ -1,5 +1,37 @@
 # Errors
 
+## [ERR-20260725-001] superpowers 技能缓存版本路径变化
+
+**Logged**: 2026-07-25T15:31:33+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+读取 `brainstorming` skill 时沿用了上一轮的缓存版本目录，文件已迁移到新版本目录。
+
+### Error
+```
+sed: .../superpowers/6.1.1/skills/brainstorming/SKILL.md: No such file or directory
+```
+
+### Context
+- 当前已安装的 superpowers 缓存版本由 `6.1.1` 更新为 `6.2.0`。
+- 读取操作失败，没有修改项目或系统状态。
+
+### Suggested Fix
+每次新任务从技能目录动态定位 `SKILL.md`，不要复用上一轮缓存版本的绝对路径。
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-07-25T15:31:33+08:00
+- **Notes**: 使用 `rg --files` 定位并完整读取 `6.2.0` 版本的 skill。
+
+---
+
 ## [ERR-20260724-003] 设计文档补丁上下文不匹配
 
 **Logged**: 2026-07-24T17:47:32+08:00
