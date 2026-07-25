@@ -1,5 +1,37 @@
 # Errors
 
+## [ERR-20260725-002] 实施计划样例文件不存在
+
+**Logged**: 2026-07-25T15:57:30+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+读取实施计划样例时根据设计文档日期推测了文件名，但仓库中没有对应计划文件。
+
+### Error
+```
+sed: docs/superpowers/plans/2026-07-20-icloud-drive-sync.md: No such file or directory
+```
+
+### Context
+- 已先列出 `docs/superpowers/plans`，但读取命令仍使用了未出现在列表中的推测路径。
+- 失败只发生在只读查询，没有修改项目或系统状态。
+
+### Suggested Fix
+先通过 `rg --files docs/superpowers/plans` 获取真实路径，再选择存在的实施计划作为格式样例。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `docs/superpowers/plans/`
+
+### Resolution
+- **Resolved**: 2026-07-25T15:57:30+08:00
+- **Notes**: 改用仓库中实际存在的实施计划文件继续。
+
+---
+
 ## [ERR-20260725-001] superpowers 技能缓存版本路径变化
 
 **Logged**: 2026-07-25T15:31:33+08:00
