@@ -69,6 +69,43 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("waiting for Keychain"))
     }
 
+    func testRemoteSettingsRestartSuperRightClickMonitorOnlyWhenItsDependenciesChange() throws {
+        let source = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
+        let applyStart = try XCTUnwrap(
+            source.range(of: "    private func applyRemoteSettings(_ remoteSettings: AppSettings) {")
+        )
+        let scheduleStart = try XCTUnwrap(
+            source.range(
+                of: "    func scheduleSync() {",
+                range: applyStart.upperBound..<source.endIndex
+            )
+        )
+        let applyBody = source[applyStart.lowerBound..<scheduleStart.lowerBound]
+
+        let restartDecision = try XCTUnwrap(
+            applyBody.range(of: "let shouldRestartSuperRightClickMonitor =")
+        )
+        let superRightClickComparison = try XCTUnwrap(
+            applyBody.range(of: "merged.superRightClick != settings.superRightClick")
+        )
+        let translationComparison = try XCTUnwrap(
+            applyBody.range(of: "merged.translation != settings.translation")
+        )
+        let assignment = try XCTUnwrap(applyBody.range(of: "settings = merged"))
+        XCTAssertLessThan(restartDecision.lowerBound, superRightClickComparison.lowerBound)
+        XCTAssertLessThan(superRightClickComparison.lowerBound, translationComparison.lowerBound)
+        XCTAssertLessThan(translationComparison.lowerBound, assignment.lowerBound)
+        XCTAssertTrue(
+            applyBody.contains(
+                """
+                if shouldRestartSuperRightClickMonitor {
+                                startSuperRightClickMonitor()
+                            }
+                """
+            )
+        )
+    }
+
     func testLegacyKeychainReaderIsReadOnly() throws {
         let source = try sourceFile(
             "Sources/MacTools/App/Sync/KeychainCredentialStore.swift"

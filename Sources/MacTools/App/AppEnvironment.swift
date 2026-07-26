@@ -563,6 +563,9 @@ final class AppEnvironment {
             merged.sync.isEnabled = settings.sync.isEnabled
             merged.clipboard.cacheStoragePath = settings.clipboard.cacheStoragePath
             merged.clipboard.maxCacheMegabytes = settings.clipboard.maxCacheMegabytes
+            let shouldRestartSuperRightClickMonitor =
+                merged.superRightClick != settings.superRightClick
+                || merged.translation != settings.translation
             settings = merged
             syncModel.remoteSettings = merged
             Task { await clipboardPollingWorker.updateSettings(merged) }
@@ -572,7 +575,9 @@ final class AppEnvironment {
                 storageLimit: merged.sync.storageLimit
             )
             onSettingsChanged(merged)
-            startSuperRightClickMonitor()
+            if shouldRestartSuperRightClickMonitor {
+                startSuperRightClickMonitor()
+            }
             clipboardModel.refresh()
         } catch {
             logger.error("remote preferences apply failed: \(String(reflecting: type(of: error)))")
