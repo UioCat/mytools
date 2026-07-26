@@ -1,6 +1,10 @@
+// `UnifiedStoreBootstrapper` 的本地存储领域实现。
+// 负责数据库、载荷文件和迁移事务，不管理运行时面板状态。
+
 import Foundation
 import GRDB
 
+/// 描述 `UnifiedStoreBootstrapError` 在本地存储领域中可取的状态、选项或错误。
 public enum UnifiedStoreBootstrapError: Error {
     case databaseIntegrityCheckFailed
     case foreignKeyCheckFailed
@@ -8,22 +12,25 @@ public enum UnifiedStoreBootstrapError: Error {
     case stagedStoreWasNotInstalled
 }
 
+/// 封装 `UnifiedStoreBootstrapResult` 在本地存储领域中的值语义和相关操作。
 public struct UnifiedStoreBootstrapResult: Equatable {
     public let migrationReport: LegacyStoreMigrationReport
     public let didCutOver: Bool
     public let rollbackDirectory: URL?
 }
 
-/// Builds and verifies the complete store outside the live path before switching
-/// directories. Legacy sources and incomplete stores are preserved for rollback.
+/// 在当前生效路径之外构建并校验完整 Store，再切换目录。
+/// 旧迁移源和未完成 Store 会保留为回滚依据。
 public enum UnifiedStoreBootstrapper {
     public static let cutoverMigrationKey = "unified-store-cutover-v1"
 
+    /// 复用已完成 Store，或在 staging 中迁移并校验后切换到统一 Store。
     public static func prepare(
         paths: MacToolsStorePaths,
         legacySettings: AppSettings,
         fileManager: FileManager = .default
     ) throws -> UnifiedStoreBootstrapResult {
+        // cutover 标记只会在完整校验后写入；存在标记即可直接复用当前 Store。
         if try hasCutoverMarker(at: paths.databaseURL) {
             let database = try MacToolsDatabase.at(paths.databaseURL)
             return UnifiedStoreBootstrapResult(
@@ -40,6 +47,7 @@ public enum UnifiedStoreBootstrapper {
             storeDirectoryOverride: stagingDirectory
         )
 
+        // 上次启动可能在安装前退出；已完成的 staging 可以直接继续切换，无需重复迁移。
         if try hasCutoverMarker(at: stagedPaths.databaseURL) {
             let rollbackDirectory = try installStagedStore(
                 stagingDirectory,
@@ -83,6 +91,7 @@ public enum UnifiedStoreBootstrapper {
         )
     }
 
+    /// 在隔离目录完成设置、剪贴板和载荷迁移，校验通过后写入 cutover 标记。
     private static func buildAndVerifyStagedStore(
         paths: MacToolsStorePaths,
         legacyPaths: MacToolsStorePaths,
@@ -127,6 +136,7 @@ public enum UnifiedStoreBootstrapper {
         return report
     }
 
+    /// 调整 `recoverIncompleteUnifiedStoreIfPresent` 涉及的本地存储领域状态，并保持迁移或恢复语义。
     private static func recoverIncompleteUnifiedStoreIfPresent(
         sourcePaths: MacToolsStorePaths,
         targetRepository: ClipboardRepository,
@@ -177,6 +187,7 @@ public enum UnifiedStoreBootstrapper {
         }
     }
 
+    /// 校验 `validate` 接收的本地存储领域数据是否满足当前约束。
     private static func validate(
         database: MacToolsDatabase,
         payloadStore: PayloadStore,
@@ -209,6 +220,7 @@ public enum UnifiedStoreBootstrapper {
         }
     }
 
+    /// 判断 `hasCutoverMarker` 所描述的本地存储领域条件是否成立。
     private static func hasCutoverMarker(at databaseURL: URL) throws -> Bool {
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
             return false
@@ -230,6 +242,7 @@ public enum UnifiedStoreBootstrapper {
         }
     }
 
+    /// 结束 `completedLegacyReport` 对应的本地存储领域流程，并释放或重置相关资源。
     private static func completedLegacyReport(
         in database: MacToolsDatabase
     ) throws -> LegacyStoreMigrationReport? {
@@ -245,6 +258,7 @@ public enum UnifiedStoreBootstrapper {
         }
     }
 
+    /// 先把当前 Store 移为 rollback，再安装 staging；安装失败时尽力恢复原 Store。
     private static func installStagedStore(
         _ stagingDirectory: URL,
         at destinationDirectory: URL,

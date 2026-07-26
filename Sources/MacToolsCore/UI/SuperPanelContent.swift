@@ -1,5 +1,9 @@
+// `SuperPanelContent` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import Foundation
 
+/// 描述 `SuperPanelKind` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum SuperPanelKind: Equatable {
     case text
     case textTransit
@@ -7,11 +11,13 @@ public enum SuperPanelKind: Equatable {
     case windowLayout
 }
 
+/// 描述 `SuperPanelFileSystemPresentation` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum SuperPanelFileSystemPresentation: Equatable {
     case selectedItem
     case finderCurrentDirectory
 }
 
+/// 描述 `SuperPanelActionID` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum SuperPanelActionID: Equatable, Hashable {
     case copyTranslatedText
     case textTransit
@@ -57,11 +63,13 @@ public enum SuperPanelActionID: Equatable, Hashable {
     }
 }
 
+/// 封装 `SuperPanelPreviewRow` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct SuperPanelPreviewRow: Equatable {
     public var label: String
     public var value: String
     public var speechRequest: TranslationSpeechRequest?
 
+    /// 创建 `SuperPanelPreviewRow`，保存传入依赖并建立初始状态。
     public init(
         label: String,
         value: String,
@@ -73,11 +81,13 @@ public struct SuperPanelPreviewRow: Equatable {
     }
 }
 
+/// 封装 `SuperPanelActionDescriptor` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct SuperPanelActionDescriptor: Equatable, Identifiable {
     public var id: SuperPanelActionID
     public var title: String
     public var systemImage: String
 
+    /// 创建 `SuperPanelActionDescriptor`，保存传入依赖并建立初始状态。
     public init(id: SuperPanelActionID, title: String, systemImage: String) {
         self.id = id
         self.title = title
@@ -85,6 +95,7 @@ public struct SuperPanelActionDescriptor: Equatable, Identifiable {
     }
 }
 
+/// 封装 `SuperPanelContent` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct SuperPanelContent: Equatable {
     public var kind: SuperPanelKind
     public var headerTitle: String
@@ -94,6 +105,7 @@ public struct SuperPanelContent: Equatable {
     public var actions: [SuperPanelActionDescriptor]
     public var showsLoadingIndicator: Bool
 
+    /// 创建 `SuperPanelContent`，保存传入依赖并建立初始状态。
     public init(
         kind: SuperPanelKind,
         headerTitle: String,
@@ -112,6 +124,7 @@ public struct SuperPanelContent: Equatable {
         self.showsLoadingIndicator = showsLoadingIndicator
     }
 
+    /// 构建并返回 `text` 对应的 SwiftUI 界面内容或展示状态。
     public static func text(
         originalText: String,
         translation: Result<TranslationResponse, TranslationError>?,
@@ -191,6 +204,7 @@ public struct SuperPanelContent: Equatable {
         )
     }
 
+    /// 构建并返回 `textTransit` 对应的 SwiftUI 界面内容或展示状态。
     public static func textTransit(
         text: String,
         windowLayoutButtons _: [WindowLayoutButton] = []
@@ -210,6 +224,7 @@ public struct SuperPanelContent: Equatable {
         )
     }
 
+    /// 构建并返回 `fileSystem` 对应的 SwiftUI 界面内容或展示状态。
     public static func fileSystem(
         item: ClipboardItem,
         windowLayoutButtons: [WindowLayoutButton] = [],
@@ -243,6 +258,7 @@ public struct SuperPanelContent: Equatable {
         )
     }
 
+    /// 构建并返回 `windowLayoutOnly` 对应的 SwiftUI 界面内容或展示状态。
     public static func windowLayoutOnly(
         windowLayoutButtons: [WindowLayoutButton]
     ) -> SuperPanelContent {
@@ -256,6 +272,7 @@ public struct SuperPanelContent: Equatable {
         )
     }
 
+    /// 构建并返回 `windowLayoutActionDescriptors` 对应的 SwiftUI 界面内容或展示状态。
     private static func windowLayoutActionDescriptors(
         from buttons: [WindowLayoutButton]
     ) -> [SuperPanelActionDescriptor] {

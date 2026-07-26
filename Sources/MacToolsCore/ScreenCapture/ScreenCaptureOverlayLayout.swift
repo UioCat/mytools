@@ -1,5 +1,9 @@
+// `ScreenCaptureOverlayLayout` 的截图录屏核心领域实现。
+// 负责选择、渲染和会话策略，不直接管理 ScreenCaptureKit 流。
+
 import CoreGraphics
 
+/// 描述 `ScreenCaptureOverlayLayout` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenCaptureOverlayLayout {
     public static let modeToolbarSize = CGSize(width: 196, height: 44)
     public static let editorToolbarSize = CGSize(width: 720, height: 92)
@@ -9,6 +13,7 @@ public enum ScreenCaptureOverlayLayout {
     private static let topInset: CGFloat = 16
     private static let toolbarGap: CGFloat = 12
 
+    /// 计算并返回 `modeToolbarFrame` 对应的截图录屏核心领域数据或状态结果。
     public static func modeToolbarFrame(displayBounds: CGRect) -> CGRect {
         CGRect(
             x: displayBounds.midX - modeToolbarSize.width / 2,
@@ -18,6 +23,7 @@ public enum ScreenCaptureOverlayLayout {
         )
     }
 
+    /// 计算并返回 `editorToolbarFrame` 对应的截图录屏核心领域数据或状态结果。
     public static func editorToolbarFrame(
         selectionFrame: CGRect,
         displayBounds: CGRect
@@ -43,6 +49,7 @@ public enum ScreenCaptureOverlayLayout {
         return CGRect(origin: CGPoint(x: x, y: y), size: toolbarSize)
     }
 
+    /// 保存 `recordingControlFrame` 接收的截图录屏核心领域数据，并保持既有持久化约束。
     public static func recordingControlFrame(visibleFrame: CGRect) -> CGRect {
         CGRect(
             x: visibleFrame.midX - recordingControlSize.width / 2,

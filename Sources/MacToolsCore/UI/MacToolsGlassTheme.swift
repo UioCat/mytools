@@ -1,5 +1,9 @@
+// `MacToolsGlassTheme` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import SwiftUI
 
+/// 描述 `MacToolsGlassTheme` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum MacToolsGlassTheme {
     public static let activeBlue = Color.accentColor
     public static let activeBlueSoft = Color.accentColor.opacity(0.72)
@@ -18,11 +22,13 @@ public enum MacToolsGlassTheme {
     public static let rowHover = Color.accentColor.opacity(0.075)
     public static let fieldFill = Color.primary.opacity(0.055)
 
+    /// 构建并返回 `statusColor` 对应的 SwiftUI 界面内容或展示状态。
     public static func statusColor(isEnabled: Bool) -> Color {
         isEnabled ? success : warning
     }
 }
 
+/// 描述 `MacToolsControlMetrics` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum MacToolsControlMetrics {
     public static let textActionHeight: CGFloat = 40
     public static let textActionFontSize: CGFloat = 14
@@ -39,11 +45,13 @@ public enum MacToolsControlMetrics {
     public static let settingsRowButtonMinimumHeight: CGFloat = 44
 }
 
+/// 封装 `GlassStatusPill` 在 SwiftUI 展示层中的值语义和相关操作。
 struct GlassStatusPill: View {
     let title: String
     let systemImage: String?
     let color: Color
 
+    /// 创建 `GlassStatusPill`，保存传入依赖并建立初始状态。
     init(_ title: String, systemImage: String? = nil, color: Color) {
         self.title = title
         self.systemImage = systemImage
@@ -70,15 +78,18 @@ struct GlassStatusPill: View {
     }
 }
 
+/// 封装 `GlassPrimaryButtonStyle` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct GlassPrimaryButtonStyle: ButtonStyle {
     var color: Color = MacToolsGlassTheme.activeBlue
     var cornerRadius: CGFloat = 14
 
+    /// 创建 `GlassPrimaryButtonStyle`，保存传入依赖并建立初始状态。
     public init(color: Color = MacToolsGlassTheme.activeBlue, cornerRadius: CGFloat = 14) {
         self.color = color
         self.cornerRadius = cornerRadius
     }
 
+    /// 构造并返回 `makeBody` 所描述的 SwiftUI 展示层对象。
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(Color.white)
@@ -94,6 +105,7 @@ public struct GlassPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// 封装 `GlassIconBadge` 在 SwiftUI 展示层中的值语义和相关操作。
 struct GlassIconBadge: View {
     let systemName: String
     var color: Color = MacToolsGlassTheme.activeBlue

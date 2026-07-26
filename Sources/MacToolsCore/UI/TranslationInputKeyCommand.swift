@@ -1,5 +1,9 @@
+// `TranslationInputKeyCommand` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import Foundation
 
+/// 描述 `TranslationInputKeyCommand` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum TranslationInputKeyCommand: Equatable {
     case submit
     case insertNewline
@@ -9,7 +13,9 @@ public enum TranslationInputKeyCommand: Equatable {
     case cut
 }
 
+/// 描述 `TranslationInputKeyCommandResolver` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum TranslationInputKeyCommandResolver {
+    /// 构建并返回 `command` 对应的 SwiftUI 界面内容或展示状态。
     public static func command(
         forKeyCode keyCode: UInt16,
         isShiftPressed: Bool
@@ -22,6 +28,7 @@ public enum TranslationInputKeyCommandResolver {
         )
     }
 
+    /// 构建并返回 `command` 对应的 SwiftUI 界面内容或展示状态。
     public static func command(
         forKeyCode keyCode: UInt16,
         charactersIgnoringModifiers: String?,
@@ -44,6 +51,7 @@ public enum TranslationInputKeyCommandResolver {
         return isShiftPressed ? .insertNewline : .submit
     }
 
+    /// 构建并返回 `editingCommand` 对应的 SwiftUI 界面内容或展示状态。
     private static func editingCommand(
         forKeyCode keyCode: UInt16,
         charactersIgnoringModifiers: String?

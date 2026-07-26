@@ -1,11 +1,16 @@
+// `ContextActionView` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import SwiftUI
 
+/// 封装 `ContextActionView` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct ContextActionView: View {
     public let content: SuperPanelContent
     private let speechState: TranslationSpeechState
     private let performSpeech: (TranslationSpeechRequest) -> Void
     private let performAction: (SuperPanelActionID) -> Void
 
+    /// 创建 `ContextActionView`，保存传入依赖并建立初始状态。
     public init(
         content: SuperPanelContent,
         speechState: TranslationSpeechState = .idle,
@@ -193,6 +198,7 @@ public struct ContextActionView: View {
         .padding(.vertical, 12)
     }
 
+    /// 展示预览字段的标签和值，并按内容类型限制文本行数。
     private func previewRow(_ row: SuperPanelPreviewRow) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Text(row.label)
@@ -215,6 +221,7 @@ public struct ContextActionView: View {
         .padding(.vertical, 8)
     }
 
+    /// 构建并返回 `speechButton` 对应的 SwiftUI 界面内容或展示状态。
     private func speechButton(
         for request: TranslationSpeechRequest,
         textRole: String
@@ -292,6 +299,7 @@ public struct ContextActionView: View {
 
 }
 
+/// 封装 `TranslationActionButton` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct TranslationActionButton: View {
     let action: SuperPanelActionDescriptor
     let performAction: (SuperPanelActionID) -> Void
@@ -334,6 +342,7 @@ private struct TranslationActionButton: View {
     }
 }
 
+/// 封装 `SuperPanelActionRow` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct SuperPanelActionRow: View {
     let action: SuperPanelActionDescriptor
     let performAction: (SuperPanelActionID) -> Void
@@ -431,6 +440,7 @@ private struct SuperPanelActionRow: View {
     }
 }
 
+/// 封装 `WindowLayoutActionButton` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct WindowLayoutActionButton: View {
     let action: SuperPanelActionDescriptor
     let performAction: (SuperPanelActionID) -> Void

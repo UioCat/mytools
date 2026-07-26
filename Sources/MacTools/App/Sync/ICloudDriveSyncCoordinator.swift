@@ -1,12 +1,21 @@
+// `ICloudDriveSyncCoordinator` 的 iCloud Drive 同步系统集成实现。
+// 负责文件协调、下载请求和后台调度，不定义同步合并规则。
+
 import Foundation
 import MacToolsCore
 
+/// 管理 `ICloudDriveSyncCoordinator` 在 iCloud Drive 同步系统集成中的生命周期、依赖和可变状态。
 final class ICloudDriveSyncCoordinator: @unchecked Sendable {
+    /// 为iCloud Drive 同步系统集成中的相关类型提供 `StatusHandler` 别名。
     typealias StatusHandler = @Sendable (SyncStatus) -> Void
+    /// 为iCloud Drive 同步系统集成中的相关类型提供 `RemoteSettingsHandler` 别名。
     typealias RemoteSettingsHandler = @Sendable (AppSettings) -> Void
+    /// 为iCloud Drive 同步系统集成中的相关类型提供 `DevicesHandler` 别名。
     typealias DevicesHandler = @Sendable ([SyncDeviceSummary]) -> Void
+    /// 为iCloud Drive 同步系统集成中的相关类型提供 `CredentialStateHandler` 别名。
     typealias CredentialStateHandler = @Sendable (CredentialCloudState) -> Void
 
+    /// 描述 `CredentialCloudState` 在 iCloud Drive 同步系统集成中可取的状态、选项或错误。
     enum CredentialCloudState: Sendable {
         case record(CredentialEnvelopeRecord)
         case noRecord
@@ -15,6 +24,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         case failed
     }
 
+    /// 封装 `Configuration` 在 iCloud Drive 同步系统集成中的值语义和相关操作。
     private struct Configuration {
         var isEnabled = false
         var rootURL: URL?
@@ -46,6 +56,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     private var isSyncing = false
     private var needsAnotherCycle = false
 
+    /// 创建 `ICloudDriveSyncCoordinator`，保存传入依赖并建立初始状态。
     init(
         localRepository: SyncLocalRepository,
         deviceOverrideRepository: DeviceOverrideRepository,
@@ -84,6 +95,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         )
     }
 
+    /// 更新同步开关并使既有周期令牌失效；已在执行的同步周期不会被强制取消。
     func setEnabled(_ enabled: Bool, syncImmediately: Bool = true) {
         let snapshot = lock.withLock { () -> Configuration in
             configuration.isEnabled = enabled
@@ -103,6 +115,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 应用 `updateConfiguration` 接收的新值，并更新相关 iCloud Drive 同步系统集成状态。
     func updateConfiguration(
         historyLimit: Int,
         clipboardScope: ClipboardSyncScope,
@@ -115,6 +128,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 应用 `setRootURL` 接收的新值，并更新相关 iCloud Drive 同步系统集成状态。
     func setRootURL(_ rootURL: URL?) {
         let enabled = lock.withLock { () -> Bool in
             configuration.rootURL = rootURL?.standardizedFileURL
@@ -130,6 +144,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 合并并发同步请求：已有周期运行时只记录一次补跑需求。
     func syncNow() {
         let shouldStart = lock.withLock { () -> Bool in
             guard configuration.isEnabled else { return false }
@@ -147,6 +162,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 启动 `bootstrapCredential` 对应的 iCloud Drive 同步系统集成流程，并建立所需资源。
     func bootstrapCredential() {
         let snapshot = lock.withLock { configuration }
         guard snapshot.isEnabled else {
@@ -172,6 +188,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 调整 `resetSyncData` 涉及的 iCloud Drive 同步系统集成状态，并保持迁移或恢复语义。
     func resetSyncData() {
         let snapshot = lock.withLock { configuration }
         guard snapshot.isEnabled, let rootURL = snapshot.rootURL else { return }
@@ -203,6 +220,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 移除 `removeDevice` 指定的 iCloud Drive 同步系统集成数据，并维护关联状态。
     func removeDevice(_ removedDeviceID: String) {
         let snapshot = lock.withLock { configuration }
         guard snapshot.isEnabled, let rootURL = snapshot.rootURL else { return }
@@ -246,6 +264,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 串行执行同步周期，消费补跑标记后再安排下一次定时同步。
     private func runCycles() {
         while true {
             let snapshot = lock.withLock { configuration }
@@ -313,6 +332,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 对账或合并 `synchronizeCredential` 涉及的 iCloud Drive 同步系统集成状态，并返回收敛结果。
     private func synchronizeCredential(at rootURL: URL) throws -> CredentialSyncResult {
         let store = DriveSyncStore(rootURL: rootURL)
         let descriptor = try store.readProtocol()
@@ -329,6 +349,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         )
     }
 
+    /// 发布或记录 `publishCredential` 对应的 iCloud Drive 同步系统集成状态。
     @discardableResult
     private func publishCredential(_ result: CredentialSyncResult) -> SyncStatus? {
         for url in result.downloadURLs {
@@ -353,6 +374,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         return nil
     }
 
+    /// 发布或记录 `publishCredential` 对应的 iCloud Drive 同步系统集成状态。
     private func publishCredential(_ error: DriveSyncStoreError) {
         if case let .itemNotDownloaded(url) = error {
             try? Self.requestDownloadIfNeeded(url)
@@ -364,6 +386,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 在文件协调写入范围内执行传入操作，并返回协调后的结果。
     private func withCoordinatedWrite<Value>(
         at rootURL: URL,
         operation: (URL) throws -> Value
@@ -388,11 +411,13 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         return try result.get()
     }
 
+    /// 执行 `requestDownloadIfNeeded` 对应的 iCloud Drive 同步系统集成输入输出操作。
     private static func requestDownloadIfNeeded(_ url: URL) throws {
         guard FileManager.default.isUbiquitousItem(at: url) else { return }
         try FileManager.default.startDownloadingUbiquitousItem(at: url)
     }
 
+    /// 结束 `finishSyncing` 对应的 iCloud Drive 同步系统集成流程，并释放或重置相关资源。
     private func finishSyncing() {
         lock.withLock {
             isSyncing = false
@@ -400,6 +425,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 延迟三十秒触发下一周期；令牌变化只淘汰旧定时任务，不中断正在运行的周期。
     private func schedulePeriodicSync(token: UInt64) {
         queue.asyncAfter(deadline: .now() + 30) { [weak self] in
             guard let self else { return }
@@ -410,6 +436,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 发布或记录 `publish` 对应的 iCloud Drive 同步系统集成状态。
     private func publish(_ error: Error) {
         if (error as NSError).domain == NSCocoaErrorDomain {
             statusHandler(.folderUnavailable)
@@ -419,7 +446,9 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     }
 }
 
+/// 扩展 `NSLock`，补充本文件所需的 iCloud Drive 同步系统集成能力。
 private extension NSLock {
+    /// 在锁保护范围内执行传入操作，并返回操作结果。
     func withLock<Value>(_ operation: () throws -> Value) rethrows -> Value {
         lock()
         defer { unlock() }

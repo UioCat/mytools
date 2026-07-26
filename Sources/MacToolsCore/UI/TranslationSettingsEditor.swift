@@ -1,6 +1,10 @@
+// `TranslationSettingsEditor` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 封装 `TranslationSettingsEditor` 在 SwiftUI 展示层中的值语义和相关操作。
 struct TranslationSettingsEditor: View {
     let currentSettings: TranslationSettings
     let credentialUnavailable: Bool
@@ -100,6 +104,7 @@ struct TranslationSettingsEditor: View {
         }
     }
 
+    /// 构建并返回 `labeledTextField` 对应的 SwiftUI 界面内容或展示状态。
     private func labeledTextField(title: String, text: Binding<String>) -> some View {
         HStack(spacing: 10) {
             Text(title)
@@ -118,6 +123,7 @@ struct TranslationSettingsEditor: View {
         }
     }
 
+    /// 构建并返回 `apiKeyIconButton` 对应的 SwiftUI 界面内容或展示状态。
     private func apiKeyIconButton(
         systemName: String,
         help: String,
@@ -138,6 +144,7 @@ struct TranslationSettingsEditor: View {
         .accessibilityLabel(Text(help))
     }
 
+    /// 组装翻译设置草稿并异步保存，保存期间阻止重复提交。
     private func save() {
         let trimmedEndpoint = endpointURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard URL(string: trimmedEndpoint) != nil else {
@@ -167,6 +174,7 @@ struct TranslationSettingsEditor: View {
         }
     }
 }
+/// 封装 `TranslationAPIKeyInputMode` 在 SwiftUI 展示层中的值语义和相关操作。
 struct TranslationAPIKeyInputMode {
     let isRevealed: Bool
 
@@ -175,10 +183,12 @@ struct TranslationAPIKeyInputMode {
     }
 }
 
+/// 描述 `TranslationAPIKeyKeyboardCommand` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum TranslationAPIKeyKeyboardCommand: Equatable {
     case copy
     case paste
 
+    /// 构建并返回 `command` 对应的 SwiftUI 界面内容或展示状态。
     static func command(forKeyCode keyCode: UInt16, isCommandPressed: Bool) -> TranslationAPIKeyKeyboardCommand? {
         command(
             forKeyCode: keyCode,
@@ -187,6 +197,7 @@ enum TranslationAPIKeyKeyboardCommand: Equatable {
         )
     }
 
+    /// 构建并返回 `command` 对应的 SwiftUI 界面内容或展示状态。
     static func command(
         forKeyCode keyCode: UInt16,
         charactersIgnoringModifiers: String?,
@@ -215,10 +226,12 @@ enum TranslationAPIKeyKeyboardCommand: Equatable {
         }
     }
 
+    /// 执行 `copyableString` 对应的 SwiftUI 展示层输入输出操作。
     static func copyableString(from apiKey: String) -> String? {
         normalizedAPIKey(from: apiKey)
     }
 
+    /// 执行 `pastedAPIKey` 对应的 SwiftUI 展示层输入输出操作。
     static func pastedAPIKey(from pasteboardString: String?) -> String? {
         guard let pasteboardString else {
             return nil
@@ -227,12 +240,14 @@ enum TranslationAPIKeyKeyboardCommand: Equatable {
         return normalizedAPIKey(from: pasteboardString)
     }
 
+    /// 转换 `normalizedAPIKey` 接收的 SwiftUI 展示层数据，并返回规范化结果。
     private static func normalizedAPIKey(from value: String) -> String? {
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedValue.isEmpty ? nil : trimmedValue
     }
 }
 
+/// 封装 `TranslationAPIKeyEditableField` 在 SwiftUI 展示层中的值语义和相关操作。
 struct TranslationAPIKeyEditableField: NSViewRepresentable {
     @Binding var text: String
     let isSecure: Bool
@@ -240,12 +255,14 @@ struct TranslationAPIKeyEditableField: NSViewRepresentable {
     let onCopy: (Bool) -> Void
     let onPaste: (Bool) -> Void
 
+    /// 构造并返回 `makeNSView` 所描述的 SwiftUI 展示层对象。
     func makeNSView(context: Context) -> TranslationAPIKeyNativeInputView {
         let view = TranslationAPIKeyNativeInputView()
         updateNSView(view, context: context)
         return view
     }
 
+    /// 同步文本和 IME 组合状态，但不在编辑器已有未提交输入时抢占焦点。
     func updateNSView(_ nsView: TranslationAPIKeyNativeInputView, context: Context) {
         nsView.configure(
             text: text,
@@ -258,6 +275,7 @@ struct TranslationAPIKeyEditableField: NSViewRepresentable {
     }
 }
 
+/// 管理 `TranslationAPIKeyNativeInputView` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
     private var field: NSTextField?
     private var monitor: Any?
@@ -271,6 +289,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         NSSize(width: 140, height: 22)
     }
 
+    /// 更新 API Key 输入框配置；明文与安全输入模式变化时重建原生文本框。
     func configure(
         text: String,
         isSecure: Bool,
@@ -298,11 +317,13 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// 文本视图进入窗口后安装键盘监听。
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateMonitor()
     }
 
+    /// 文本视图离开窗口前移除键盘监听。
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
             removeMonitor()
@@ -310,14 +331,17 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         super.viewWillMove(toWindow: newWindow)
     }
 
+    /// 标记原生文本框进入编辑状态，使键盘命令只在当前编辑期间生效。
     func controlTextDidBeginEditing(_ notification: Notification) {
         isEditing = true
     }
 
+    /// 标记原生文本框结束编辑。
     func controlTextDidEndEditing(_ notification: Notification) {
         isEditing = false
     }
 
+    /// 将原生文本框的最新内容回传给 SwiftUI 绑定。
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else {
             return
@@ -326,6 +350,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         onTextChange(field.stringValue)
     }
 
+    /// 在明文框与安全输入框之间切换，并重新建立布局和事件回调。
     private func replaceField(isSecure: Bool) {
         let previousField = field
         let replacement: NSTextField = isSecure ? TranslationAPIKeySecureTextField() : TranslationAPIKeyTextField()
@@ -346,6 +371,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         invalidateIntrinsicContentSize()
     }
 
+    /// 统一配置原生文本框外观、代理和命令键处理回调。
     private func configureField(_ field: NSTextField) {
         field.translatesAutoresizingMaskIntoConstraints = false
         field.isBordered = false
@@ -364,6 +390,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// 仅在视图已进入窗口时安装一次本地键盘事件监听。
     private func updateMonitor() {
         if window == nil {
             removeMonitor()
@@ -383,6 +410,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// 移除已安装的本地事件监听并清空句柄。
     private func removeMonitor() {
         if let monitor {
             NSEvent.removeMonitor(monitor)
@@ -390,6 +418,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// 在 API Key 编辑期间拦截复制、粘贴等命令，并交由注入的处理闭包执行。
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         guard
             isEditingAPIKeyField(),
@@ -431,6 +460,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// 判断 `isEditingAPIKeyField` 所描述的 SwiftUI 展示层条件是否成立。
     private func isEditingAPIKeyField() -> Bool {
         if isEditing {
             return true
@@ -452,14 +482,17 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
     }
 }
 
+/// 定义 `TranslationAPIKeyCommandHandlingField` 在 SwiftUI 展示层中需要满足的能力边界。
 @MainActor
 protocol TranslationAPIKeyCommandHandlingField: AnyObject {
     var onCommandKeyEquivalent: ((NSEvent) -> Bool)? { get set }
 }
 
+/// 管理 `TranslationAPIKeyTextField` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 final class TranslationAPIKeyTextField: NSTextField, TranslationAPIKeyCommandHandlingField {
     var onCommandKeyEquivalent: ((NSEvent) -> Bool)?
 
+    /// 优先处理自定义命令键；未消费的事件继续交给普通文本框。
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if onCommandKeyEquivalent?(event) == true {
             return true
@@ -468,6 +501,7 @@ final class TranslationAPIKeyTextField: NSTextField, TranslationAPIKeyCommandHan
         return super.performKeyEquivalent(with: event)
     }
 
+    /// 响应 `keyDown` 对应的系统或界面回调，并同步当前交互状态。
     override func keyDown(with event: NSEvent) {
         if onCommandKeyEquivalent?(event) == true {
             return
@@ -477,9 +511,11 @@ final class TranslationAPIKeyTextField: NSTextField, TranslationAPIKeyCommandHan
     }
 }
 
+/// 管理 `TranslationAPIKeySecureTextField` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 final class TranslationAPIKeySecureTextField: NSSecureTextField, TranslationAPIKeyCommandHandlingField {
     var onCommandKeyEquivalent: ((NSEvent) -> Bool)?
 
+    /// 优先处理自定义命令键；未消费的事件继续交给安全文本框。
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if onCommandKeyEquivalent?(event) == true {
             return true
@@ -488,6 +524,7 @@ final class TranslationAPIKeySecureTextField: NSSecureTextField, TranslationAPIK
         return super.performKeyEquivalent(with: event)
     }
 
+    /// 响应 `keyDown` 对应的系统或界面回调，并同步当前交互状态。
     override func keyDown(with event: NSEvent) {
         if onCommandKeyEquivalent?(event) == true {
             return

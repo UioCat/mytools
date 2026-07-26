@@ -1,11 +1,17 @@
+// `AppEnvironment+Credentials` 的应用运行时与 AppKit 集成实现。
+// 负责生命周期、面板和 macOS 能力接线，不承载可复用的持久化规则。
+
 import Foundation
 import MacToolsCore
 
+/// 扩展 `AppEnvironment`，补充本文件所需的应用运行时与 AppKit 集成能力。
 @MainActor
 extension AppEnvironment {
+    /// 优先读取本地加密凭据；需要时等待云端副本，最后才尝试只读旧存储迁移。
     func loadTranslationCredentialIfNeeded() {
         credentialLoadGeneration += 1
         let generation = credentialLoadGeneration
+        // 每条异步路径提交结果前都核对代际，避免旧加载覆盖用户刚保存的新密钥。
         credentialLoadFinished = false
         credentialLegacyLoadStarted = false
         let fallback = settings.translation.apiKey
@@ -68,6 +74,7 @@ extension AppEnvironment {
         }
     }
 
+    /// 根据云端凭据状态继续本地解密、等待下载或回退到旧存储迁移。
     func handleCredentialCloudState(
         _ state: ICloudDriveSyncCoordinator.CredentialCloudState
     ) {
@@ -117,6 +124,7 @@ extension AppEnvironment {
         }
     }
 
+    /// 每个加载代际至多启动一次旧凭据读取，成功后由统一入口应用并触发同步。
     func beginLegacyCredentialLoadIfNeeded(
         generation: Int,
         fallback: String,
@@ -155,6 +163,7 @@ extension AppEnvironment {
         }
     }
 
+    /// 仅应用当前代际的凭据结果，并在迁移成功后擦除旧设置中的明文副本。
     func applyCredentialLoadResult(
         _ result: CredentialAccessCoordinator.LoadResult,
         generation: Int,
@@ -172,6 +181,7 @@ extension AppEnvironment {
         startSuperRightClickMonitor()
     }
 
+    /// 调整 `redactLegacyCredential` 涉及的应用运行时与 AppKit 集成状态，并保持迁移或恢复语义。
     func redactLegacyCredential(at url: URL) {
         do {
             let legacyStore = SettingsStore(fileURL: url)

@@ -1,23 +1,30 @@
+// `HotKeyService` 的全局快捷键领域实现。
+// 负责快捷键建模、注册和分发，不管理具体工具界面。
+
 import Foundation
 
 #if canImport(Carbon)
 import Carbon
 #endif
 
+/// 描述 `HotKeyRegistrationError` 在全局快捷键领域中可取的状态、选项或错误。
 public enum HotKeyRegistrationError: Error, Equatable {
     case unsupportedKey(String)
     case unsupportedModifiers([String])
     case registrationFailed(OSStatus)
 }
 
+/// 管理 `HotKeyService` 在全局快捷键领域中的生命周期、依赖和可变状态。
 public final class HotKeyService {
     private let registrar: HotKeyRegistrar
     private var bindings: [String: HotKeyTarget] = [:]
 
+    /// 创建 `HotKeyService`，保存传入依赖并建立初始状态。
     public init(registrar: HotKeyRegistrar) {
         self.registrar = registrar
     }
 
+    /// 清除旧注册并按当前设置重新登记工具和窗口布局快捷键。
     public func configure(
         settings: AppSettings,
         handler: @escaping (HotKeyTarget) -> Void = { _ in }
@@ -25,6 +32,7 @@ public final class HotKeyService {
         registrar.unregisterAll()
         bindings.removeAll()
 
+        // 当前实现先记录显示值映射，再尝试系统注册；注册错误由调用路径忽略。
         for (hotKey, target) in uniqueHotKeys(from: settings) {
             bindings[hotKey.displayValue] = target
             try? registrar.register(hotKey) {
@@ -33,10 +41,12 @@ public final class HotKeyService {
         }
     }
 
+    /// 返回当前配置记录的显示值映射，不代表 Carbon 注册一定成功。
     public func binding(for displayValue: String) -> HotKeyTarget? {
         bindings[displayValue]
     }
 
+    /// 计算并返回 `hotKeys` 对应的全局快捷键领域数据或状态结果。
     private func hotKeys(from settings: AppSettings) -> [(HotKey, HotKeyTarget)] {
         let toolHotKeys: [(HotKey, HotKeyTarget)] = [
             (settings.mainPanelShortcut.hotKey, .mainPanel),
@@ -52,6 +62,7 @@ public final class HotKeyService {
         return toolHotKeys + windowLayoutHotKeys
     }
 
+    /// 按配置顺序去重快捷键，保留同一显示值第一次出现的目标。
     private func uniqueHotKeys(from settings: AppSettings) -> [(HotKey, HotKeyTarget)] {
         var seen = Set<String>()
         return hotKeys(from: settings).filter { hotKey, _ in
@@ -62,6 +73,7 @@ public final class HotKeyService {
     }
 }
 
+/// 扩展 `HotKeyBinding`，补充本文件所需的全局快捷键领域能力。
 private extension HotKeyBinding {
     var hotKey: HotKey {
         HotKey(displayValue: displayValue, key: key, modifiers: modifiers)
@@ -69,6 +81,7 @@ private extension HotKeyBinding {
 }
 
 #if canImport(Carbon)
+/// 管理 `CarbonHotKeyRegistrar` 在全局快捷键领域中的生命周期、依赖和可变状态。
 public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
     private let keyCodes: [String: UInt32] = [
         "A": 0,
@@ -142,10 +155,12 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
     private var registrations: [UInt32: EventHotKeyRef] = [:]
     private var nextIdentifier: UInt32 = 1
 
+    /// 创建 `CarbonHotKeyRegistrar`，保存传入依赖并建立初始状态。
     public init() {
         installEventHandler()
     }
 
+    /// 释放当前实例持有的观察者、任务或系统资源。
     deinit {
         unregisterAll()
         if let eventHandler {
@@ -153,6 +168,7 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
         }
     }
 
+    /// 启动 `register` 对应的全局快捷键领域流程，并建立所需资源。
     public func register(_ hotKey: HotKey, handler: @escaping () -> Void) throws {
         guard let keyCode = keyCodes[hotKey.key] else {
             throw HotKeyRegistrationError.unsupportedKey(hotKey.key)
@@ -181,6 +197,7 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
         handlers[identifier] = handler
     }
 
+    /// 结束 `unregisterAll` 对应的全局快捷键领域流程，并释放或重置相关资源。
     public func unregisterAll() {
         for hotKeyRef in registrations.values {
             UnregisterEventHotKey(hotKeyRef)
@@ -189,6 +206,7 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
         handlers.removeAll()
     }
 
+    /// 计算并返回 `carbonModifiers` 对应的全局快捷键领域数据或状态结果。
     private func carbonModifiers(for modifiers: [String]) throws -> UInt32 {
         guard !modifiers.isEmpty else {
             throw HotKeyRegistrationError.unsupportedModifiers(modifiers)
@@ -204,6 +222,7 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
         return carbonModifiers
     }
 
+    /// 启动 `installEventHandler` 对应的全局快捷键领域流程，并建立所需资源。
     private func installEventHandler() {
         var eventSpec = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -244,12 +263,15 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
         )
     }
 
+    /// 计算并返回 `invokeHandler` 对应的全局快捷键领域数据或状态结果。
     private func invokeHandler(for identifier: UInt32) {
         handlers[identifier]?()
     }
 }
 
+/// 扩展 `OSType`，补充本文件所需的全局快捷键领域能力。
 private extension OSType {
+    /// 计算并返回 `from` 对应的全局快捷键领域数据或状态结果。
     static func from(string: String) -> OSType {
         string.utf8.reduce(0) { value, character in
             (value << 8) + OSType(character)
@@ -257,11 +279,15 @@ private extension OSType {
     }
 }
 #else
+/// 管理 `CarbonHotKeyRegistrar` 在全局快捷键领域中的生命周期、依赖和可变状态。
 public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
+    /// 创建 `CarbonHotKeyRegistrar`，保存传入依赖并建立初始状态。
     public init() {}
 
+    /// 启动 `register` 对应的全局快捷键领域流程，并建立所需资源。
     public func register(_ hotKey: HotKey, handler: @escaping () -> Void) throws {}
 
+    /// 结束 `unregisterAll` 对应的全局快捷键领域流程，并释放或重置相关资源。
     public func unregisterAll() {}
 }
 #endif

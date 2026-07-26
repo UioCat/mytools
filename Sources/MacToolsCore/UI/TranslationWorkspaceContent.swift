@@ -1,5 +1,9 @@
+// `TranslationWorkspaceContent` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import Foundation
 
+/// 描述 `TranslationWorkspaceState` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum TranslationWorkspaceState: Equatable {
     case idle
     case translating
@@ -7,10 +11,12 @@ public enum TranslationWorkspaceState: Equatable {
     case failed(String)
 }
 
+/// 封装 `TranslationWorkspaceContent` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct TranslationWorkspaceContent: Equatable {
     public var settings: TranslationSettings
     public var state: TranslationWorkspaceState
 
+    /// 创建 `TranslationWorkspaceContent`，保存传入依赖并建立初始状态。
     public init(settings: TranslationSettings, state: TranslationWorkspaceState) {
         self.settings = settings
         self.state = state
@@ -71,6 +77,7 @@ public struct TranslationWorkspaceContent: Equatable {
         return trimmedText.isEmpty ? nil : text
     }
 
+    /// 为非空原文创建朗读请求，并根据原文自动选择语音语言。
     public func originalSpeechRequest(
         text: String,
         source: TranslationSpeechSource = .translationWorkspace
@@ -87,6 +94,7 @@ public struct TranslationWorkspaceContent: Equatable {
         )
     }
 
+    /// 仅在存在可复制译文时创建朗读请求，并按原文翻译方向选择译文语言。
     public func translatedSpeechRequest(
         originalText: String,
         source: TranslationSpeechSource = .translationWorkspace
@@ -103,6 +111,7 @@ public struct TranslationWorkspaceContent: Equatable {
         )
     }
 
+    /// 返回当前译文的兼容朗读请求。
     public func speechRequest(
         originalText: String,
         source: TranslationSpeechSource = .translationWorkspace
@@ -123,6 +132,7 @@ public struct TranslationWorkspaceContent: Equatable {
         state == .translating ? "翻译中" : "翻译"
     }
 
+    /// 仅在提供方已配置、当前未翻译且输入非空时允许提交。
     public func canSubmit(inputText: String) -> Bool {
         guard settings.isConfigured else {
             return false
@@ -136,7 +146,9 @@ public struct TranslationWorkspaceContent: Equatable {
     }
 }
 
+/// 描述 `TranslationInputPlaceholderPolicy` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum TranslationInputPlaceholderPolicy {
+    /// 判断 `isPlaceholderVisible` 所描述的 SwiftUI 展示层条件是否成立。
     public static func isPlaceholderVisible(inputText: String, isComposingText: Bool) -> Bool {
         inputText.isEmpty && !isComposingText
     }

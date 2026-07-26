@@ -1,12 +1,17 @@
+// `EncryptedCredentialStore` 的设置与凭据领域实现。
+// 负责配置、凭据信封和偏好持久化，不管理具体设置界面。
+
 import Darwin
 import Foundation
 
+/// 描述 `EncryptedCredentialStoreError` 在设置与凭据领域中可取的状态、选项或错误。
 public enum EncryptedCredentialStoreError: Error, Equatable, Sendable {
     case unsupportedMigrationMarker(String)
     case fileVerificationFailed
     case atomicReplaceFailed(Int32)
 }
 
+/// 在进程锁内原子读写本地凭据信封，并维护一次性迁移完成标记。
 public final class EncryptedCredentialStore: @unchecked Sendable {
     public static let currentMigrationVersion = 1
 
@@ -16,6 +21,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
     private let codec: CredentialEnvelopeCodec
     private let lock = NSLock()
 
+    /// 创建 `EncryptedCredentialStore`，保存传入依赖并建立初始状态。
     public init(
         envelopeURL: URL,
         migrationMarkerURL: URL,
@@ -28,12 +34,14 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         self.codec = codec
     }
 
+    /// 读取并返回 `readEnvelope` 对应的设置与凭据领域数据。
     public func readEnvelope(for credential: CredentialKey) throws -> CredentialEnvelope? {
         try withLock {
             try readEnvelopeUnlocked(for: credential)
         }
     }
 
+    /// 读取并返回 `readRecord` 对应的设置与凭据领域数据。
     public func readRecord(for credential: CredentialKey) throws -> CredentialEnvelopeRecord? {
         try withLock {
             guard let envelope = try readEnvelopeUnlocked(for: credential) else { return nil }
@@ -41,6 +49,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 保存 `write` 接收的设置与凭据领域数据，并保持既有持久化约束。
     public func write(
         _ envelope: CredentialEnvelope,
         for credential: CredentialKey
@@ -50,6 +59,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 基于本地和远端最低计数生成下一逻辑时钟，密封后原子替换本地信封。
     public func update(
         value: String?,
         for credential: CredentialKey,
@@ -61,6 +71,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
             let current = try readEnvelopeUnlocked(for: credential).map {
                 try codec.open($0, for: credential)
             }
+            // 当前协议直接对最大计数加一，尚未对恶意 Int64.max 输入提供上界保护。
             let nextCounter = max(current?.clock.counter ?? 0, minimumCounter) + 1
             let envelope = try codec.seal(
                 value: value,
@@ -79,6 +90,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 在本地信封与云端副本中选择获胜版本，并在需要时回写本地缓存。
     public func reconcile(
         replicas: [CredentialReplica],
         for credential: CredentialKey
@@ -92,6 +104,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
                 case .unsupportedSchema, .unsupportedKeyVersion:
                     throw error
                 default:
+                    // 只有存在可用远端副本时才允许跳过损坏本地信封；否则保留原错误供用户处理。
                     guard !replicas.isEmpty else { throw error }
                     local = nil
                 }
@@ -111,6 +124,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 判断 `isMigrationComplete` 所描述的设置与凭据领域条件是否成立。
     public func isMigrationComplete() throws -> Bool {
         try withLock {
             guard fileManager.fileExists(atPath: migrationMarkerURL.path) else {
@@ -128,6 +142,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 提交 `markMigrationComplete` 对应的设置与凭据领域状态，并记录后续流程所需的进度。
     public func markMigrationComplete() throws {
         try withLock {
             let data = Data("\(Self.currentMigrationVersion)\n".utf8)
@@ -138,6 +153,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 读取并返回 `readEnvelopeUnlocked` 对应的设置与凭据领域数据。
     private func readEnvelopeUnlocked(
         for credential: CredentialKey
     ) throws -> CredentialEnvelope? {
@@ -148,6 +164,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         return envelope
     }
 
+    /// 保存 `writeUnlocked` 接收的设置与凭据领域数据，并保持既有持久化约束。
     private func writeUnlocked(
         _ envelope: CredentialEnvelope,
         for credential: CredentialKey
@@ -160,6 +177,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 以 0600 staging 文件完成写后校验，再通过 rename 原子替换目标文件。
     private func verifiedAtomicWrite(_ data: Data, to url: URL) throws {
         let directory = url.deletingLastPathComponent()
         try fileManager.createDirectory(
@@ -198,6 +216,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// 应用 `applyFilePermissions` 接收的新值，并更新相关设置与凭据领域状态。
     private func applyFilePermissions(at url: URL) throws {
         try fileManager.setAttributes(
             [.posixPermissions: 0o600],
@@ -205,6 +224,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         )
     }
 
+    /// 在锁保护范围内执行传入操作，并返回操作结果。
     private func withLock<Value>(_ operation: () throws -> Value) rethrows -> Value {
         lock.lock()
         defer { lock.unlock() }

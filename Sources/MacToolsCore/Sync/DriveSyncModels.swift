@@ -1,5 +1,9 @@
+// `DriveSyncModels` 的同步核心领域实现。
+// 负责协议模型、合并、对象存储和凭据对账，不管理 AppKit 生命周期。
+
 import Foundation
 
+/// 描述 `SyncRecordType` 在同步核心领域中可取的状态、选项或错误。
 public enum SyncRecordType: String, Codable, Equatable, Sendable {
     case clipboardContent
     case preferenceDomain
@@ -7,6 +11,7 @@ public enum SyncRecordType: String, Codable, Equatable, Sendable {
     case deviceReplica
 }
 
+/// 描述 `SyncStorageLimit` 在同步核心领域中可取的状态、选项或错误。
 public enum SyncStorageLimit: Int, Codable, CaseIterable, Equatable, Identifiable, Sendable {
     case megabytes256 = 256
     case megabytes512 = 512
@@ -28,6 +33,7 @@ public enum SyncStorageLimit: Int, Codable, CaseIterable, Equatable, Identifiabl
     }
 }
 
+/// 封装 `SyncProtocolDescriptor` 在同步核心领域中的值语义和相关操作。
 public struct SyncProtocolDescriptor: Codable, Equatable, Sendable {
     public static let currentVersion = 1
 
@@ -36,6 +42,7 @@ public struct SyncProtocolDescriptor: Codable, Equatable, Sendable {
     public var createdAt: Date
     public var capacityLimit: SyncStorageLimit
 
+    /// 创建 `SyncProtocolDescriptor`，保存传入依赖并建立初始状态。
     public init(
         protocolVersion: Int = Self.currentVersion,
         storeID: UUID,
@@ -49,11 +56,13 @@ public struct SyncProtocolDescriptor: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncSnapshotDigests` 在同步核心领域中的值语义和相关操作。
 public struct SyncSnapshotDigests: Codable, Equatable, Sendable {
     public var clipboard: String
     public var preferences: String
     public var tombstones: String
 
+    /// 创建 `SyncSnapshotDigests`，保存传入依赖并建立初始状态。
     public init(clipboard: String, preferences: String, tombstones: String) {
         self.clipboard = clipboard
         self.preferences = preferences
@@ -61,6 +70,7 @@ public struct SyncSnapshotDigests: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncReplicaManifest` 在同步核心领域中的值语义和相关操作。
 public struct SyncReplicaManifest: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 2
 
@@ -74,6 +84,7 @@ public struct SyncReplicaManifest: Codable, Equatable, Sendable {
     public var snapshotDirectory: String?
     public var updatedAt: Date
 
+    /// 创建 `SyncReplicaManifest`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         deviceID: String,
@@ -97,12 +108,14 @@ public struct SyncReplicaManifest: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncDeviceSummary` 在同步核心领域中的值语义和相关操作。
 public struct SyncDeviceSummary: Equatable, Identifiable, Sendable {
     public var id: String
     public var name: String
     public var isCurrentDevice: Bool
     public var lastUpdatedAt: Date?
 
+    /// 创建 `SyncDeviceSummary`，保存传入依赖并建立初始状态。
     public init(
         id: String,
         name: String,
@@ -116,6 +129,7 @@ public struct SyncDeviceSummary: Equatable, Identifiable, Sendable {
     }
 }
 
+/// 封装 `SyncClipboardRecord` 在同步核心领域中的值语义和相关操作。
 public struct SyncClipboardRecord: Codable, Equatable, Sendable {
     public var recordName: String
     public var contentID: String
@@ -133,6 +147,7 @@ public struct SyncClipboardRecord: Codable, Equatable, Sendable {
     public var favoriteClock: ClipboardFieldClock
     public var pinnedClock: ClipboardFieldClock
 
+    /// 创建 `SyncClipboardRecord`，保存传入依赖并建立初始状态。
     public init(
         recordName: String,
         contentID: String,
@@ -168,6 +183,7 @@ public struct SyncClipboardRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncClipboardSnapshot` 在同步核心领域中的值语义和相关操作。
 public struct SyncClipboardSnapshot: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -177,6 +193,7 @@ public struct SyncClipboardSnapshot: Codable, Equatable, Sendable {
     public var revision: Int64
     public var records: [SyncClipboardRecord]
 
+    /// 创建 `SyncClipboardSnapshot`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         deviceID: String,
@@ -192,6 +209,7 @@ public struct SyncClipboardSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncTextContentObject` 在同步核心领域中的值语义和相关操作。
 public struct SyncTextContentObject: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -201,6 +219,7 @@ public struct SyncTextContentObject: Codable, Equatable, Sendable {
     public var text: String
     public var byteCount: Int64
 
+    /// 创建 `SyncTextContentObject`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         contentID: String,
@@ -216,11 +235,13 @@ public struct SyncTextContentObject: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncExportContent` 在同步核心领域中的值语义和相关操作。
 public struct SyncExportContent: Equatable, Sendable {
     public var contentID: String
     public var kind: ClipboardContentKind
     public var data: Data
 
+    /// 创建 `SyncExportContent`，保存传入依赖并建立初始状态。
     public init(contentID: String, kind: ClipboardContentKind, data: Data) {
         self.contentID = contentID
         self.kind = kind
@@ -228,7 +249,9 @@ public struct SyncExportContent: Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncExportContentCache` 在同步核心领域中的值语义和相关操作。
 public struct SyncExportContentCache: Sendable {
+    /// 封装 `Key` 在同步核心领域中的值语义和相关操作。
     private struct Key: Hashable, Sendable {
         var kind: String
         var contentID: String
@@ -237,12 +260,15 @@ public struct SyncExportContentCache: Sendable {
     private var contentsByKey: [Key: SyncExportContent] = [:]
     public private(set) var materializedContentCount = 0
 
+    /// 创建 `SyncExportContentCache`，保存传入依赖并建立初始状态。
     public init() {}
 
+    /// 计算并返回 `content` 对应的同步核心领域数据或状态结果。
     func content(kind: ClipboardContentKind, contentID: String) -> SyncExportContent? {
         contentsByKey[Key(kind: kind.rawValue, contentID: contentID)]
     }
 
+    /// 保存 `store` 接收的同步核心领域数据，并保持既有持久化约束。
     mutating func store(_ content: SyncExportContent) {
         let key = Key(kind: content.kind.rawValue, contentID: content.contentID)
         guard contentsByKey[key] == nil else { return }
@@ -251,6 +277,7 @@ public struct SyncExportContentCache: Sendable {
     }
 }
 
+/// 封装 `SyncExportBundle` 在同步核心领域中的值语义和相关操作。
 public struct SyncExportBundle: Equatable, Sendable {
     public var clipboard: SyncClipboardSnapshot
     public var preferences: SyncPreferencesSnapshot
@@ -259,6 +286,7 @@ public struct SyncExportBundle: Equatable, Sendable {
     public var outboxCutoff: Date
     public var unavailableClipboardRecordNames: Set<String>
 
+    /// 创建 `SyncExportBundle`，保存传入依赖并建立初始状态。
     public init(
         clipboard: SyncClipboardSnapshot,
         preferences: SyncPreferencesSnapshot,
@@ -275,6 +303,7 @@ public struct SyncExportBundle: Equatable, Sendable {
         self.unavailableClipboardRecordNames = unavailableClipboardRecordNames
     }
 
+    /// 计算并返回 `excludingContentIDs` 对应的同步核心领域数据或状态结果。
     public func excludingContentIDs(_ excludedContentIDs: Set<String>) -> Self {
         guard !excludedContentIDs.isEmpty else { return self }
         var filtered = self
@@ -288,12 +317,14 @@ public struct SyncExportBundle: Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncPreferenceDomainRecord` 在同步核心领域中的值语义和相关操作。
 public struct SyncPreferenceDomainRecord: Codable, Equatable, Sendable {
     public var domain: String
     public var value: Data
     public var clocks: [String: ClipboardFieldClock]
     public var updatedAt: Date
 
+    /// 创建 `SyncPreferenceDomainRecord`，保存传入依赖并建立初始状态。
     public init(domain: String, value: Data, clocks: [String: ClipboardFieldClock], updatedAt: Date) {
         self.domain = domain
         self.value = value
@@ -302,6 +333,7 @@ public struct SyncPreferenceDomainRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncPreferencesSnapshot` 在同步核心领域中的值语义和相关操作。
 public struct SyncPreferencesSnapshot: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -311,6 +343,7 @@ public struct SyncPreferencesSnapshot: Codable, Equatable, Sendable {
     public var revision: Int64
     public var domains: [SyncPreferenceDomainRecord]
 
+    /// 创建 `SyncPreferencesSnapshot`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         deviceID: String,
@@ -326,6 +359,7 @@ public struct SyncPreferencesSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncTombstoneRecord` 在同步核心领域中的值语义和相关操作。
 public struct SyncTombstoneRecord: Codable, Equatable, Sendable {
     public var tombstoneID: String
     public var targetRecordName: String
@@ -336,6 +370,7 @@ public struct SyncTombstoneRecord: Codable, Equatable, Sendable {
     public var sourceDeviceID: String
     public var sourceRevision: Int64
 
+    /// 创建 `SyncTombstoneRecord`，保存传入依赖并建立初始状态。
     public init(
         tombstoneID: String,
         targetRecordName: String,
@@ -357,6 +392,7 @@ public struct SyncTombstoneRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncTombstoneSnapshot` 在同步核心领域中的值语义和相关操作。
 public struct SyncTombstoneSnapshot: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -366,6 +402,7 @@ public struct SyncTombstoneSnapshot: Codable, Equatable, Sendable {
     public var revision: Int64
     public var records: [SyncTombstoneRecord]
 
+    /// 创建 `SyncTombstoneSnapshot`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         deviceID: String,
@@ -381,11 +418,13 @@ public struct SyncTombstoneSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// 描述 `SyncEvictionReason` 在同步核心领域中可取的状态、选项或错误。
 public enum SyncEvictionReason: String, Codable, Equatable, Sendable {
     case historyLimit
     case capacityLimit
 }
 
+/// 封装 `SyncEvictionRecord` 在同步核心领域中的值语义和相关操作。
 public struct SyncEvictionRecord: Codable, Equatable, Sendable {
     public var contentID: String
     public var reason: SyncEvictionReason
@@ -396,6 +435,7 @@ public struct SyncEvictionRecord: Codable, Equatable, Sendable {
     public var observedPinnedClock: ClipboardFieldClock
     public var evictedAt: Date
 
+    /// 创建 `SyncEvictionRecord`，保存传入依赖并建立初始状态。
     public init(
         contentID: String,
         reason: SyncEvictionReason,
@@ -416,6 +456,7 @@ public struct SyncEvictionRecord: Codable, Equatable, Sendable {
         self.evictedAt = evictedAt
     }
 
+    /// 判断 `isEffective` 所描述的同步核心领域条件是否成立。
     public func isEffective(for candidate: SyncRetentionCandidate) -> Bool {
         guard candidate.contentID == contentID, !candidate.isProtected else { return false }
         guard candidate.retentionAt <= observedRetentionAt else { return false }
@@ -424,6 +465,7 @@ public struct SyncEvictionRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncEvictionSnapshot` 在同步核心领域中的值语义和相关操作。
 public struct SyncEvictionSnapshot: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -432,6 +474,7 @@ public struct SyncEvictionSnapshot: Codable, Equatable, Sendable {
     public var generation: Int
     public var records: [SyncEvictionRecord]
 
+    /// 创建 `SyncEvictionSnapshot`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         deviceID: String,
@@ -445,6 +488,7 @@ public struct SyncEvictionSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncResetMarker` 在同步核心领域中的值语义和相关操作。
 public struct SyncResetMarker: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -453,6 +497,7 @@ public struct SyncResetMarker: Codable, Equatable, Sendable {
     public var generation: Int
     public var resetAt: Date
 
+    /// 创建 `SyncResetMarker`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         deviceID: String,
@@ -466,6 +511,7 @@ public struct SyncResetMarker: Codable, Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncRemovedDeviceMarker` 在同步核心领域中的值语义和相关操作。
 public struct SyncRemovedDeviceMarker: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -475,6 +521,7 @@ public struct SyncRemovedDeviceMarker: Codable, Equatable, Sendable {
     public var generation: Int
     public var removedAt: Date
 
+    /// 创建 `SyncRemovedDeviceMarker`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         removedDeviceID: String,
@@ -490,7 +537,9 @@ public struct SyncRemovedDeviceMarker: Codable, Equatable, Sendable {
     }
 }
 
+/// 描述 `SyncSnapshotCodec` 在同步核心领域中可取的状态、选项或错误。
 public enum SyncSnapshotCodec {
+    /// 转换 `encode` 接收的同步核心领域数据，并返回规范化结果。
     public static func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
@@ -498,17 +547,20 @@ public enum SyncSnapshotCodec {
         return try encoder.encode(value)
     }
 
+    /// 转换 `decode` 接收的同步核心领域数据，并返回规范化结果。
     public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         return try decoder.decode(type, from: data)
     }
 
+    /// 计算快照 SHA-256 摘要以检测损坏；该无密钥摘要不验证数据来源。
     public static func digest(_ data: Data) -> String {
         ClipboardContentHasher.sha256String(for: data)
     }
 }
 
+/// 封装 `SyncRetentionCandidate` 在同步核心领域中的值语义和相关操作。
 public struct SyncRetentionCandidate: Equatable, Sendable {
     public var contentID: String
     public var kind: ClipboardContentKind
@@ -522,6 +574,7 @@ public struct SyncRetentionCandidate: Equatable, Sendable {
 
     public var isProtected: Bool { isFavorite || isPinned }
 
+    /// 创建 `SyncRetentionCandidate`，保存传入依赖并建立初始状态。
     public init(
         contentID: String,
         kind: ClipboardContentKind,
@@ -544,6 +597,7 @@ public struct SyncRetentionCandidate: Equatable, Sendable {
         self.pinnedClock = pinnedClock
     }
 
+    /// 按照字段时钟或配置优先级计算 `merging` 对应的同步核心领域合并结果。
     public func merging(_ other: SyncRetentionCandidate) -> SyncRetentionCandidate {
         precondition(contentID == other.contentID, "Only identical content IDs can be merged")
         var merged = self
@@ -573,6 +627,7 @@ public struct SyncRetentionCandidate: Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncRetentionDecision` 在同步核心领域中的值语义和相关操作。
 public struct SyncRetentionDecision: Equatable, Sendable {
     public var keptContentIDs: Set<String>
     public var evictions: [SyncEvictionRecord]
@@ -582,6 +637,7 @@ public struct SyncRetentionDecision: Equatable, Sendable {
     public var capacityLimitBytes: Int64
     public var shouldPauseImageUploads: Bool
 
+    /// 创建 `SyncRetentionDecision`，保存传入依赖并建立初始状态。
     public init(
         keptContentIDs: Set<String>,
         evictions: [SyncEvictionRecord],
@@ -601,10 +657,12 @@ public struct SyncRetentionDecision: Equatable, Sendable {
     }
 }
 
+/// 描述 `SyncRetentionPolicy` 在同步核心领域中可取的状态、选项或错误。
 public enum SyncRetentionPolicy {
     public static let defaultOrdinaryHistoryLimit = 500
     public static let maximumImageBytes: Int64 = 64 * 1_024 * 1_024
 
+    /// 计算并返回 `mustPauseImageUploads` 对应的同步核心领域数据或状态结果。
     public static func mustPauseImageUploads(
         decision: SyncRetentionDecision,
         currentUsedBytes: Int64,
@@ -618,6 +676,7 @@ public enum SyncRetentionPolicy {
                 + max(0, projectedMetadataBytes) > max(0, capacityLimitBytes)
     }
 
+    /// 根据输入特征判定 `decide` 对应的同步核心领域分类或处理决策。
     public static func decide(
         candidates: [SyncRetentionCandidate],
         metadataBytes: Int64,

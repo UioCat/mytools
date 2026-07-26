@@ -1,6 +1,10 @@
+// `SettingsView` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 封装 `SettingsView` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct SettingsView: View {
     public let settings: AppSettings
     public let syncStatus: SyncStatus
@@ -44,6 +48,7 @@ public struct SettingsView: View {
     @State private var syncStorageLimit: SyncStorageLimit
     @State private var syncSaveMessage: String?
 
+    /// 创建 `SettingsView`，保存传入依赖并建立初始状态。
     public init(
         settings: AppSettings,
         syncStatus: SyncStatus = .off,
@@ -152,6 +157,7 @@ public struct SettingsView: View {
         MainWorkspaceModuleHeader(module: .settings)
     }
 
+    /// 根据可用宽度在双列和单列设置布局之间切换。
     @ViewBuilder
     private func settingsColumns(availableWidth: CGFloat) -> some View {
         Group {

@@ -1,12 +1,17 @@
+// `WindowLayout` 的窗口布局领域实现。
+// 负责布局模式、几何计算和快捷键配置，不直接写入辅助功能窗口属性。
+
 import CoreGraphics
 import Foundation
 
+/// 封装 `WindowLayoutPreviewSegment` 在窗口布局领域中的值语义和相关操作。
 public struct WindowLayoutPreviewSegment: Equatable, Sendable {
     public var x: CGFloat
     public var y: CGFloat
     public var width: CGFloat
     public var height: CGFloat
 
+    /// 创建 `WindowLayoutPreviewSegment`，保存传入依赖并建立初始状态。
     public init(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) {
         self.x = x
         self.y = y
@@ -15,6 +20,7 @@ public struct WindowLayoutPreviewSegment: Equatable, Sendable {
     }
 }
 
+/// 描述 `WindowLayoutMode` 在窗口布局领域中可取的状态、选项或错误。
 public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable, Identifiable, Sendable {
     case leftHalf
     case rightHalf
@@ -83,17 +89,20 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
     }
 }
 
+/// 封装 `WindowLayoutButton` 在窗口布局领域中的值语义和相关操作。
 public struct WindowLayoutButton: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String
     public var title: String
     public var modes: [WindowLayoutMode]
 
+    /// 创建 `WindowLayoutButton`，保存传入依赖并建立初始状态。
     public init(id: String, title: String, modes: [WindowLayoutMode]) {
         self.id = id
         self.title = title
         self.modes = Self.uniqueModes(modes)
     }
 
+    /// 创建 `WindowLayoutButton`，保存传入依赖并建立初始状态。
     public init(mode: WindowLayoutMode) {
         self.init(id: "mode.\(mode.rawValue)", title: mode.title, modes: [mode])
     }
@@ -109,6 +118,7 @@ public struct WindowLayoutButton: Codable, Equatable, Hashable, Identifiable, Se
         modes.map(\.title).joined(separator: " / ")
     }
 
+    /// 计算并返回 `mode` 对应的窗口布局领域数据或状态结果。
     public func mode(after previousMode: WindowLayoutMode?) -> WindowLayoutMode? {
         guard !modes.isEmpty else {
             return nil
@@ -125,23 +135,27 @@ public struct WindowLayoutButton: Codable, Equatable, Hashable, Identifiable, Se
         return nextIndex == modes.endIndex ? modes.first : modes[nextIndex]
     }
 
+    /// 计算并返回 `uniqueModes` 对应的窗口布局领域数据或状态结果。
     static func uniqueModes(_ modes: [WindowLayoutMode]) -> [WindowLayoutMode] {
         var seen = Set<WindowLayoutMode>()
         return modes.filter { seen.insert($0).inserted }
     }
 }
 
+/// 封装 `WindowLayoutModeShortcuts` 在窗口布局领域中的值语义和相关操作。
 public struct WindowLayoutModeShortcuts: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var mode: WindowLayoutMode
     public var shortcuts: [HotKeyBinding]
 
     public var id: WindowLayoutMode { mode }
 
+    /// 创建 `WindowLayoutModeShortcuts`，保存传入依赖并建立初始状态。
     public init(mode: WindowLayoutMode, shortcuts: [HotKeyBinding]) {
         self.mode = mode
         self.shortcuts = Self.uniqueShortcuts(shortcuts)
     }
 
+    /// 计算并返回 `uniqueShortcuts` 对应的窗口布局领域数据或状态结果。
     static func uniqueShortcuts(_ shortcuts: [HotKeyBinding]) -> [HotKeyBinding] {
         var seen = Set<HotKeyBinding>()
         return shortcuts.filter { shortcut in
@@ -150,6 +164,7 @@ public struct WindowLayoutModeShortcuts: Codable, Equatable, Hashable, Identifia
     }
 }
 
+/// 封装 `WindowLayoutModeGroup` 在窗口布局领域中的值语义和相关操作。
 struct WindowLayoutModeGroup: Equatable, Identifiable, Sendable {
     var title: String
     var modes: [WindowLayoutMode]
@@ -157,6 +172,7 @@ struct WindowLayoutModeGroup: Equatable, Identifiable, Sendable {
     var id: String { title }
 }
 
+/// 描述 `WindowLayoutSettingsLayout` 在窗口布局领域中可取的状态、选项或错误。
 enum WindowLayoutSettingsLayout {
     static let modeGroups: [WindowLayoutModeGroup] = [
         WindowLayoutModeGroup(title: "半屏", modes: [.leftHalf, .rightHalf]),
@@ -166,6 +182,7 @@ enum WindowLayoutSettingsLayout {
     ]
 }
 
+/// 封装 `WindowLayoutSettings` 在窗口布局领域中的值语义和相关操作。
 public struct WindowLayoutSettings: Codable, Equatable, Sendable {
     public var isEnabled: Bool
     public var enabledModes: [WindowLayoutMode]
@@ -209,6 +226,7 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
 
     public static let defaults = WindowLayoutSettings(modeShortcuts: defaultModeShortcuts)
 
+    /// 创建 `WindowLayoutSettings`，保存传入依赖并建立初始状态。
     public init(
         isEnabled: Bool = true,
         enabledModes: [WindowLayoutMode] = WindowLayoutMode.allCases,
@@ -245,10 +263,12 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         }
     }
 
+    /// 计算并返回 `shortcuts` 对应的窗口布局领域数据或状态结果。
     public func shortcuts(for mode: WindowLayoutMode) -> [HotKeyBinding] {
         modeShortcuts.first { $0.mode == mode }?.shortcuts ?? []
     }
 
+    /// 按照字段时钟或配置优先级计算 `replacingPrimaryShortcut` 对应的窗口布局领域合并结果。
     public func replacingPrimaryShortcut(
         for mode: WindowLayoutMode,
         with shortcut: HotKeyBinding?
@@ -266,6 +286,7 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         )
     }
 
+    /// 按照字段时钟或配置优先级计算 `updatingPanelConfiguration` 对应的窗口布局领域合并结果。
     public func updatingPanelConfiguration(
         isEnabled: Bool,
         enabledModes: Set<WindowLayoutMode>,
@@ -280,6 +301,7 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         )
     }
 
+    /// 描述 `CodingKeys` 在窗口布局领域中可取的状态、选项或错误。
     private enum CodingKeys: String, CodingKey {
         case isEnabled
         case enabledModes
@@ -287,6 +309,7 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         case modeShortcuts
     }
 
+    /// 创建 `WindowLayoutSettings`，保存传入依赖并建立初始状态。
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
@@ -298,6 +321,7 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         )
     }
 
+    /// 转换 `encode` 接收的窗口布局领域数据，并返回规范化结果。
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(isEnabled, forKey: .isEnabled)
@@ -306,6 +330,7 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         try container.encode(modeShortcuts, forKey: .modeShortcuts)
     }
 
+    /// 转换 `normalizedCustomButtons` 接收的窗口布局领域数据，并返回规范化结果。
     private static func normalizedCustomButtons(_ buttons: [WindowLayoutButton]) -> [WindowLayoutButton] {
         var seen = Set<String>()
         return buttons.compactMap { button in
@@ -328,6 +353,7 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         }
     }
 
+    /// 转换 `normalizedModeShortcuts` 接收的窗口布局领域数据，并返回规范化结果。
     private static func normalizedModeShortcuts(
         _ modeShortcuts: [WindowLayoutModeShortcuts]
     ) -> [WindowLayoutModeShortcuts] {
@@ -346,9 +372,11 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// 描述 `WindowLayoutCalculator` 在窗口布局领域中可取的状态、选项或错误。
 public enum WindowLayoutCalculator {
     public static let centeredScale: CGFloat = 0.8
 
+    /// 计算并返回 `targetFrame` 对应的窗口布局领域数据或状态结果。
     public static func targetFrame(for mode: WindowLayoutMode, in visibleFrame: CGRect) -> CGRect {
         switch mode {
         case .leftHalf:
@@ -370,18 +398,21 @@ public enum WindowLayoutCalculator {
         }
     }
 
+    /// 计算并返回 `leadingFrame` 对应的窗口布局领域数据或状态结果。
     private static func leadingFrame(widthFraction: CGFloat, in visibleFrame: CGRect) -> CGRect {
         var frame = visibleFrame
         frame.size.width = floor(visibleFrame.width * widthFraction)
         return frame
     }
 
+    /// 计算并返回 `trailingFrame` 对应的窗口布局领域数据或状态结果。
     private static func trailingFrame(widthFraction: CGFloat, in visibleFrame: CGRect) -> CGRect {
         var frame = leadingFrame(widthFraction: widthFraction, in: visibleFrame)
         frame.origin.x = visibleFrame.maxX - frame.width
         return frame
     }
 
+    /// 计算并返回 `centeredFrame` 对应的窗口布局领域数据或状态结果。
     private static func centeredFrame(in visibleFrame: CGRect) -> CGRect {
         let width = floor(visibleFrame.width * centeredScale)
         let height = floor(visibleFrame.height * centeredScale)

@@ -1,5 +1,9 @@
+// `ClipboardService` 的剪贴板领域实现。
+// 负责载荷分类、内容标识和轮询服务，不管理 AppKit 面板生命周期。
+
 import Foundation
 
+/// 管理 `ClipboardService` 在剪贴板领域中的生命周期、依赖和可变状态。
 public final class ClipboardService {
     private let pasteboard: PasteboardClient
     private let classifier: ClipboardClassifier
@@ -7,6 +11,7 @@ public final class ClipboardService {
     private var settings: AppSettings
     private var lastChangeCount: Int
 
+    /// 创建 `ClipboardService`，保存传入依赖并建立初始状态。
     public convenience init(
         pasteboard: PasteboardClient,
         classifier: ClipboardClassifier,
@@ -26,6 +31,7 @@ public final class ClipboardService {
         )
     }
 
+    /// 创建 `ClipboardService`，保存传入依赖并建立初始状态。
     public convenience init(
         pasteboard: PasteboardClient,
         classifier: ClipboardClassifier,
@@ -54,6 +60,7 @@ public final class ClipboardService {
         )
     }
 
+    /// 创建 `ClipboardService`，保存传入依赖并建立初始状态。
     convenience init(
         pasteboard: PasteboardClient,
         classifier: ClipboardClassifier,
@@ -75,6 +82,7 @@ public final class ClipboardService {
         )
     }
 
+    /// 创建 `ClipboardService`，保存传入依赖并建立初始状态。
     init(
         pasteboard: PasteboardClient,
         classifier: ClipboardClassifier,
@@ -88,10 +96,12 @@ public final class ClipboardService {
         self.persist = persist
     }
 
+    /// 应用 `updateSettings` 接收的新值，并更新相关剪贴板领域状态。
     public func updateSettings(_ settings: AppSettings) {
         self.settings = settings
     }
 
+    /// 安排或刷新 `pollOnce` 对应的剪贴板领域工作。
     @discardableResult
     public func pollOnce(sourceApp: String?) throws -> Bool {
         let currentChangeCount = pasteboard.changeCount

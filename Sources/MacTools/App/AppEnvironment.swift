@@ -1,12 +1,17 @@
+// `AppEnvironment` 的应用运行时与 AppKit 集成实现。
+// 负责生命周期、面板和 macOS 能力接线，不承载可复用的持久化规则。
+
 import AppKit
 import Foundation
 import MacToolsCore
 
+/// 描述 `AppEnvironmentError` 在应用运行时与 AppKit 集成中可取的状态、选项或错误。
 private enum AppEnvironmentError: Error {
     case unavailable
     case syncFolderUnavailable
 }
 
+/// 管理 `AppEnvironment` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class AppEnvironment {
     let logger = Logger()
@@ -190,6 +195,7 @@ final class AppEnvironment {
         logger: logger
     )
     var onSettingsChanged: (AppSettings) -> Void = { _ in }
+    /// 创建 `AppEnvironment`，保存传入依赖并建立初始状态。
     init() {
         let supportDirectory = Self.applicationSupportDirectory()
         let storePaths = MacToolsStorePaths(supportDirectory: supportDirectory)
@@ -297,6 +303,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 启动轮询、全局右键、同步、凭据加载和一次性后台维护任务。
     func start() {
         mainPanelDismissHandler.onDismiss = { [weak self] in
             self?.mainPanel.hide()
@@ -312,12 +319,14 @@ final class AppEnvironment {
         }
     }
 
+    /// 展示 `openMainPanel` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func openMainPanel() {
         captureFrontmostApplicationBeforePanel()
         mainPanelRouter.open(.settings)
         mainPanel.show()
     }
 
+    /// 展示 `openClipboard` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func openClipboard() {
         captureFrontmostApplicationBeforePanel()
         clipboardModel.prepareForPresentation()
@@ -325,16 +334,19 @@ final class AppEnvironment {
         mainPanel.show()
     }
 
+    /// 展示 `openTranslation` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func openTranslation() {
         captureFrontmostApplicationBeforePanel()
         mainPanelRouter.open(.translation)
         mainPanel.show()
     }
 
+    /// 展示 `openSettings` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func openSettings() {
         openMainPanel()
     }
 
+    /// 展示 `openSettingsForUIVerification` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func openSettingsForUIVerification() {
         var previewSettings = settings
         previewSettings.sync = SyncSettings(
@@ -374,10 +386,12 @@ final class AppEnvironment {
         mainPanel.resize(to: NSSize(width: 980, height: 900))
     }
 
+    /// 展示 `openScreenCapture` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func openScreenCapture() {
         screenCaptureCoordinator.start()
     }
 
+    /// 应用 `applyWindowLayout` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     func applyWindowLayout(_ mode: WindowLayoutMode) {
         do {
             try windowLayoutService.apply(button: WindowLayoutButton(mode: mode))
@@ -386,6 +400,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 保存翻译设置；API Key 被编辑时先写加密凭据，再保存不含明文密钥的偏好。
     private func saveTranslationSettings(
         _ translationSettings: TranslationSettings,
         apiKeyWasEdited: Bool
@@ -401,6 +416,7 @@ final class AppEnvironment {
 
         let apiKey = normalizedTranslationSettings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if apiKeyWasEdited {
+            // 凭据存储与偏好存储不是同一事务：后续偏好写入失败时，加密凭据可能已更新。
             credentialLoadGeneration += 1
             credentialLoadFinished = true
             do {
@@ -426,6 +442,7 @@ final class AppEnvironment {
         return updated
     }
 
+    /// 保存 `saveClipboardSettings` 接收的应用运行时与 AppKit 集成数据，并保持既有持久化约束。
     private func saveClipboardSettings(_ clipboardSettings: ClipboardSettings) throws -> AppSettings {
         var updated = settings
         updated.clipboard = clipboardSettings
@@ -445,6 +462,7 @@ final class AppEnvironment {
         return updated
     }
 
+    /// 保存 `saveSuperRightClickSettings` 接收的应用运行时与 AppKit 集成数据，并保持既有持久化约束。
     private func saveSuperRightClickSettings(_ superRightClickSettings: SuperRightClickSettings) throws -> AppSettings {
         var updated = settings
         updated.superRightClick = superRightClickSettings
@@ -458,6 +476,7 @@ final class AppEnvironment {
         return updated
     }
 
+    /// 保存 `saveWindowLayoutSettings` 接收的应用运行时与 AppKit 集成数据，并保持既有持久化约束。
     private func saveWindowLayoutSettings(_ windowLayoutSettings: WindowLayoutSettings) throws -> AppSettings {
         var updated = settings
         updated.windowLayout = windowLayoutSettings
@@ -470,6 +489,7 @@ final class AppEnvironment {
         return updated
     }
 
+    /// 保存 `saveAppearanceMode` 接收的应用运行时与 AppKit 集成数据，并保持既有持久化约束。
     private func saveAppearanceMode(_ appearanceMode: AppAppearanceMode) throws -> AppSettings {
         var updated = settings
         updated.appearanceMode = appearanceMode
@@ -482,6 +502,7 @@ final class AppEnvironment {
         return updated
     }
 
+    /// 保存 `saveScreenCaptureSettings` 接收的应用运行时与 AppKit 集成数据，并保持既有持久化约束。
     private func saveScreenCaptureSettings(_ screenCaptureSettings: ScreenCaptureSettings) -> Bool {
         var updated = settings
         updated.screenCapture = screenCaptureSettings
@@ -497,6 +518,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 保存 `saveSyncSettings` 接收的应用运行时与 AppKit 集成数据，并保持既有持久化约束。
     private func saveSyncSettings(_ syncSettings: SyncSettings) throws -> AppSettings {
         if syncSettings.isEnabled, syncFolderURL == nil {
             throw AppEnvironmentError.syncFolderUnavailable
@@ -532,9 +554,11 @@ final class AppEnvironment {
         return updated
     }
 
+    /// 应用远端合并后的偏好，同时保留仅属于当前设备的同步开关、缓存路径和凭据。
     private func applyRemoteSettings(_ remoteSettings: AppSettings) {
         do {
             var merged = try preferenceRepository.load() ?? remoteSettings
+            // API Key 的真实来源是独立加密凭据存储，远端偏好不得覆盖当前内存中的值。
             merged.translation.apiKey = settings.translation.apiKey
             merged.sync.isEnabled = settings.sync.isEnabled
             merged.clipboard.cacheStoragePath = settings.clipboard.cacheStoragePath
@@ -555,6 +579,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 安排或刷新 `scheduleSync` 对应的应用运行时与 AppKit 集成工作。
     func scheduleSync() {
         guard settings.sync.isEnabled else {
             return
@@ -562,6 +587,7 @@ final class AppEnvironment {
         syncCoordinator.syncNow()
     }
 
+    /// 按最新设置和翻译凭据整体重建全局右键监听；权限不足时只记录预检结果。
     func startSuperRightClickMonitor() {
         superRightClickMonitor?.stop()
         superRightClickMonitor = nil
@@ -605,6 +631,7 @@ final class AppEnvironment {
         superRightClickMonitor = monitor
     }
 
+    /// 以固定间隔触发串行剪贴板轮询，实际读取和持久化由 Actor 隔离。
     private func startClipboardPolling() {
         clipboardTimer?.invalidate()
         clipboardTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
@@ -614,6 +641,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 安排或刷新 `pollClipboardOnce` 对应的应用运行时与 AppKit 集成工作。
     private func pollClipboardOnce() {
         let sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName
         Task { [weak self] in
@@ -630,6 +658,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 在面板抢占交互前记住原前台应用，供稍后的自动粘贴恢复目标。
     private func captureFrontmostApplicationBeforePanel() {
         let frontmostApplication = NSWorkspace.shared.frontmostApplication
         let ownProcessIdentifier = ProcessInfo.processInfo.processIdentifier
@@ -642,6 +671,7 @@ final class AppEnvironment {
         logger.info("captured paste target: \(frontmostApplication?.localizedName ?? "unknown")")
     }
 
+    /// 执行 `copyFromPanel` 对应的应用运行时与 AppKit 集成输入输出操作。
     private func copyFromPanel(_ item: ClipboardItem) {
         do {
             try clipboardModel.copy(item)
@@ -650,6 +680,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 执行 `pasteFromPanel` 对应的应用运行时与 AppKit 集成输入输出操作。
     private func pasteFromPanel(_ item: ClipboardItem) {
         do {
             try clipboardModel.copy(item)
@@ -669,6 +700,7 @@ final class AppEnvironment {
         pasteAfterActivatingTarget(targetApplication)
     }
 
+    /// 激活原前台应用后发送一次粘贴；无目标时使用短延迟兜底。
     private func pasteAfterActivatingTarget(_ targetApplication: NSRunningApplication?) {
         pasteActivationAttempt?.cancel()
         pasteActivationAttempt = nil
@@ -696,6 +728,7 @@ final class AppEnvironment {
         attempt.start()
     }
 
+    /// 判断 `canPostPasteEvent` 所描述的应用运行时与 AppKit 集成条件是否成立。
     private func canPostPasteEvent() -> Bool {
         let summary = permissionService.summary()
         if summary.canPasteAutomatically {
@@ -705,6 +738,7 @@ final class AppEnvironment {
         return permissionService.requestPostEventPermission()
     }
 
+    /// 处理 `handleSuperRightClickResult` 对应的应用运行时与 AppKit 集成事件，并返回或发布处理结果。
     private func handleSuperRightClickResult(_ result: SuperRightClickResult) {
         switch SuperRightClickPresentationRouter.route(
             for: result.item.kind,
@@ -742,6 +776,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 展示 `showFinderCurrentFolder` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func showFinderCurrentFolder(
         folderURL: URL?,
         sourceApplication: SuperRightClickSourceApplication?
@@ -776,6 +811,7 @@ final class AppEnvironment {
         contextPanel.show(item: item, presentation: .finderCurrentDirectory)
     }
 
+    /// 展示 `showPostEventRequiredAlert` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func showPostEventRequiredAlert() {
         let alert = NSAlert()
         alert.messageText = "需要自动粘贴权限"
@@ -789,6 +825,7 @@ final class AppEnvironment {
         }
     }
 
+    /// 解析并返回 `selectSyncFolder` 对应的应用运行时与 AppKit 集成结果。
     private func selectSyncFolder() {
         let panel = NSOpenPanel()
         panel.title = "选择 MacTools 同步文件夹"
@@ -850,15 +887,18 @@ final class AppEnvironment {
         }
     }
 
+    /// 展示 `openSyncFolder` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func openSyncFolder() {
         guard let syncFolderURL else { return }
         NSWorkspace.shared.open(syncFolderURL)
     }
 
+    /// 展示 `openClipboardStorageFolder` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func openClipboardStorageFolder() {
         NSWorkspace.shared.open(defaultClipboardCacheDirectory)
     }
 
+    /// 解析并返回 `resolveSyncFolderBookmark` 对应的应用运行时与 AppKit 集成结果。
     private static func resolveSyncFolderBookmark(_ bookmark: Data?) -> URL? {
         guard let bookmark else { return nil }
         var isStale = false
@@ -873,6 +913,7 @@ final class AppEnvironment {
         return url
     }
 
+    /// 计算并返回 `applicationSupportDirectory` 对应的应用运行时与 AppKit 集成数据或状态结果。
     private static func applicationSupportDirectory() -> URL {
         let baseURL = FileManager.default.urls(
             for: .applicationSupportDirectory,

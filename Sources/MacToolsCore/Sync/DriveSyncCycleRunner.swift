@@ -1,10 +1,15 @@
+// `DriveSyncCycleRunner` 的同步核心领域实现。
+// 负责协议模型、合并、对象存储和凭据对账，不管理 AppKit 生命周期。
+
 import Foundation
 
+/// 封装 `DriveSyncCycleConfiguration` 在同步核心领域中的值语义和相关操作。
 public struct DriveSyncCycleConfiguration: Sendable {
     public let historyLimit: Int
     public let clipboardScope: ClipboardSyncScope
     public let storageLimit: SyncStorageLimit
 
+    /// 创建 `DriveSyncCycleConfiguration`，保存传入依赖并建立初始状态。
     public init(
         historyLimit: Int,
         clipboardScope: ClipboardSyncScope,
@@ -16,11 +21,13 @@ public struct DriveSyncCycleConfiguration: Sendable {
     }
 }
 
+/// 封装 `DriveSyncCycleResult` 在同步核心领域中的值语义和相关操作。
 public struct DriveSyncCycleResult: Sendable {
     public let status: SyncStatus
     public let remoteSettings: AppSettings?
     public let devices: [SyncDeviceSummary]
 
+    /// 创建 `DriveSyncCycleResult`，保存传入依赖并建立初始状态。
     public init(
         status: SyncStatus,
         remoteSettings: AppSettings?,
@@ -32,10 +39,15 @@ public struct DriveSyncCycleResult: Sendable {
     }
 }
 
+/// 管理 `DriveSyncCycleRunner` 在同步核心领域中的生命周期、依赖和可变状态。
 public final class DriveSyncCycleRunner: @unchecked Sendable {
+    /// 为同步核心领域中的相关类型提供 `DateProvider` 别名。
     public typealias DateProvider = @Sendable () -> Date
+    /// 为同步核心领域中的相关类型提供 `DeviceNameProvider` 别名。
     public typealias DeviceNameProvider = @Sendable () -> String?
+    /// 为同步核心领域中的相关类型提供 `DownloadRequester` 别名。
     public typealias DownloadRequester = @Sendable (URL) throws -> Void
+    /// 为同步核心领域中的相关类型提供 `StoreFactory` 别名。
     public typealias StoreFactory = @Sendable (URL) -> DriveSyncStore
 
     private let localRepository: SyncLocalRepository
@@ -46,6 +58,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
     private let requestDownload: DownloadRequester
     private let makeStore: StoreFactory
 
+    /// 创建 `DriveSyncCycleRunner`，保存传入依赖并建立初始状态。
     public init(
         localRepository: SyncLocalRepository,
         deviceOverrideRepository: DeviceOverrideRepository,
@@ -64,6 +77,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         self.makeStore = makeStore
     }
 
+    /// 执行一次完整同步：采纳代际、读取副本、应用墓碑、容量裁剪、写回并确认 receipt。
     public func run(
         rootURL: URL,
         configuration: DriveSyncCycleConfiguration
@@ -81,6 +95,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             resetReplicaState = true
         }
 
+        // reset generation 高于本地时必须先清空旧副本进度，避免旧代际数据重新出现。
         let remoteGeneration = try store.highestResetGeneration()
         if try localRepository.adoptGeneration(remoteGeneration, storeID: descriptor.storeID) {
             try deviceOverrideRepository.setReplicaRevision(0)
@@ -145,6 +160,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             uniqueKeysWithValues: try localRepository.receipts().map { ($0.deviceID, $0) }
         )
         let peerReplicas = replicas.filter { $0.manifest.deviceID != deviceID }
+        // receipt 同时绑定设备、代际、revision 和 manifest 摘要，完全匹配才可跳过重复应用。
         let alreadyAppliedPeerReplicas = peerReplicas.filter { replica in
             receiptsByDeviceID[replica.manifest.deviceID]?.matches(
                 deviceID: replica.manifest.deviceID,
@@ -500,6 +516,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         )
     }
 
+    /// 计算并返回 `fallbackDeviceName` 对应的同步核心领域数据或状态结果。
     private static func fallbackDeviceName(_ deviceID: String) -> String {
         "Mac · \(deviceID.prefix(6))"
     }

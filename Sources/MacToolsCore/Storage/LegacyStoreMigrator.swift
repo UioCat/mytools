@@ -1,11 +1,16 @@
+// `LegacyStoreMigrator` 的本地存储领域实现。
+// 负责数据库、载荷文件和迁移事务，不管理运行时面板状态。
+
 import Foundation
 import GRDB
 
+/// 封装 `LegacyStoreMigrationReport` 在本地存储领域中的值语义和相关操作。
 public struct LegacyStoreMigrationReport: Codable, Equatable {
     public var importedClipboardItems: Int
     public var skippedMissingImages: Int
     public var skippedInvalidRecords: Int
 
+    /// 创建 `LegacyStoreMigrationReport`，保存传入依赖并建立初始状态。
     public init(
         importedClipboardItems: Int = 0,
         skippedMissingImages: Int = 0,
@@ -17,6 +22,7 @@ public struct LegacyStoreMigrationReport: Codable, Equatable {
     }
 }
 
+/// 管理 `LegacyStoreMigrator` 在本地存储领域中的生命周期、依赖和可变状态。
 public final class LegacyStoreMigrator {
     public static let migrationKey = "legacy-store-v1"
 
@@ -26,6 +32,7 @@ public final class LegacyStoreMigrator {
     private let fileManager: FileManager
     private let migrationDeviceID: String
 
+    /// 创建 `LegacyStoreMigrator`，保存传入依赖并建立初始状态。
     public init(
         database: MacToolsDatabase,
         repository: ClipboardRepository,
@@ -40,6 +47,7 @@ public final class LegacyStoreMigrator {
         self.fileManager = fileManager
     }
 
+    /// 调整 `migrateClipboardIfNeeded` 涉及的本地存储领域状态，并保持迁移或恢复语义。
     public func migrateClipboardIfNeeded(
         from legacyDatabaseURL: URL,
         enqueuesSyncChanges: Bool = false
@@ -142,6 +150,7 @@ public final class LegacyStoreMigrator {
         return report
     }
 
+    /// 结束 `completedReport` 对应的本地存储领域流程，并释放或重置相关资源。
     private func completedReport() throws -> LegacyStoreMigrationReport? {
         try database.writer.read { db in
             guard let data = try Data.fetchOne(
@@ -155,6 +164,7 @@ public final class LegacyStoreMigrator {
         }
     }
 
+    /// 提交 `markCompleted` 对应的本地存储领域状态，并记录后续流程所需的进度。
     private func markCompleted(_ report: LegacyStoreMigrationReport) throws {
         let data = try JSONEncoder().encode(report)
         try database.writer.write { db in

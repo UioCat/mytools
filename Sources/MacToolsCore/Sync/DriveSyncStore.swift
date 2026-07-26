@@ -1,5 +1,9 @@
+// `DriveSyncStore` 的同步核心领域实现。
+// 负责协议模型、合并、对象存储和凭据对账，不管理 AppKit 生命周期。
+
 import Foundation
 
+/// 描述 `DriveSyncStoreError` 在同步核心领域中可取的状态、选项或错误。
 public enum DriveSyncStoreError: Error, Equatable, Sendable {
     case missingProtocol
     case incompatibleProtocol(found: Int)
@@ -14,6 +18,7 @@ public enum DriveSyncStoreError: Error, Equatable, Sendable {
     case contentHashMismatch(String)
 }
 
+/// 封装 `DriveSyncReplica` 在同步核心领域中的值语义和相关操作。
 public struct DriveSyncReplica: Equatable, Sendable {
     public var manifest: SyncReplicaManifest
     public var clipboard: SyncClipboardSnapshot
@@ -21,6 +26,7 @@ public struct DriveSyncReplica: Equatable, Sendable {
     public var tombstones: SyncTombstoneSnapshot
     public var manifestDigest: String
 
+    /// 创建 `DriveSyncReplica`，保存传入依赖并建立初始状态。
     public init(
         manifest: SyncReplicaManifest,
         clipboard: SyncClipboardSnapshot,
@@ -36,11 +42,13 @@ public struct DriveSyncReplica: Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncStoredObject` 在同步核心领域中的值语义和相关操作。
 public struct SyncStoredObject: Equatable, Sendable {
     public var contentID: String
     public var kind: ClipboardContentKind
     public var byteCount: Int64
 
+    /// 创建 `SyncStoredObject`，保存传入依赖并建立初始状态。
     public init(contentID: String, kind: ClipboardContentKind, byteCount: Int64) {
         self.contentID = contentID
         self.kind = kind
@@ -48,12 +56,14 @@ public struct SyncStoredObject: Equatable, Sendable {
     }
 }
 
+/// 封装 `SyncStorageInventory` 在同步核心领域中的值语义和相关操作。
 public struct SyncStorageInventory: Equatable, Sendable {
     public var objects: [SyncStoredObject]
     public var imageBytes: Int64
     public var textBytes: Int64
     public var metadataBytes: Int64
 
+    /// 创建 `SyncStorageInventory`，保存传入依赖并建立初始状态。
     public init(
         objects: [SyncStoredObject],
         imageBytes: Int64,
@@ -66,6 +76,7 @@ public struct SyncStorageInventory: Equatable, Sendable {
         self.metadataBytes = metadataBytes
     }
 
+    /// 计算并返回 `usage` 对应的同步核心领域数据或状态结果。
     public func usage(
         capacityBytes: Int64,
         ordinaryHistoryCount: Int
@@ -80,6 +91,7 @@ public struct SyncStorageInventory: Equatable, Sendable {
         )
     }
 
+    /// 计算并返回 `removingObjects` 对应的同步核心领域数据或状态结果。
     public func removingObjects(withContentIDs contentIDs: Set<String>) -> Self {
         guard !contentIDs.isEmpty else { return self }
         var updated = self
@@ -98,37 +110,44 @@ public struct SyncStorageInventory: Equatable, Sendable {
     }
 }
 
+/// 封装 `DriveSyncReplicaFailure` 在同步核心领域中的值语义和相关操作。
 public struct DriveSyncReplicaFailure: Equatable, Sendable {
     public var deviceID: String
     public var error: DriveSyncStoreError
 
+    /// 创建 `DriveSyncReplicaFailure`，保存传入依赖并建立初始状态。
     public init(deviceID: String, error: DriveSyncStoreError) {
         self.deviceID = deviceID
         self.error = error
     }
 }
 
+/// 封装 `DriveSyncReplicaScan` 在同步核心领域中的值语义和相关操作。
 public struct DriveSyncReplicaScan: Equatable, Sendable {
     public var replicas: [DriveSyncReplica]
     public var failures: [DriveSyncReplicaFailure]
 
+    /// 创建 `DriveSyncReplicaScan`，保存传入依赖并建立初始状态。
     public init(replicas: [DriveSyncReplica], failures: [DriveSyncReplicaFailure]) {
         self.replicas = replicas
         self.failures = failures
     }
 }
 
+/// 管理同步目录的协议、设备快照、内容对象和生命周期标记。
 public final class DriveSyncStore: @unchecked Sendable {
     public static let rootDirectoryName = "MacTools Sync"
 
     public let rootURL: URL
     private let fileManager: FileManager
 
+    /// 创建 `DriveSyncStore`，保存传入依赖并建立初始状态。
     public init(rootURL: URL, fileManager: FileManager = .default) {
         self.rootURL = rootURL.standardizedFileURL
         self.fileManager = fileManager
     }
 
+    /// 安排或刷新 `prepare` 对应的同步核心领域工作。
     @discardableResult
     public func prepare(
         initialCapacity: SyncStorageLimit = .default,
@@ -153,6 +172,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return descriptor
     }
 
+    /// 读取并返回 `readProtocol` 对应的同步核心领域数据。
     public func readProtocol() throws -> SyncProtocolDescriptor {
         guard fileManager.fileExists(atPath: protocolURL.path) else {
             throw DriveSyncStoreError.missingProtocol
@@ -167,10 +187,12 @@ public final class DriveSyncStore: @unchecked Sendable {
         return descriptor
     }
 
+    /// 计算并返回 `replicas` 对应的同步核心领域数据或状态结果。
     public func replicas(generation: Int) throws -> [DriveSyncReplica] {
         try scanReplicas(generation: generation).replicas
     }
 
+    /// 扫描指定 generation 的设备副本，并把单副本错误保留在失败列表中。
     public func scanReplicas(generation: Int) throws -> DriveSyncReplicaScan {
         guard fileManager.fileExists(atPath: replicasURL.path) else {
             return DriveSyncReplicaScan(replicas: [], failures: [])
@@ -207,6 +229,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
+    /// 先写内容对象和不可变 revision 目录，最后原子更新 manifest 作为发布点。
     public func write(
         _ bundle: SyncExportBundle,
         seenRevisions: [String: Int64],
@@ -226,6 +249,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         let clipboardData = try SyncSnapshotCodec.encode(bundle.clipboard)
         let preferencesData = try SyncSnapshotCodec.encode(bundle.preferences)
         let tombstonesData = try SyncSnapshotCodec.encode(bundle.tombstones)
+        // 摘要用于读取时发现损坏，不提供设备身份或写入者认证。
         let snapshotDigests = SyncSnapshotDigests(
             clipboard: SyncSnapshotCodec.digest(clipboardData),
             preferences: SyncSnapshotCodec.digest(preferencesData),
@@ -271,6 +295,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return try SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: manifestData)
     }
 
+    /// 计算并返回 `contentData` 对应的同步核心领域数据或状态结果。
     public func contentData(contentID: String, kind: ClipboardContentKind) throws -> Data? {
         let url = try contentURL(contentID: contentID, kind: kind)
         guard fileManager.fileExists(atPath: url.path) else { return nil }
@@ -286,10 +311,12 @@ public final class DriveSyncStore: @unchecked Sendable {
         return data
     }
 
+    /// 计算并返回 `contentFileURL` 对应的同步核心领域数据或状态结果。
     public func contentFileURL(contentID: String, kind: ClipboardContentKind) throws -> URL {
         try contentURL(contentID: contentID, kind: kind)
     }
 
+    /// 保存 `writeEvictions` 接收的同步核心领域数据，并保持既有持久化约束。
     public func writeEvictions(_ snapshot: SyncEvictionSnapshot) throws {
         try verifiedWrite(
             SyncSnapshotCodec.encode(snapshot),
@@ -297,6 +324,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
+    /// 移除 `evictions` 指定的同步核心领域数据，并维护关联状态。
     public func evictions(generation: Int) throws -> [SyncEvictionRecord] {
         try jsonFiles(in: evictionsURL).flatMap { url -> [SyncEvictionRecord] in
             let snapshot = try SyncSnapshotCodec.decode(
@@ -313,6 +341,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 移除 `evictionSnapshot` 指定的同步核心领域数据，并维护关联状态。
     public func evictionSnapshot(deviceID: String) throws -> SyncEvictionSnapshot? {
         let url = evictionsURL.appendingPathComponent("\(deviceID).json")
         guard fileManager.fileExists(atPath: url.path) else { return nil }
@@ -328,6 +357,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return snapshot
     }
 
+    /// 保存 `writeReset` 接收的同步核心领域数据，并保持既有持久化约束。
     public func writeReset(_ marker: SyncResetMarker) throws {
         try verifiedWrite(
             SyncSnapshotCodec.encode(marker),
@@ -335,6 +365,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
+    /// 计算并返回 `highestResetGeneration` 对应的同步核心领域数据或状态结果。
     public func highestResetGeneration() throws -> Int {
         try jsonFiles(in: resetsURL).reduce(1) { value, url in
             let marker = try SyncSnapshotCodec.decode(
@@ -350,6 +381,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 保存 `writeRemovedDevice` 接收的同步核心领域数据，并保持既有持久化约束。
     public func writeRemovedDevice(_ marker: SyncRemovedDeviceMarker) throws {
         let directory = removedDevicesURL.appendingPathComponent(
             marker.removedDeviceID,
@@ -361,6 +393,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
+    /// 移除 `removedDeviceIDs` 指定的同步核心领域数据，并维护关联状态。
     public func removedDeviceIDs(generation: Int) throws -> Set<String> {
         guard fileManager.fileExists(atPath: removedDevicesURL.path) else { return [] }
         let directories = try fileManager.contentsOfDirectory(
@@ -393,6 +426,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return removed
     }
 
+    /// 计算并返回 `usage` 对应的同步核心领域数据或状态结果。
     public func usage(capacityBytes: Int64, ordinaryHistoryCount: Int) throws -> SyncStorageUsage {
         try storageInventory().usage(
             capacityBytes: capacityBytes,
@@ -400,6 +434,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
+    /// 计算并返回 `storageInventory` 对应的同步核心领域数据或状态结果。
     public func storageInventory() throws -> SyncStorageInventory {
         var objects: [SyncStoredObject] = []
         var imageBytes: Int64 = 0
@@ -451,6 +486,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
+    /// 保存 `storedObjectDirectoryKind` 接收的同步核心领域数据，并保持既有持久化约束。
     private func storedObjectDirectoryKind(for url: URL) -> ClipboardContentKind? {
         let components = url.pathComponents
         guard let objectsIndex = components.lastIndex(of: "objects"),
@@ -465,6 +501,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 移除 `removeReplicaData` 指定的同步核心领域数据，并维护关联状态。
     public func removeReplicaData() throws {
         for url in [replicasURL, evictionsURL] where fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
@@ -472,10 +509,12 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 保存 `storedObjects` 接收的同步核心领域数据，并保持既有持久化约束。
     public func storedObjects() throws -> [SyncStoredObject] {
         try storageInventory().objects
     }
 
+    /// 移除 `removeObject` 指定的同步核心领域数据，并维护关联状态。
     public func removeObject(_ object: SyncStoredObject) throws {
         let url = try contentURL(contentID: object.contentID, kind: object.kind)
         guard fileManager.fileExists(atPath: url.path) else { return }
@@ -489,6 +528,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         try fileManager.removeItem(at: url)
     }
 
+    /// 读取 manifest 指向的 revision，并校验 generation、设备 ID 和所有快照摘要。
     private func readReplica(at directory: URL, generation: Int) throws -> DriveSyncReplica? {
         let manifestURL = directory.appendingPathComponent("manifest.json")
         guard fileManager.fileExists(atPath: manifestURL.path) else { return nil }
@@ -572,6 +612,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
+    /// 计算并返回 `snapshotData` 对应的同步核心领域数据或状态结果。
     private func snapshotData(
         named fileName: String,
         expectedDigest: String,
@@ -588,6 +629,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return data
     }
 
+    /// 保存 `writeSnapshotRevision` 接收的同步核心领域数据，并保持既有持久化约束。
     private func writeSnapshotRevision(
         clipboardData: Data,
         preferencesData: Data,
@@ -612,6 +654,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 读取并返回 `currentManifest` 对应的同步核心领域数据。
     private func currentManifest(at deviceDirectory: URL) -> SyncReplicaManifest? {
         let url = deviceDirectory.appendingPathComponent("manifest.json")
         guard fileManager.fileExists(atPath: url.path),
@@ -621,6 +664,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return try? SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: data)
     }
 
+    /// 移除 `removeObsoleteSnapshotRevisions` 指定的同步核心领域数据，并维护关联状态。
     private func removeObsoleteSnapshotRevisions(
         in revisionsDirectory: URL,
         keeping names: Set<String>
@@ -635,6 +679,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 保存 `writeContentIfNeeded` 接收的同步核心领域数据，并保持既有持久化约束。
     private func writeContentIfNeeded(_ content: SyncExportContent) throws {
         let url = try contentURL(contentID: content.contentID, kind: content.kind)
         try validateContent(content.data, contentID: content.contentID, kind: content.kind)
@@ -654,8 +699,8 @@ public final class DriveSyncStore: @unchecked Sendable {
                     break
                 }
             } catch {
-                // A complete local content object can safely repair corrupt bytes
-                // at the same content-addressed path when no iCloud conflict exists.
+                // 本地对象已经通过完整性校验；没有 iCloud 冲突时，
+                // 可以用它修复同一内容寻址路径上的损坏字节。
             }
             try verifiedWrite(content.data, to: url)
             return
@@ -667,6 +712,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         try verifiedWrite(content.data, to: url)
     }
 
+    /// 校验 `validateContent` 接收的同步核心领域数据是否满足当前约束。
     private func validateContent(_ data: Data, contentID: String, kind: ClipboardContentKind) throws {
         let actualHash: String
         switch kind {
@@ -701,6 +747,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `contentURL` 对应的同步核心领域数据或状态结果。
     private func contentURL(contentID: String, kind: ClipboardContentKind) throws -> URL {
         guard Self.isValidContentID(contentID) else {
             throw DriveSyncStoreError.invalidContentID(contentID)
@@ -722,6 +769,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `verifiedWrite` 对应的同步核心领域数据或状态结果。
     private func verifiedWrite(_ data: Data, to url: URL) throws {
         try fileManager.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -736,6 +784,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 读取并返回 `readData` 对应的同步核心领域数据。
     private func readData(
         at url: URL,
         options: Data.ReadingOptions = []
@@ -750,6 +799,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return try Data(contentsOf: url, options: options)
     }
 
+    /// 解析并返回 `resolveIdenticalConflicts` 对应的同步核心领域结果。
     private func resolveIdenticalConflicts(at url: URL) throws {
         guard let conflicts = NSFileVersion.unresolvedConflictVersionsOfItem(at: url),
               !conflicts.isEmpty else {
@@ -768,12 +818,14 @@ public final class DriveSyncStore: @unchecked Sendable {
         try NSFileVersion.removeOtherVersionsOfItem(at: url)
     }
 
+    /// 校验 `validateSchema` 接收的同步核心领域数据是否满足当前约束。
     private func validateSchema(_ found: Int, expected: Int, fileName: String) throws {
         guard found == expected else {
             throw DriveSyncStoreError.incompatibleSchema(fileName: fileName, found: found)
         }
     }
 
+    /// 计算并返回 `jsonFiles` 对应的同步核心领域数据或状态结果。
     private func jsonFiles(in directory: URL) throws -> [URL] {
         guard fileManager.fileExists(atPath: directory.path) else { return [] }
         return try fileManager.contentsOfDirectory(
@@ -783,16 +835,19 @@ public final class DriveSyncStore: @unchecked Sendable {
         ).filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    /// 判断 `isValidContentID` 所描述的同步核心领域条件是否成立。
     private static func isValidContentID(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy {
             (48...57).contains($0) || (97...102).contains($0)
         }
     }
 
+    /// 计算并返回 `snapshotDirectoryName` 对应的同步核心领域数据或状态结果。
     private static func snapshotDirectoryName(generation: Int, revision: Int64) -> String {
         "g\(generation)-r\(revision)-\(UUID().uuidString.lowercased())"
     }
 
+    /// 判断 `isValidSnapshotDirectoryName` 所描述的同步核心领域条件是否成立。
     private static func isValidSnapshotDirectoryName(_ value: String) -> Bool {
         !value.isEmpty
             && value.utf8.count <= 160

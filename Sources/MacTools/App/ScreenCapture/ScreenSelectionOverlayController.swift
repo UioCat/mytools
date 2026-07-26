@@ -1,6 +1,10 @@
+// `ScreenSelectionOverlayController` 的屏幕捕获系统集成实现。
+// 负责选区、截图、标注和录屏生命周期，不承载可复用的纯业务模型。
+
 import AppKit
 import MacToolsCore
 
+/// 管理 `ScreenSelectionOverlayController` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 @MainActor
 final class ScreenSelectionOverlayController {
     private var panels: [ScreenSelectionPanel] = []
@@ -12,6 +16,7 @@ final class ScreenSelectionOverlayController {
     private var escapeEventMonitor: Any?
     private var globalEscapeEventMonitor: Any?
 
+    /// 在每块屏幕上创建不激活应用的全屏选区面板，并安装本地及全局 Escape 监听。
     func present(
         onSelection: @escaping (ScreenCaptureSelection, ScreenCaptureMode) -> Void,
         onCancel: @escaping () -> Void
@@ -76,6 +81,7 @@ final class ScreenSelectionOverlayController {
             return event
         }
         globalEscapeEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // 全局按键监听依赖输入监控/辅助功能授权；本地监听仍覆盖应用收到按键的场景。
             guard event.keyCode == 53 else {
                 return
             }
@@ -85,6 +91,7 @@ final class ScreenSelectionOverlayController {
         }
     }
 
+    /// 取消或关闭 `dismiss` 对应的屏幕捕获系统集成流程，并清理临时状态。
     func dismiss() {
         removeModeToolbar()
         for panel in panels {
@@ -103,6 +110,7 @@ final class ScreenSelectionOverlayController {
         onCancel = nil
     }
 
+    /// 将新的拖动屏幕设为唯一活动选区，并清除其他屏幕上的旧选择。
     private func prepareForNewSelection(from sourceView: ScreenSelectionView) {
         removeModeToolbar()
         showModeToolbar(in: sourceView)
@@ -111,6 +119,7 @@ final class ScreenSelectionOverlayController {
         }
     }
 
+    /// 展示 `showModeToolbar` 对应的屏幕捕获系统集成界面或系统位置。
     private func showModeToolbar(in selectionView: ScreenSelectionView) {
         removeModeToolbar()
 
@@ -155,33 +164,39 @@ final class ScreenSelectionOverlayController {
         self.modeControl = modeControl
     }
 
+    /// 移除 `removeModeToolbar` 指定的屏幕捕获系统集成数据，并维护关联状态。
     private func removeModeToolbar() {
         modeToolbar?.removeFromSuperview()
         modeToolbar = nil
         modeControl = nil
     }
 
+    /// 更新 `changeMode` 对应的交互状态，并保持当前选择或展示约束。
     @objc private func changeMode(_ sender: NSSegmentedControl) {
         selectedMode = sender.selectedSegment == 1 ? .recording : .screenshot
     }
 
+    /// 判断 `cancel` 所描述的屏幕捕获系统集成条件是否成立。
     private func cancel() {
         let handler = onCancel
         dismiss()
         handler?()
     }
 
+    /// 计算并返回 `displayID` 对应的屏幕捕获系统集成数据或状态结果。
     private static func displayID(for screen: NSScreen) -> UInt32? {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         return (screen.deviceDescription[key] as? NSNumber)?.uint32Value
     }
 }
 
+/// 管理 `ScreenSelectionPanel` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 private final class ScreenSelectionPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
+/// 管理 `ScreenSelectionView` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 private final class ScreenSelectionView: NSView {
     let displayID: UInt32
     let displayFrame: CGRect
@@ -192,6 +207,7 @@ private final class ScreenSelectionView: NSView {
     private var currentPoint: CGPoint?
     private var completedSelectionFrame: CGRect?
 
+    /// 创建 `ScreenSelectionView`，保存传入依赖并建立初始状态。
     init(displayID: UInt32, displayFrame: CGRect) {
         self.displayID = displayID
         self.displayFrame = displayFrame
@@ -200,10 +216,12 @@ private final class ScreenSelectionView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
     }
 
+    /// 创建 `ScreenSelectionView`，保存传入依赖并建立初始状态。
     required init?(coder: NSCoder) {
         nil
     }
 
+    /// 响应 `mouseDown` 对应的系统或界面回调，并同步当前交互状态。
     override func mouseDown(with event: NSEvent) {
         dragStart = convert(event.locationInWindow, from: nil)
         currentPoint = dragStart
@@ -212,11 +230,13 @@ private final class ScreenSelectionView: NSView {
         needsDisplay = true
     }
 
+    /// 响应 `mouseDragged` 对应的系统或界面回调，并同步当前交互状态。
     override func mouseDragged(with event: NSEvent) {
         currentPoint = convert(event.locationInWindow, from: nil)
         needsDisplay = true
     }
 
+    /// 将面板局部选区换算为全局屏幕坐标，过滤过小区域后提交选择。
     override func mouseUp(with event: NSEvent) {
         currentPoint = convert(event.locationInWindow, from: nil)
         defer {
@@ -244,6 +264,7 @@ private final class ScreenSelectionView: NSView {
         onDragFinished?(selection, selection.frame.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY))
     }
 
+    /// 移除 `clearSelection` 指定的屏幕捕获系统集成数据，并维护关联状态。
     func clearSelection() {
         dragStart = nil
         currentPoint = nil
@@ -251,6 +272,7 @@ private final class ScreenSelectionView: NSView {
         needsDisplay = true
     }
 
+    /// 在当前图形上下文中绘制 `draw` 指定的截图标注内容。
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.42).setFill()
         bounds.fill()

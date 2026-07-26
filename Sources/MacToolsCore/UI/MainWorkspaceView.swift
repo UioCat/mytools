@@ -1,5 +1,9 @@
+// `MainWorkspaceView` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import SwiftUI
 
+/// 封装 `MainWorkspaceLayout` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct MainWorkspaceLayout {
     public static let isSidebarVisibleByDefault = false
     public static let sidebarWidth: CGFloat = 150
@@ -12,30 +16,36 @@ public struct MainWorkspaceLayout {
     )
     public static let animationDuration = 0.18
 
+    /// 创建 `MainWorkspaceLayout`，保存传入依赖并建立初始状态。
     private init() {}
 }
 
+/// 描述 `ClipboardSearchFocusPolicy` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum ClipboardSearchFocusPolicy {
+    /// 打开剪贴板模块时递增焦点令牌，其他模块保持原值。
     public static func focusToken(afterOpening module: MainToolModule, currentToken: Int) -> Int {
         module == .clipboard ? currentToken + 1 : currentToken
     }
 }
 
-/// SwiftUI reads this environment value on the main actor; the closure only mutates view state.
+/// SwiftUI 在主 Actor 读取该环境值；其中的闭包只修改视图状态。
 public struct MainWorkspaceSidebarChrome: @unchecked Sendable {
     public let isSidebarVisible: Bool
     public let toggleSidebar: () -> Void
 
+    /// 创建 `MainWorkspaceSidebarChrome`，保存传入依赖并建立初始状态。
     public init(isSidebarVisible: Bool, toggleSidebar: @escaping () -> Void) {
         self.isSidebarVisible = isSidebarVisible
         self.toggleSidebar = toggleSidebar
     }
 }
 
+/// 封装 `MainWorkspaceSidebarChromeKey` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct MainWorkspaceSidebarChromeKey: EnvironmentKey {
     static let defaultValue: MainWorkspaceSidebarChrome? = nil
 }
 
+/// 扩展 `EnvironmentValues`，补充本文件所需的 SwiftUI 展示层能力。
 public extension EnvironmentValues {
     var mainWorkspaceSidebarChrome: MainWorkspaceSidebarChrome? {
         get { self[MainWorkspaceSidebarChromeKey.self] }
@@ -43,11 +53,13 @@ public extension EnvironmentValues {
     }
 }
 
+/// 封装 `MainWorkspaceModuleHeader` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct MainWorkspaceModuleHeader: View {
     @Environment(\.mainWorkspaceSidebarChrome) private var workspaceSidebarChrome
     private let module: MainToolModule
     private let subtitle: String
 
+    /// 创建 `MainWorkspaceModuleHeader`，保存传入依赖并建立初始状态。
     public init(module: MainToolModule, subtitle: String? = nil) {
         self.module = module
         self.subtitle = subtitle ?? module.subtitle
@@ -78,6 +90,7 @@ public struct MainWorkspaceModuleHeader: View {
         .liquidGlassGroup(spacing: 12)
     }
 
+    /// 构建并返回 `sidebarToggleButton` 对应的 SwiftUI 界面内容或展示状态。
     private func sidebarToggleButton(_ chrome: MainWorkspaceSidebarChrome) -> some View {
         Button {
             chrome.toggleSidebar()
@@ -100,6 +113,7 @@ public struct MainWorkspaceModuleHeader: View {
     }
 }
 
+/// 封装 `MainWorkspaceView` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, TranslationContent: View>: View {
     @Binding private var selectedModule: MainToolModule
     @State private var isSidebarVisible = MainWorkspaceLayout.isSidebarVisibleByDefault
@@ -108,6 +122,7 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
     private let clipboardContent: ClipboardContent
     private let translationContent: TranslationContent
 
+    /// 创建 `MainWorkspaceView`，保存传入依赖并建立初始状态。
     public init(
         selectedModule: Binding<MainToolModule>,
         brandIcon: Image,
@@ -204,6 +219,7 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
         }
     }
 
+    /// 切换侧边栏可见性，并由父视图动画响应状态变化。
     private func toggleSidebar() {
         withAnimation(.easeInOut(duration: MainWorkspaceLayout.animationDuration)) {
             isSidebarVisible.toggle()

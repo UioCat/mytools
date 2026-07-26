@@ -1,7 +1,11 @@
+// `ScreenshotEditorView` 的屏幕捕获系统集成实现。
+// 负责选区、截图、标注和录屏生命周期，不承载可复用的纯业务模型。
+
 import CoreGraphics
 import MacToolsCore
 import SwiftUI
 
+/// 扩展 `ScreenshotAnnotationTool`，补充本文件所需的屏幕捕获系统集成能力。
 private extension ScreenshotAnnotationTool {
     var title: String {
         switch self {
@@ -34,6 +38,7 @@ private extension ScreenshotAnnotationTool {
     }
 }
 
+/// 封装 `ScreenshotEditorView` 在屏幕捕获系统集成中的值语义和相关操作。
 struct ScreenshotEditorView: View {
     let image: CGImage
     let imageFrame: CGRect
@@ -55,6 +60,7 @@ struct ScreenshotEditorView: View {
     @State private var pendingSettings: ScreenCaptureSettings?
     @State private var settingsSaveTask: Task<Void, Never>?
 
+    /// 创建 `ScreenshotEditorView`，保存传入依赖并建立初始状态。
     init(
         image: CGImage,
         imageFrame: CGRect,
@@ -188,6 +194,7 @@ struct ScreenshotEditorView: View {
         .foregroundStyle(MacToolsGlassTheme.textPrimary)
     }
 
+    /// 构建并返回 `toolbarLabel` 对应的 SwiftUI 界面内容或展示状态。
     @ViewBuilder
     private func toolbarLabel(_ title: String, systemImage: String) -> some View {
         if toolbarFrame.width < 680 {
@@ -201,6 +208,7 @@ struct ScreenshotEditorView: View {
         }
     }
 
+    /// 构建并返回 `colorButton` 对应的 SwiftUI 界面内容或展示状态。
     private func colorButton(_ color: ScreenshotAnnotationColor) -> some View {
         Button {
             selectColor(color)
@@ -226,6 +234,7 @@ struct ScreenshotEditorView: View {
         .accessibilityValue(annotationColor == color ? "已选择" : "未选择")
     }
 
+    /// 构建并返回 `lineWidthButton` 对应的 SwiftUI 界面内容或展示状态。
     private func lineWidthButton(_ lineWidth: ScreenshotAnnotationLineWidth) -> some View {
         Button {
             annotationLineWidth = lineWidth
@@ -262,16 +271,19 @@ struct ScreenshotEditorView: View {
         .accessibilityValue(annotationLineWidth == lineWidth ? "已选择" : "未选择")
     }
 
+    /// 解析并返回 `selectColor` 对应的屏幕捕获系统集成结果。
     private func selectColor(_ color: ScreenshotAnnotationColor) {
         annotationColor = color
         persistSettings(tool: tool, color: color, lineWidth: annotationLineWidth)
     }
 
+    /// 解析并返回 `selectTool` 对应的屏幕捕获系统集成结果。
     private func selectTool(_ tool: ScreenshotAnnotationTool) {
         self.tool = tool
         persistSettings(tool: tool, color: annotationColor, lineWidth: annotationLineWidth)
     }
 
+    /// 保存 `persistSettings` 接收的屏幕捕获系统集成数据，并保持既有持久化约束。
     private func persistSettings(
         tool: ScreenshotAnnotationTool,
         color: ScreenshotAnnotationColor,
@@ -293,11 +305,13 @@ struct ScreenshotEditorView: View {
         }
     }
 
+    /// 构建并返回 `flushPendingSettings` 对应的 SwiftUI 界面内容或展示状态。
     private func flushPendingSettings() {
         settingsSaveTask?.cancel()
         commitPendingSettings()
     }
 
+    /// 构建并返回 `commitPendingSettings` 对应的 SwiftUI 界面内容或展示状态。
     private func commitPendingSettings() {
         guard let pendingSettings else {
             return
@@ -313,6 +327,7 @@ struct ScreenshotEditorView: View {
         }
     }
 
+    /// 构建并返回 `colorName` 对应的 SwiftUI 界面内容或展示状态。
     private func colorName(_ color: ScreenshotAnnotationColor) -> String {
         switch color {
         case .red:
@@ -336,6 +351,7 @@ struct ScreenshotEditorView: View {
         }
     }
 
+    /// 构建并返回 `lineWidthName` 对应的 SwiftUI 界面内容或展示状态。
     private func lineWidthName(_ lineWidth: ScreenshotAnnotationLineWidth) -> String {
         switch lineWidth {
         case .thin:
@@ -380,6 +396,7 @@ struct ScreenshotEditorView: View {
         }
     }
 
+    /// 构建并返回 `annotationGesture` 对应的 SwiftUI 界面内容或展示状态。
     private func annotationGesture(imageRect: CGRect) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -427,6 +444,7 @@ struct ScreenshotEditorView: View {
             }
     }
 
+    /// 构建并返回 `freehandAnnotation` 对应的 SwiftUI 界面内容或展示状态。
     private func freehandAnnotation(imageRect: CGRect) -> ScreenshotAnnotation? {
         freehandStroke.annotation(
             color: annotationColor,
@@ -434,6 +452,7 @@ struct ScreenshotEditorView: View {
         )
     }
 
+    /// 构建并返回 `annotation` 对应的 SwiftUI 界面内容或展示状态。
     private func annotation(
         from start: CGPoint,
         to end: CGPoint,
@@ -458,6 +477,7 @@ struct ScreenshotEditorView: View {
         }
     }
 
+    /// 构建并返回 `draw` 对应的 SwiftUI 界面内容或展示状态。
     private func draw(
         _ annotation: ScreenshotAnnotation,
         in context: inout GraphicsContext,
@@ -541,6 +561,7 @@ struct ScreenshotEditorView: View {
         }
     }
 
+    /// 构建并返回 `imageLineWidth` 对应的 SwiftUI 界面内容或展示状态。
     private func imageLineWidth(in imageRect: CGRect) -> CGFloat {
         guard imageRect.width > 0 else {
             return annotationLineWidth.points
@@ -548,14 +569,17 @@ struct ScreenshotEditorView: View {
         return annotationLineWidth.points * CGFloat(image.width) / imageRect.width
     }
 
+    /// 判断 `canvasLineWidth` 所描述的屏幕捕获系统集成条件是否成立。
     private func canvasLineWidth(_ imageLineWidth: CGFloat, in imageRect: CGRect) -> CGFloat {
         imageLineWidth * imageRect.width / CGFloat(image.width)
     }
 
+    /// 构建并返回 `displayColor` 对应的 SwiftUI 界面内容或展示状态。
     private func displayColor(_ color: ScreenshotAnnotationColor, isPreview: Bool) -> Color {
         swiftUIColor(color).opacity(isPreview ? 0.72 : 1)
     }
 
+    /// 构建并返回 `swiftUIColor` 对应的 SwiftUI 界面内容或展示状态。
     private func swiftUIColor(_ color: ScreenshotAnnotationColor) -> Color {
         Color(
             red: Double(color.red),
@@ -565,6 +589,7 @@ struct ScreenshotEditorView: View {
         )
     }
 
+    /// 构建并返回 `imagePoint` 对应的 SwiftUI 界面内容或展示状态。
     private func imagePoint(from canvasPoint: CGPoint, imageRect: CGRect) -> CGPoint? {
         guard imageRect.contains(canvasPoint) else {
             return nil
@@ -575,6 +600,7 @@ struct ScreenshotEditorView: View {
         )
     }
 
+    /// 判断 `canvasPoint` 所描述的屏幕捕获系统集成条件是否成立。
     private func canvasPoint(from imagePoint: CGPoint, imageRect: CGRect) -> CGPoint {
         CGPoint(
             x: imageRect.minX + imagePoint.x * imageRect.width / CGFloat(image.width),
@@ -582,6 +608,7 @@ struct ScreenshotEditorView: View {
         )
     }
 
+    /// 判断 `canvasRect` 所描述的屏幕捕获系统集成条件是否成立。
     private func canvasRect(from imageRect: CGRect, imageRect canvasImageRect: CGRect) -> CGRect {
         let rect = imageRect.standardized
         let minPoint = canvasPoint(from: CGPoint(x: rect.minX, y: rect.minY), imageRect: canvasImageRect)
@@ -594,10 +621,12 @@ struct ScreenshotEditorView: View {
         )
     }
 
+    /// 计算并返回 `distance` 所描述的屏幕捕获系统集成结果。
     private func distance(from first: CGPoint, to second: CGPoint) -> CGFloat {
         hypot(first.x - second.x, first.y - second.y)
     }
 
+    /// 执行 `copyScreenshot` 对应的屏幕捕获系统集成输入输出操作。
     private func copyScreenshot() {
         let annotations = annotationStore.annotations
         let image = image
@@ -617,7 +646,9 @@ struct ScreenshotEditorView: View {
     }
 }
 
+/// 封装 `ScreenshotLineWidthPreview` 在屏幕捕获系统集成中的值语义和相关操作。
 private struct ScreenshotLineWidthPreview: Shape {
+    /// 构建并返回 `path` 对应的 SwiftUI 界面内容或展示状态。
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: rect.minX + 4, y: rect.maxY - 3))

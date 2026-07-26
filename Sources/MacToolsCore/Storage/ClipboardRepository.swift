@@ -1,12 +1,17 @@
+// `ClipboardRepository` 的本地存储领域实现。
+// 负责数据库、载荷文件和迁移事务，不管理运行时面板状态。
+
 import Foundation
 import GRDB
 
+/// 封装 `ClipboardUpsertResult` 在本地存储领域中的值语义和相关操作。
 public struct ClipboardUpsertResult: Equatable {
     public let itemID: UUID
     public let inserted: Bool
     public let prunedItemIDs: [UUID]
     public let duplicateRecordIDs: [UUID]
 
+    /// 创建 `ClipboardUpsertResult`，保存传入依赖并建立初始状态。
     public init(
         itemID: UUID,
         inserted: Bool,
@@ -20,11 +25,13 @@ public struct ClipboardUpsertResult: Equatable {
     }
 }
 
+/// 管理 `ClipboardRepository` 在本地存储领域中的生命周期、依赖和可变状态。
 public final class ClipboardRepository: @unchecked Sendable {
     private let database: MacToolsDatabase
     private let payloadStore: PayloadStore?
     private let garbageCollector: PayloadGarbageCollector?
 
+    /// 创建 `ClipboardRepository`，保存传入依赖并建立初始状态。
     public init(database: MacToolsDatabase, payloadStore: PayloadStore? = nil) {
         self.database = database
         self.payloadStore = payloadStore
@@ -33,6 +40,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `upsert` 接收的本地存储领域数据，并保持既有持久化约束。
     @discardableResult
     public func upsert(
         _ item: ClipboardItem,
@@ -233,6 +241,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         return result
     }
 
+    /// 在同一 PayloadStore 独占锁内保存 PNG 并写入数据库引用；数据库失败时删除本轮新对象。
     @discardableResult
     public func upsertPNG(
         _ item: ClipboardItem,
@@ -243,6 +252,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         guard let payloadStore else {
             throw PayloadStoreError.missingObject
         }
+        // 锁覆盖文件创建和数据库 upsert，避免本进程 GC 在引用建立前删除新载荷。
         return try payloadStore.withExclusiveAccess {
             let payload = try payloadStore.storePNG(data)
             do {
@@ -259,10 +269,12 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 解析并返回 `search` 对应的本地存储领域结果。
     public func search(_ query: String, limit: Int) throws -> [ClipboardItem] {
         try search(query, limit: limit, favoritesOnly: false)
     }
 
+    /// 解析并返回 `search` 对应的本地存储领域结果。
     public func search(_ query: String, limit: Int, favoritesOnly: Bool) throws -> [ClipboardItem] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let boundedLimit = max(limit, 0)
@@ -300,6 +312,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `item` 对应的本地存储领域数据或状态结果。
     public func item(id: UUID) throws -> ClipboardItem? {
         let payloadRootPath = payloadStore?.rootDirectory.path
         return try database.writer.read { db in
@@ -314,6 +327,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 应用 `setFavorite` 接收的新值，并更新相关本地存储领域状态。
     public func setFavorite(id: UUID, isFavorite: Bool, historyLimit: Int? = nil) throws {
         try database.writer.write { db in
             let deviceID = try self.deviceID(in: db)
@@ -333,6 +347,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         collectPayloadGarbageAfterCommit()
     }
 
+    /// 应用 `setPinned` 接收的新值，并更新相关本地存储领域状态。
     public func setPinned(id: UUID, isPinned: Bool, historyLimit: Int? = nil) throws {
         try database.writer.write { db in
             let deviceID = try self.deviceID(in: db)
@@ -352,6 +367,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         collectPayloadGarbageAfterCommit()
     }
 
+    /// 移除 `delete` 指定的本地存储领域数据，并维护关联状态。
     public func delete(id: UUID, createsTombstone: Bool = true) throws {
         try database.writer.write { db in
             let kind = try String.fetchOne(
@@ -374,6 +390,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         collectPayloadGarbageAfterCommit()
     }
 
+    /// 移除 `deleteAllNonFavorites` 指定的本地存储领域数据，并维护关联状态。
     public func deleteAllNonFavorites() throws {
         try database.writer.write { db in
             let payloadIDs = try String.fetchAll(
@@ -395,6 +412,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         collectPayloadGarbageAfterCommit()
     }
 
+    /// 提交 `markUsed` 对应的本地存储领域状态，并记录后续流程所需的进度。
     public func markUsed(id: UUID, at date: Date) throws {
         try database.writer.write { db in
             try db.execute(
@@ -427,6 +445,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `countNormalItems` 对应的本地存储领域数据或状态结果。
     public func countNormalItems() throws -> Int {
         try database.writer.read { db in
             try Int.fetchOne(
@@ -436,6 +455,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 汇总或整理 `enforceHistoryLimit` 涉及的本地存储领域数据，并维护容量与保留规则。
     @discardableResult
     public func enforceHistoryLimit(_ historyLimit: Int) throws -> [UUID] {
         let prunedItemIDs = try database.writer.write { db in
@@ -445,10 +465,12 @@ public final class ClipboardRepository: @unchecked Sendable {
         return prunedItemIDs
     }
 
+    /// 汇总或整理 `collectPayloadGarbage` 涉及的本地存储领域数据，并维护容量与保留规则。
     public func collectPayloadGarbage() throws {
         try garbageCollector?.collect()
     }
 
+    /// 对账数据库引用与磁盘对象，删除孤儿文件并标记缺失或待清理载荷。
     public func reconcilePayloadStorage() throws {
         guard let payloadStore else { return }
         try payloadStore.withExclusiveAccess {
@@ -490,6 +512,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         try collectPayloadGarbage()
     }
 
+    /// 移除 `cleanupOrphanedLocalEvictions` 指定的本地存储领域数据，并维护关联状态。
     @discardableResult
     public func cleanupOrphanedLocalEvictions() throws -> Int {
         try database.writer.write { db in
@@ -514,6 +537,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `upsertPayload` 接收的本地存储领域数据，并保持既有持久化约束。
     private func upsertPayload(
         _ payload: PayloadObjectDescriptor,
         in db: Database,
@@ -542,6 +566,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         try db.execute(sql: "DELETE FROM payload_gc_queue WHERE payloadID = ?", arguments: [payload.id])
     }
 
+    /// 汇总或整理 `pruneNormalHistory` 涉及的本地存储领域数据，并维护容量与保留规则。
     private func pruneNormalHistory(in db: Database, limit: Int) throws -> [UUID] {
         let boundedLimit = max(limit, 0)
         let normalCount = try Int.fetchOne(
@@ -609,6 +634,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         return itemIDs
     }
 
+    /// 安排或刷新 `enqueueUnreferencedPayloads` 对应的本地存储领域工作。
     private func enqueueUnreferencedPayloads(_ payloadIDs: [String], in db: Database) throws {
         for payloadID in Set(payloadIDs) {
             let referenceCount = try Int.fetchOne(
@@ -630,6 +656,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 安排或刷新 `enqueueTombstones` 对应的本地存储领域工作。
     private func enqueueTombstones(_ itemIDs: [UUID], in db: Database) throws {
         let generation = try currentSyncGeneration(in: db)
         for itemID in itemIDs {
@@ -665,6 +692,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 安排或刷新 `enqueueSyncChange` 对应的本地存储领域工作。
     private func enqueueSyncChange(
         recordType: String,
         recordName: String,
@@ -689,6 +717,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
+    /// 安排或刷新 `enqueueSyncChangeIfSyncable` 对应的本地存储领域工作。
     private func enqueueSyncChangeIfSyncable(
         recordName: String,
         operation: String,
@@ -709,6 +738,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
+    /// 保存 `upsertLocalDeviceReplica` 接收的本地存储领域数据，并保持既有持久化约束。
     private func upsertLocalDeviceReplica(
         recordName: String,
         lastCapturedAt: Date,
@@ -751,6 +781,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
+    /// 安排或刷新 `enqueueReplicaDeletions` 对应的本地存储领域工作。
     private func enqueueReplicaDeletions(
         targetRecordNames: [String],
         in db: Database
@@ -772,6 +803,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `recordAlias` 接收的本地存储领域数据，并保持既有持久化约束。
     private func recordAlias(
         loserRecordName: String,
         winnerRecordName: String,
@@ -824,6 +856,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 对账或合并 `mergeReplicaActivity` 涉及的本地存储领域状态，并返回收敛结果。
     private func mergeReplicaActivity(targetRecordName: String, in db: Database) throws {
         guard let activity = try Row.fetchOne(
             db,
@@ -861,6 +894,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
+    /// 读取并返回 `currentSyncGeneration` 对应的本地存储领域数据。
     private func currentSyncGeneration(in db: Database) throws -> Int {
         try Int.fetchOne(
             db,
@@ -868,6 +902,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         ) ?? 1
     }
 
+    /// 计算并返回 `deviceID` 对应的本地存储领域数据或状态结果。
     private func deviceID(in db: Database) throws -> String {
         if let data = try Data.fetchOne(
             db,
@@ -887,14 +922,17 @@ public final class ClipboardRepository: @unchecked Sendable {
         return value
     }
 
+    /// 判断 `isSyncable` 所描述的本地存储领域条件是否成立。
     private static func isSyncable(_ kind: ClipboardContentKind) -> Bool {
         kind == .text || kind == .url || kind == .imageData
     }
 
+    /// 汇总或整理 `collectPayloadGarbageAfterCommit` 涉及的本地存储领域数据，并维护容量与保留规则。
     private func collectPayloadGarbageAfterCommit() {
         try? garbageCollector?.collect()
     }
 
+    /// 计算并返回 `latest` 对应的本地存储领域数据或状态结果。
     private static func latest(_ lhs: Date?, _ rhs: Date?) -> Date? {
         switch (lhs, rhs) {
         case let (lhs?, rhs?): return max(lhs, rhs)
@@ -904,6 +942,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `uuid` 对应的本地存储领域数据或状态结果。
     private static func uuid(from value: String) throws -> UUID {
         guard let uuid = UUID(uuidString: value) else {
             throw ClipboardRecordError.invalidUUID(value)
@@ -911,6 +950,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         return uuid
     }
 
+    /// 计算并返回 `likePattern` 对应的本地存储领域数据或状态结果。
     private static func likePattern(for query: String) -> String {
         let escaped = query
             .replacingOccurrences(of: "\\", with: "\\\\")

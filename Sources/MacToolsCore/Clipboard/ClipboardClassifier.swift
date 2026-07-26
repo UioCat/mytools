@@ -1,10 +1,16 @@
+// `ClipboardClassifier` 的剪贴板领域实现。
+// 负责载荷分类、内容标识和轮询服务，不管理 AppKit 面板生命周期。
+
 import Foundation
 
+/// 管理 `ClipboardClassifier` 在剪贴板领域中的生命周期、依赖和可变状态。
 public final class ClipboardClassifier {
     private let imageFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic"]
 
+    /// 创建 `ClipboardClassifier`，保存传入依赖并建立初始状态。
     public init() {}
 
+    /// 根据输入特征判定 `classify` 对应的剪贴板领域分类或处理决策。
     public func classify(payload: ClipboardPayload, sourceApp: String?) -> ClipboardItem {
         let now = Date()
         let contentHash = ClipboardContentHasher.sha256(for: payload)
@@ -53,6 +59,7 @@ public final class ClipboardClassifier {
         )
     }
 
+    /// 根据输入特征判定 `classifyFileURL` 对应的剪贴板领域分类或处理决策。
     private func classifyFileURL(
         _ url: URL,
         sourceApp: String?,
@@ -83,6 +90,7 @@ public final class ClipboardClassifier {
         )
     }
 
+    /// 构造并返回 `makeItem` 所描述的剪贴板领域对象。
     private func makeItem(
         kind: ClipboardContentKind,
         displayTitle: String,

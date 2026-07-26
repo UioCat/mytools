@@ -1,6 +1,10 @@
+// `SettingsComponents` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 封装 `AppearanceSettingsEditor` 在 SwiftUI 展示层中的值语义和相关操作。
 struct AppearanceSettingsEditor: View {
     let currentMode: AppAppearanceMode
     @Binding var selectedMode: AppAppearanceMode
@@ -56,6 +60,7 @@ struct AppearanceSettingsEditor: View {
         )
     }
 }
+/// 封装 `SettingsSection` 在 SwiftUI 展示层中的值语义和相关操作。
 struct SettingsSection<Content: View>: View {
     let title: String
     let iconName: String
@@ -83,6 +88,7 @@ struct SettingsSection<Content: View>: View {
     }
 }
 
+/// 封装 `SettingsRow` 在 SwiftUI 展示层中的值语义和相关操作。
 struct SettingsRow: View {
     let title: String
     let value: String

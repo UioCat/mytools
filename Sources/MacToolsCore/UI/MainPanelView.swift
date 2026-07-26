@@ -1,11 +1,16 @@
+// `MainPanelView` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 描述 `ClipboardSelectionAction` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum ClipboardSelectionAction {
     case copy
     case copyAndPaste
 }
 
+/// 描述 `ClipboardPanelMode` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum ClipboardPanelMode: CaseIterable {
     case all
     case text
@@ -39,12 +44,15 @@ public enum ClipboardPanelMode: CaseIterable {
     }
 }
 
+/// 描述 `ClipboardPanelModeNavigationDirection` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardPanelModeNavigationDirection: Equatable {
     case previous
     case next
 }
 
+/// 描述 `ClipboardPanelModeNavigator` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardPanelModeNavigator {
+    /// 构建并返回 `direction` 对应的 SwiftUI 界面内容或展示状态。
     static func direction(forKeyCode keyCode: UInt16) -> ClipboardPanelModeNavigationDirection? {
         switch keyCode {
         case 123:
@@ -56,6 +64,7 @@ enum ClipboardPanelModeNavigator {
         }
     }
 
+    /// 构建并返回 `mode` 对应的 SwiftUI 界面内容或展示状态。
     static func mode(
         adjacentTo currentMode: ClipboardPanelMode,
         direction: ClipboardPanelModeNavigationDirection
@@ -71,10 +80,12 @@ enum ClipboardPanelModeNavigator {
     }
 }
 
+/// 封装 `ClipboardPanelItemSummary` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardPanelItemSummary: Equatable {
     let favoriteCount: Int
     let hasClearableItems: Bool
 
+    /// 创建 `ClipboardPanelItemSummary`，保存传入依赖并建立初始状态。
     init(items: [ClipboardItem]) {
         var favoriteCount = 0
         var hasClearableItems = false
@@ -92,11 +103,13 @@ struct ClipboardPanelItemSummary: Equatable {
     }
 }
 
+/// 封装 `ClipboardPanelRenderState` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardPanelRenderState {
     let itemSummary: ClipboardPanelItemSummary
     let filteredItems: [ClipboardItem]
     let selectedItem: ClipboardItem?
 
+    /// 创建 `ClipboardPanelRenderState`，保存传入依赖并建立初始状态。
     init(
         items: [ClipboardItem],
         mode: ClipboardPanelMode,
@@ -108,6 +121,7 @@ struct ClipboardPanelRenderState {
         self.selectedItem = Self.selectedItem(in: filteredItems, selectedItemID: selectedItemID)
     }
 
+    /// 构建并返回 `filteredItems` 对应的 SwiftUI 界面内容或展示状态。
     static func filteredItems(
         items: [ClipboardItem],
         mode: ClipboardPanelMode,
@@ -136,6 +150,7 @@ struct ClipboardPanelRenderState {
         }
     }
 
+    /// 解析并返回 `selectedItem` 对应的 SwiftUI 展示层结果。
     private static func selectedItem(
         in filteredItems: [ClipboardItem],
         selectedItemID: ClipboardItem.ID?
@@ -149,12 +164,15 @@ struct ClipboardPanelRenderState {
     }
 }
 
+/// 描述 `ClipboardItemClickAction` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardItemClickAction: Equatable {
     case select
     case paste
 }
 
+/// 描述 `ClipboardItemClickResolver` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardItemClickResolver {
+    /// 第一次点击选择条目，只有再次点击同一已武装条目时才执行粘贴。
     static func action(
         clickedItemID: ClipboardItem.ID,
         selectedItemID: ClipboardItem.ID?,
@@ -169,6 +187,7 @@ enum ClipboardItemClickResolver {
     }
 }
 
+/// 封装 `MainPanelView` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct MainPanelView: View {
     @Environment(\.mainWorkspaceSidebarChrome) private var workspaceSidebarChrome
     @State private var query = ""
@@ -187,6 +206,7 @@ public struct MainPanelView: View {
     public let onDismiss: () -> Void
     private let presentation: ToolModulePresentation
 
+    /// 创建 `MainPanelView`，保存传入依赖并建立初始状态。
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
         self.items = items
         self.resetToken = 0
@@ -199,6 +219,7 @@ public struct MainPanelView: View {
         self.presentation = .window
     }
 
+    /// 创建 `MainPanelView`，保存传入依赖并建立初始状态。
     public init(
         items: [ClipboardItem],
         resetToken: Int = 0,
@@ -273,6 +294,7 @@ public struct MainPanelView: View {
         }
     }
 
+    /// 构建并返回 `clipboardList` 对应的 SwiftUI 界面内容或展示状态。
     private func clipboardList(renderState: ClipboardPanelRenderState) -> some View {
         ClipboardListView(
             items: renderState.filteredItems,
@@ -289,6 +311,7 @@ public struct MainPanelView: View {
         }
     }
 
+    /// 构建并返回 `header` 对应的 SwiftUI 界面内容或展示状态。
     @ViewBuilder
     private func header(itemSummary: ClipboardPanelItemSummary) -> some View {
         HStack(spacing: 12) {
@@ -354,6 +377,7 @@ public struct MainPanelView: View {
         .liquidGlassGroup(spacing: 12)
     }
 
+    /// 构建并返回 `categoryBar` 对应的 SwiftUI 界面内容或展示状态。
     private func categoryBar(itemSummary: ClipboardPanelItemSummary) -> some View {
         HStack(spacing: 8) {
             ForEach(ClipboardPanelMode.allCases, id: \.self) { itemMode in
@@ -395,6 +419,7 @@ public struct MainPanelView: View {
         .liquidGlassGroup(spacing: 8)
     }
 
+    /// 构建并返回 `sidebarToggleButton` 对应的 SwiftUI 界面内容或展示状态。
     private func sidebarToggleButton(_ chrome: MainWorkspaceSidebarChrome) -> some View {
         Button {
             chrome.toggleSidebar()
@@ -443,6 +468,7 @@ public struct MainPanelView: View {
         )
     }
 
+    /// 生成分类标签标题；收藏分类额外展示收藏数量。
     private func tabTitle(for mode: ClipboardPanelMode, itemSummary: ClipboardPanelItemSummary) -> String {
         if mode == .favorites {
             return "\(mode.title) (\(itemSummary.favoriteCount))"
@@ -451,10 +477,12 @@ public struct MainPanelView: View {
         return mode.title
     }
 
+    /// 根据当前是否存在可清理条目返回清除按钮颜色。
     private func clearButtonColor(for itemSummary: ClipboardPanelItemSummary) -> Color {
         itemSummary.hasClearableItems ? MacToolsGlassTheme.textSecondary : MacToolsGlassTheme.textDisabled
     }
 
+    /// 首次点击只选择条目，再次点击同一条目时执行复制并粘贴。
     private func handleItemClick(_ item: ClipboardItem) {
         let clickAction = ClipboardItemClickResolver.action(
             clickedItemID: item.id,
@@ -473,6 +501,7 @@ public struct MainPanelView: View {
         }
     }
 
+    /// 对当前选中条目执行复制或复制并粘贴，并清除鼠标二次点击确认。
     private func performSelectedAction(_ action: ClipboardSelectionAction) {
         guard let item = selectedItem else {
             return
@@ -482,6 +511,7 @@ public struct MainPanelView: View {
         onSelect(item, action)
     }
 
+    /// 在当前过滤结果内移动选择，索引到达首尾时停止而不循环。
     private func moveSelection(by offset: Int) {
         resetMouseClickConfirmation()
         let visibleItems = filteredItems
@@ -497,10 +527,12 @@ public struct MainPanelView: View {
         selectedItemID = visibleItems[nextIndex].id
     }
 
+    /// 按键盘方向切换相邻剪贴板分类。
     private func moveMode(_ direction: ClipboardPanelModeNavigationDirection) {
         mode = ClipboardPanelModeNavigator.mode(adjacentTo: mode, direction: direction)
     }
 
+    /// 保留仍可见的选择；选择消失时回退到过滤结果第一项。
     private func normalizeSelection() {
         let visibleItems = filteredItems
         guard !visibleItems.isEmpty else {
@@ -516,10 +548,12 @@ public struct MainPanelView: View {
         selectedItemID = visibleItems.first?.id
     }
 
+    /// 将当前过滤结果的第一项设为键盘选择项。
     private func selectFirstItem() {
         selectedItemID = filteredItems.first?.id
     }
 
+    /// 清空搜索与分类状态，并选择重置后列表的第一项。
     private func resetPanelState() {
         query = ""
         mode = .all
@@ -527,16 +561,19 @@ public struct MainPanelView: View {
         selectFirstItem()
     }
 
+    /// 清除需要二次点击才能粘贴的鼠标武装条目。
     private func resetMouseClickConfirmation() {
         armedMouseItemID = nil
     }
 
+    /// 在下一次主 Actor 调度中把焦点移到搜索框。
     private func focusSearchField() {
         Task { @MainActor in
             isSearchFocused = true
         }
     }
 
+    /// 将 Escape、分类切换、确认和上下选择按键映射为面板操作。
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         if PanelKeyCommandResolver().command(forKeyCode: event.keyCode) == .dismiss {
             onDismiss()
@@ -568,9 +605,11 @@ public struct MainPanelView: View {
     }
 }
 
+/// 封装 `ClipboardCategoryButtonStyle` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct ClipboardCategoryButtonStyle: ButtonStyle {
     let isSelected: Bool
 
+    /// 构造并返回 `makeBody` 所描述的 SwiftUI 展示层对象。
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(
@@ -587,9 +626,11 @@ private struct ClipboardCategoryButtonStyle: ButtonStyle {
     }
 }
 
+/// 封装 `ClipboardCategoryButtonSurfaceModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct ClipboardCategoryButtonSurfaceModifier: ViewModifier {
     let isVisible: Bool
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     @ViewBuilder
     func body(content: Content) -> some View {
         if isVisible {
@@ -600,24 +641,29 @@ private struct ClipboardCategoryButtonSurfaceModifier: ViewModifier {
     }
 }
 
+/// 封装 `KeyboardEventMonitorView` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct KeyboardEventMonitorView: NSViewRepresentable {
     let onKeyDown: (NSEvent) -> Bool
 
+    /// 构造并返回 `makeNSView` 所描述的 SwiftUI 展示层对象。
     func makeNSView(context: Context) -> KeyboardEventMonitorNSView {
         let view = KeyboardEventMonitorNSView()
         view.onKeyDown = onKeyDown
         return view
     }
 
+    /// 更新键盘事件回调，并保持底层 NSView 实例不变。
     func updateNSView(_ nsView: KeyboardEventMonitorNSView, context: Context) {
         nsView.onKeyDown = onKeyDown
     }
 }
 
+/// 管理 `KeyboardEventMonitorNSView` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 private final class KeyboardEventMonitorNSView: NSView {
     var onKeyDown: ((NSEvent) -> Bool)?
     private var monitor: Any?
 
+    /// 视图进入窗口后注册本地键盘监听，并把事件交给 SwiftUI 回调。
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
@@ -636,6 +682,7 @@ private final class KeyboardEventMonitorNSView: NSView {
         }
     }
 
+    /// 视图离开窗口前移除本地事件监听，避免重复回调和资源泄漏。
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil, let monitor {
             NSEvent.removeMonitor(monitor)

@@ -1,14 +1,18 @@
+// `SuperRightClickMonitor` 的应用运行时与 AppKit 集成实现。
+// 负责生命周期、面板和 macOS 能力接线，不承载可复用的持久化规则。
+
 import AppKit
 import CoreGraphics
 import Foundation
 import MacToolsCore
 
-/// The event tap source is installed on the main run loop before these values are forwarded.
+/// 事件 tap 源会先安装到主运行循环，再把这些值转发给主 Actor。
 private struct MainRunLoopEventTapInput: @unchecked Sendable {
     let event: CGEvent
     let proxy: CGEventTapProxy
 }
 
+/// 管理 `SuperRightClickMonitor` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class SuperRightClickMonitor {
     private let service: SuperRightClickService
@@ -20,6 +24,7 @@ final class SuperRightClickMonitor {
     private var longPressTimer: Timer?
     private var pendingSuppressedRightMouseDown: CGEvent?
 
+    /// 创建 `SuperRightClickMonitor`，保存传入依赖并建立初始状态。
     init(
         thresholdMilliseconds: Int,
         service: SuperRightClickService,
@@ -32,6 +37,7 @@ final class SuperRightClickMonitor {
         self.gestureRouter = RightClickGestureRouter(thresholdMilliseconds: thresholdMilliseconds)
     }
 
+    /// 在会话级事件 tap 上监听并抑制右键按下/抬起事件，以区分短按和长按。
     func start() -> Bool {
         stop()
 
@@ -70,6 +76,7 @@ final class SuperRightClickMonitor {
         return monitor.handleEvent(type: type, event: event, proxy: proxy)
     }
 
+    /// 停止接收新事件并清理计时器；已启动的选区或翻译异步任务不会在此处取消。
     func stop() {
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
@@ -84,6 +91,7 @@ final class SuperRightClickMonitor {
         pendingSuppressedRightMouseDown = nil
     }
 
+    /// 在事件 tap 回调中同步决定是否吞掉原事件，并在系统停用 tap 后立即恢复。
     nonisolated private func handleEvent(
         type: CGEventType,
         event: CGEvent,
@@ -107,6 +115,7 @@ final class SuperRightClickMonitor {
         return shouldSuppress ? nil : Unmanaged.passUnretained(event)
     }
 
+    /// 处理 `handleEventOnMainActor` 对应的应用运行时与 AppKit 集成事件，并返回或发布处理结果。
     private func handleEventOnMainActor(
         type: CGEventType,
         event: CGEvent,
@@ -122,6 +131,7 @@ final class SuperRightClickMonitor {
         }
     }
 
+    /// 缓存被抑制的按下事件并启动轮询计时器，为短按回放保留完整事件对。
     private func handleRightMouseDown(event: CGEvent? = nil) -> Bool {
         logger.info("super right click right mouse down")
         if let event {
@@ -139,6 +149,7 @@ final class SuperRightClickMonitor {
         return route.shouldSuppressOriginalEvent
     }
 
+    /// 结束计时；若未达到长按阈值，则按原事件 tap 顺序回放系统右键。
     private func handleRightMouseUp(
         event: CGEvent,
         proxy: CGEventTapProxy
@@ -154,6 +165,7 @@ final class SuperRightClickMonitor {
         return route.shouldSuppressOriginalEvent
     }
 
+    /// 长按成立后先发布可立即展示的捕获结果，再异步补齐可能较慢的翻译内容。
     private func handleLongPressTimer() {
         let route = gestureRouter.handle(.timerFired(atMilliseconds: currentMilliseconds()))
         guard route == .suppressAndTriggerSuperRightClick else {
@@ -166,6 +178,7 @@ final class SuperRightClickMonitor {
         let sourceApplication = frontmostApplicationContext()
 
         Task {
+            // 首次回调保证菜单尽快出现；翻译完成后的第二次回调用于原位刷新同一内容。
             let result = await service.handleDecision(
                 .triggerSuperRightClick,
                 sourceApplication: sourceApplication
@@ -195,6 +208,7 @@ final class SuperRightClickMonitor {
         }
     }
 
+    /// 更新 `replaySystemRightClick` 对应的交互状态，并保持当前选择或展示约束。
     private func replaySystemRightClick(
         mouseUpEvent: CGEvent,
         proxy: CGEventTapProxy
@@ -209,10 +223,12 @@ final class SuperRightClickMonitor {
         mouseUpEvent.tapPostEvent(proxy)
     }
 
+    /// 读取并返回 `currentMilliseconds` 对应的应用运行时与 AppKit 集成数据。
     private func currentMilliseconds() -> Int {
         Int(Date().timeIntervalSince1970 * 1000)
     }
 
+    /// 计算并返回 `frontmostApplicationContext` 对应的应用运行时与 AppKit 集成数据或状态结果。
     private func frontmostApplicationContext() -> SuperRightClickSourceApplication? {
         guard let application = NSWorkspace.shared.frontmostApplication else {
             return nil

@@ -1,6 +1,10 @@
+// `SyncLocalRepository` 的同步核心领域实现。
+// 负责协议模型、合并、对象存储和凭据对账，不管理 AppKit 生命周期。
+
 import Foundation
 import GRDB
 
+/// 封装 `SyncReplicaReceipt` 在同步核心领域中的值语义和相关操作。
 public struct SyncReplicaReceipt: Equatable, Sendable {
     public var deviceID: String
     public var generation: Int
@@ -8,6 +12,7 @@ public struct SyncReplicaReceipt: Equatable, Sendable {
     public var manifestDigest: String
     public var appliedAt: Date
 
+    /// 创建 `SyncReplicaReceipt`，保存传入依赖并建立初始状态。
     public init(
         deviceID: String,
         generation: Int,
@@ -22,6 +27,7 @@ public struct SyncReplicaReceipt: Equatable, Sendable {
         self.appliedAt = appliedAt
     }
 
+    /// 判断 `matches` 所描述的同步核心领域条件是否成立。
     public func matches(
         deviceID: String,
         generation: Int,
@@ -35,11 +41,13 @@ public struct SyncReplicaReceipt: Equatable, Sendable {
     }
 }
 
+/// 管理 `SyncLocalRepository` 在同步核心领域中的生命周期、依赖和可变状态。
 public final class SyncLocalRepository: @unchecked Sendable {
     private let database: MacToolsDatabase
     private let clipboardRepository: ClipboardRepository
     private let preferenceRepository: PreferenceRepository
 
+    /// 创建 `SyncLocalRepository`，保存传入依赖并建立初始状态。
     public init(
         database: MacToolsDatabase,
         clipboardRepository: ClipboardRepository,
@@ -50,6 +58,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         self.preferenceRepository = preferenceRepository
     }
 
+    /// 提交 `bindStore` 对应的同步核心领域状态，并记录后续流程所需的进度。
     public func bindStore(_ storeID: UUID, at date: Date = Date()) throws {
         try database.writer.write { db in
             let identity = storeID.uuidString
@@ -75,6 +84,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 读取并返回 `currentGeneration` 对应的同步核心领域数据。
     public func currentGeneration(storeID: UUID) throws -> Int {
         try database.writer.read { db in
             try Int.fetchOne(
@@ -85,6 +95,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 应用 `adoptGeneration` 接收的新值，并更新相关同步核心领域状态。
     @discardableResult
     public func adoptGeneration(_ generation: Int, storeID: UUID, at date: Date = Date()) throws -> Bool {
         try database.writer.write { db in
@@ -109,6 +120,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 提交 `advanceGeneration` 对应的同步核心领域状态，并记录后续流程所需的进度。
     public func advanceGeneration(storeID: UUID, at date: Date = Date()) throws -> Int {
         try database.writer.write { db in
             let next = (try Int.fetchOne(
@@ -131,6 +143,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 判断 `hasPendingChanges` 所描述的同步核心领域条件是否成立。
     public func hasPendingChanges(
         excludingClipboardRecordNames excludedRecordNames: Set<String> = []
     ) throws -> Bool {
@@ -148,6 +161,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 安排或刷新 `prepareForReplacementDevice` 对应的同步核心领域工作。
     public func prepareForReplacementDevice() throws {
         try database.writer.write { db in
             try db.execute(sql: "DELETE FROM sync_outbox")
@@ -161,6 +175,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 汇总或整理 `preserveTombstones` 涉及的同步核心领域数据，并维护容量与保留规则。
     public func preserveTombstones(
         fromRemovedDeviceID removedDeviceID: String,
         generation: Int,
@@ -210,6 +225,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 执行 `exportBundle` 对应的同步核心领域输入输出操作。
     public func exportBundle(
         deviceID: String,
         generation: Int,
@@ -230,6 +246,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         )
     }
 
+    /// 执行 `exportBundle` 对应的同步核心领域输入输出操作。
     public func exportBundle(
         deviceID: String,
         generation: Int,
@@ -396,6 +413,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         )
     }
 
+    /// 校验远端内容并导入剪贴板记录；已存在墓碑的记录不会恢复。
     public func apply(
         clipboard snapshot: SyncClipboardSnapshot,
         contents: [String: Data],
@@ -420,6 +438,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 payload = nil
                 text = object.text
             case .imageData:
+                // 当前图片先写 PayloadStore，再由 repository 建立数据库引用；两步之间不是同一原子操作。
                 guard Int64(data.count) <= SyncRetentionPolicy.maximumImageBytes,
                       ClipboardContentHasher.sha256String(for: data) == record.contentID else {
                     continue
@@ -463,6 +482,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 应用 `apply` 接收的新值，并更新相关同步核心领域状态。
     public func apply(tombstones snapshot: SyncTombstoneSnapshot) throws {
         for record in snapshot.records {
             var resolvedTargetRecordName = record.targetRecordName
@@ -505,6 +525,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `tombstonedRecordNames` 对应的同步核心领域数据或状态结果。
     public func tombstonedRecordNames(generation: Int) throws -> Set<String> {
         try database.writer.read { db in
             Set(try String.fetchAll(
@@ -515,6 +536,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 对账或合并 `compactAcknowledgedTombstones` 涉及的同步核心领域状态，并返回收敛结果。
     @discardableResult
     public func compactAcknowledgedTombstones(
         activeManifests: [SyncReplicaManifest],
@@ -560,6 +582,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         return acknowledged
     }
 
+    /// 应用 `apply` 接收的新值，并更新相关同步核心领域状态。
     @discardableResult
     public func apply(preferences snapshot: SyncPreferencesSnapshot) throws -> AppSettings? {
         var lastSettings: AppSettings?
@@ -576,6 +599,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         return lastSettings
     }
 
+    /// 提交 `acknowledgeSnapshot` 对应的同步核心领域状态，并记录后续流程所需的进度。
     public func acknowledgeSnapshot(
         upTo cutoff: Date,
         excludingClipboardRecordNames excludedRecordNames: Set<String> = [],
@@ -630,6 +654,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `recordReceipt` 接收的同步核心领域数据，并保持既有持久化约束。
     public func recordReceipt(_ receipt: SyncReplicaReceipt) throws {
         try database.writer.write { db in
             try db.execute(
@@ -651,6 +676,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `receipts` 对应的同步核心领域数据或状态结果。
     public func receipts() throws -> [SyncReplicaReceipt] {
         try database.writer.read { db in
             try Row.fetchAll(
@@ -668,6 +694,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `garbageCollectionCandidates` 对应的同步核心领域数据或状态结果。
     public func garbageCollectionCandidates(
         allContentIDs: Set<String>,
         referencedContentIDs: Set<String>,
@@ -716,6 +743,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 提交 `acknowledgeGarbageCollected` 对应的同步核心领域状态，并记录后续流程所需的进度。
     public func acknowledgeGarbageCollected(contentIDs: Set<String>) throws {
         guard !contentIDs.isEmpty else { return }
         try database.writer.write { db in
@@ -727,10 +755,12 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
+    /// 判断 `isSyncable` 所描述的同步核心领域条件是否成立。
     private static func isSyncable(_ kind: ClipboardContentKind) -> Bool {
         kind == .text || kind == .url || kind == .imageData
     }
 
+    /// 解析并返回 `resolveAlias` 对应的同步核心领域结果。
     private func resolveAlias(
         recordName: String,
         generation: Int,

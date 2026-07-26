@@ -1,23 +1,31 @@
+// `AppEnvironmentWorkers` 的应用运行时与 AppKit 集成实现。
+// 负责生命周期、面板和 macOS 能力接线，不承载可复用的持久化规则。
+
 import AppKit
 import Foundation
 import MacToolsCore
 
+/// 串行管理 `ClipboardPollingWorker` 在应用运行时与 AppKit 集成中的可变状态和异步操作。
 actor ClipboardPollingWorker {
     private let service: ClipboardService
 
+    /// 创建 `ClipboardPollingWorker`，保存传入依赖并建立初始状态。
     init(service: ClipboardService) {
         self.service = service
     }
 
+    /// 安排或刷新 `pollOnce` 对应的应用运行时与 AppKit 集成工作。
     func pollOnce(sourceApp: String?) throws -> Bool {
         try service.pollOnce(sourceApp: sourceApp)
     }
 
+    /// 应用 `updateSettings` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     func updateSettings(_ settings: AppSettings) {
         service.updateSettings(settings)
     }
 }
 
+/// 串行管理 `AppMaintenanceWorker` 在应用运行时与 AppKit 集成中的可变状态和异步操作。
 actor AppMaintenanceWorker {
     private let repository: ClipboardRepository
     private let payloadStore: PayloadStore
@@ -25,6 +33,7 @@ actor AppMaintenanceWorker {
     private let logger: Logger
     private var hasRun = false
 
+    /// 创建 `AppMaintenanceWorker`，保存传入依赖并建立初始状态。
     init(
         repository: ClipboardRepository,
         payloadStore: PayloadStore,
@@ -37,6 +46,7 @@ actor AppMaintenanceWorker {
         self.logger = logger
     }
 
+    /// 每次进程生命周期只执行一次临时文件、载荷引用和本地保留标记清理。
     func run(now: Date = Date()) {
         guard !hasRun else { return }
         hasRun = true
@@ -74,6 +84,7 @@ actor AppMaintenanceWorker {
     }
 }
 
+/// 管理 `PasteActivationAttempt` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class PasteActivationAttempt {
     private let targetApplication: NSRunningApplication
@@ -84,6 +95,7 @@ final class PasteActivationAttempt {
     private var observer: NSObjectProtocol?
     private var didPaste = false
 
+    /// 创建 `PasteActivationAttempt`，保存传入依赖并建立初始状态。
     init(
         targetApplication: NSRunningApplication,
         notificationCenter: NotificationCenter,
@@ -98,6 +110,7 @@ final class PasteActivationAttempt {
         self.onFinish = onFinish
     }
 
+    /// 激活原前台应用，并以激活通知优先、超时兜底的方式仅发送一次粘贴。
     func start() {
         let targetProcessIdentifier = targetApplication.processIdentifier
         observer = notificationCenter.addObserver(
@@ -126,6 +139,7 @@ final class PasteActivationAttempt {
         }
     }
 
+    /// 取消尚未发送的粘贴，并移除应用激活观察者。
     func cancel() {
         guard !didPaste else { return }
         didPaste = true
@@ -133,6 +147,7 @@ final class PasteActivationAttempt {
         onFinish(self)
     }
 
+    /// 原子地标记本次尝试已完成，确保通知路径和超时路径不会重复粘贴。
     private func pasteOnce(reason: String) {
         guard !didPaste else { return }
         didPaste = true
@@ -145,6 +160,7 @@ final class PasteActivationAttempt {
         onFinish(self)
     }
 
+    /// 移除 `removeObserver` 指定的应用运行时与 AppKit 集成数据，并维护关联状态。
     private func removeObserver() {
         guard let observer else { return }
         notificationCenter.removeObserver(observer)

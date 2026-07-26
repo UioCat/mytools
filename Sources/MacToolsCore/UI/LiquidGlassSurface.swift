@@ -1,6 +1,10 @@
+// `LiquidGlassSurface` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 描述 `LiquidGlassTint` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum LiquidGlassTint: Equatable {
     case none
     case neutral(Double)
@@ -27,6 +31,7 @@ enum LiquidGlassTint: Equatable {
     }
 }
 
+/// 描述 `LiquidGlassCornerShape` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum LiquidGlassCornerShape: Equatable {
     case fixed(CGFloat)
     case concentric(minimum: CGFloat)
@@ -39,11 +44,13 @@ enum LiquidGlassCornerShape: Equatable {
     }
 }
 
+/// 描述 `LiquidGlassCornerGeometry` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum LiquidGlassCornerGeometry {
     public static let windowRadius: CGFloat = 40
     public static let selectedRowMinimumRadius: CGFloat = 18
 }
 
+/// 封装 `LiquidGlassSurfaceStyle` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassSurfaceStyle {
     let cornerShape: LiquidGlassCornerShape
     let isInteractive: Bool
@@ -53,6 +60,7 @@ struct LiquidGlassSurfaceStyle {
         cornerShape.minimumRadius
     }
 
+    /// 构建并返回 `panel` 对应的 SwiftUI 界面内容或展示状态。
     static func panel(cornerRadius: CGFloat) -> LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .fixed(cornerRadius),
@@ -61,6 +69,7 @@ struct LiquidGlassSurfaceStyle {
         )
     }
 
+    /// 构建并返回 `module` 对应的 SwiftUI 界面内容或展示状态。
     static func module(cornerRadius: CGFloat, isSelected: Bool) -> LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .fixed(cornerRadius),
@@ -69,6 +78,7 @@ struct LiquidGlassSurfaceStyle {
         )
     }
 
+    /// 构建并返回 `concentricModule` 对应的 SwiftUI 界面内容或展示状态。
     static func concentricModule(minimumCornerRadius: CGFloat, isSelected: Bool) -> LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .concentric(minimum: minimumCornerRadius),
@@ -77,6 +87,7 @@ struct LiquidGlassSurfaceStyle {
         )
     }
 
+    /// 构建并返回 `floatingSelection` 对应的 SwiftUI 界面内容或展示状态。
     static func floatingSelection(cornerRadius: CGFloat) -> LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .fixed(cornerRadius),
@@ -85,6 +96,7 @@ struct LiquidGlassSurfaceStyle {
         )
     }
 
+    /// 构建并返回 `interactiveModule` 对应的 SwiftUI 界面内容或展示状态。
     static func interactiveModule(cornerRadius: CGFloat, isSelected: Bool) -> LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .fixed(cornerRadius),
@@ -93,6 +105,7 @@ struct LiquidGlassSurfaceStyle {
         )
     }
 
+    /// 构建并返回 `chip` 对应的 SwiftUI 界面内容或展示状态。
     static func chip(cornerRadius: CGFloat) -> LiquidGlassSurfaceStyle {
         LiquidGlassSurfaceStyle(
             cornerShape: .fixed(cornerRadius),
@@ -107,18 +120,22 @@ struct LiquidGlassSurfaceStyle {
     }
 }
 
+/// 封装 `LiquidGlassPanelModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassPanelModifier: ViewModifier {
     let cornerRadius: CGFloat
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         content.nativeLiquidGlassSurface(style: .panel(cornerRadius: cornerRadius))
     }
 }
 
+/// 描述 `LiquidGlassWindowPanelSurfacePlacement` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum LiquidGlassWindowPanelSurfacePlacement: Equatable, Sendable {
     case afterSizing
 }
 
+/// 描述 `LiquidGlassWindowPanelAlignment` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum LiquidGlassWindowPanelAlignment: Equatable, Sendable {
     case topLeading
 
@@ -130,6 +147,7 @@ public enum LiquidGlassWindowPanelAlignment: Equatable, Sendable {
     }
 }
 
+/// 封装 `LiquidGlassWindowPanelFrame` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct LiquidGlassWindowPanelFrame: Equatable, Sendable {
     public let minWidth: CGFloat
     public let idealWidth: CGFloat
@@ -140,6 +158,7 @@ public struct LiquidGlassWindowPanelFrame: Equatable, Sendable {
     public let alignment: LiquidGlassWindowPanelAlignment
     public var surfacePlacement: LiquidGlassWindowPanelSurfacePlacement { .afterSizing }
 
+    /// 创建 `LiquidGlassWindowPanelFrame`，保存传入依赖并建立初始状态。
     public init(
         minWidth: CGFloat,
         idealWidth: CGFloat,
@@ -186,10 +205,12 @@ public struct LiquidGlassWindowPanelFrame: Equatable, Sendable {
     )
 }
 
+/// 封装 `LiquidGlassWindowPanelModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct LiquidGlassWindowPanelModifier: ViewModifier {
     let cornerRadius: CGFloat
     let frame: LiquidGlassWindowPanelFrame
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         let windowShape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
@@ -210,6 +231,7 @@ private struct LiquidGlassWindowPanelModifier: ViewModifier {
     }
 }
 
+/// 封装 `LiquidGlassModuleModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassModuleModifier: ViewModifier {
     let cornerRadius: CGFloat
     let isSelected: Bool
@@ -223,15 +245,18 @@ struct LiquidGlassModuleModifier: ViewModifier {
         return .module(cornerRadius: cornerRadius, isSelected: isSelected)
     }
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         content.nativeLiquidGlassSurface(style: style)
     }
 }
 
+/// 封装 `LiquidGlassConcentricModuleModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassConcentricModuleModifier: ViewModifier {
     let minimumCornerRadius: CGFloat
     let isSelected: Bool
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         let shape = ConcentricRectangle(
             corners: .concentric(minimum: .fixed(minimumCornerRadius)),
@@ -267,9 +292,11 @@ struct LiquidGlassConcentricModuleModifier: ViewModifier {
     }
 }
 
+/// 封装 `LiquidGlassFloatingSelectionModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassFloatingSelectionModifier: ViewModifier {
     let cornerRadius: CGFloat
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
@@ -286,17 +313,21 @@ struct LiquidGlassFloatingSelectionModifier: ViewModifier {
     }
 }
 
+/// 封装 `LiquidGlassChipModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassChipModifier: ViewModifier {
     let cornerRadius: CGFloat
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         content.nativeLiquidGlassSurface(style: .chip(cornerRadius: cornerRadius))
     }
 }
 
+/// 封装 `LiquidGlassGroupModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassGroupModifier: ViewModifier {
     let spacing: CGFloat
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         GlassEffectContainer(spacing: spacing) {
             content
@@ -304,7 +335,9 @@ struct LiquidGlassGroupModifier: ViewModifier {
     }
 }
 
+/// 扩展 `View`，补充本文件所需的 SwiftUI 展示层能力。
 private extension View {
+    /// 构建并返回 `nativeLiquidGlassSurface` 对应的 SwiftUI 界面内容或展示状态。
     @ViewBuilder
     func nativeLiquidGlassSurface(style: LiquidGlassSurfaceStyle) -> some View {
         switch style.cornerShape {
@@ -325,12 +358,14 @@ private extension View {
     }
 }
 
+/// 封装 `LiquidGlassButtonStyle` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct LiquidGlassButtonStyle: ButtonStyle {
     private let cornerRadius: CGFloat
     private let isSelected: Bool
     private let minimumSize: CGSize?
     private let showsIdleSurface: Bool
 
+    /// 创建 `LiquidGlassButtonStyle`，保存传入依赖并建立初始状态。
     public init(
         cornerRadius: CGFloat = 22,
         isSelected: Bool = false,
@@ -343,6 +378,7 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
         self.showsIdleSurface = showsIdleSurface
     }
 
+    /// 构造并返回 `makeBody` 所描述的 SwiftUI 展示层对象。
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(
@@ -361,12 +397,14 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
     }
 }
 
+/// 封装 `NativeLiquidGlassButtonSurfaceModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 private struct NativeLiquidGlassButtonSurfaceModifier: ViewModifier {
     let cornerRadius: CGFloat
     let isSelected: Bool
     let isPressed: Bool
     let showsIdleSurface: Bool
 
+    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     @ViewBuilder
     func body(content: Content) -> some View {
         if showsIdleSurface || isSelected || isPressed {
@@ -382,11 +420,14 @@ private struct NativeLiquidGlassButtonSurfaceModifier: ViewModifier {
     }
 }
 
+/// 扩展 `View`，补充本文件所需的 SwiftUI 展示层能力。
 public extension View {
+    /// 构建并返回 `liquidGlassPanel` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassPanel(cornerRadius: CGFloat = 28) -> some View {
         modifier(LiquidGlassPanelModifier(cornerRadius: cornerRadius))
     }
 
+    /// 构建并返回 `liquidGlassWindowPanel` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassWindowPanel(
         cornerRadius: CGFloat = LiquidGlassCornerGeometry.windowRadius,
         frame: LiquidGlassWindowPanelFrame
@@ -399,6 +440,7 @@ public extension View {
         )
     }
 
+    /// 构建并返回 `liquidGlassModule` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassModule(cornerRadius: CGFloat = 22, isSelected: Bool = false) -> some View {
         modifier(
             LiquidGlassModuleModifier(
@@ -409,6 +451,7 @@ public extension View {
         )
     }
 
+    /// 构建并返回 `liquidGlassConcentricModule` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassConcentricModule(
         minimumCornerRadius: CGFloat = LiquidGlassCornerGeometry.selectedRowMinimumRadius,
         isSelected: Bool = false
@@ -421,10 +464,12 @@ public extension View {
         )
     }
 
+    /// 构建并返回 `liquidGlassFloatingSelection` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassFloatingSelection(cornerRadius: CGFloat = 12) -> some View {
         modifier(LiquidGlassFloatingSelectionModifier(cornerRadius: cornerRadius))
     }
 
+    /// 构建并返回 `liquidGlassInteractiveModule` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassInteractiveModule(cornerRadius: CGFloat = 22, isSelected: Bool = false) -> some View {
         modifier(
             LiquidGlassModuleModifier(
@@ -435,14 +480,17 @@ public extension View {
         )
     }
 
+    /// 构建并返回 `liquidGlassChip` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassChip(cornerRadius: CGFloat = 10) -> some View {
         modifier(LiquidGlassChipModifier(cornerRadius: cornerRadius))
     }
 
+    /// 构建并返回 `liquidGlassGroup` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassGroup(spacing: CGFloat = 16) -> some View {
         modifier(LiquidGlassGroupModifier(spacing: spacing))
     }
 
+    /// 构建并返回 `liquidGlassButtonStyle` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassButtonStyle(
         cornerRadius: CGFloat = 22,
         isSelected: Bool = false,

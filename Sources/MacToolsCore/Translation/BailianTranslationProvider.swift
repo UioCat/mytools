@@ -1,10 +1,15 @@
+// `BailianTranslationProvider` 的翻译领域实现。
+// 负责翻译请求、提供方和语音播放状态，不管理窗口展示。
+
 import Foundation
 
+/// 封装 `BailianTranslationConfiguration` 在翻译领域中的值语义和相关操作。
 public struct BailianTranslationConfiguration: Equatable, Sendable {
     public var apiKey: String
     public var model: String
     public var endpointURL: URL
 
+    /// 创建 `BailianTranslationConfiguration`，保存传入依赖并建立初始状态。
     public init(apiKey: String, model: String, endpointURL: URL) {
         self.apiKey = apiKey
         self.model = model
@@ -12,23 +17,30 @@ public struct BailianTranslationConfiguration: Equatable, Sendable {
     }
 }
 
+/// 封装 `TranslationHTTPResponse` 在翻译领域中的值语义和相关操作。
 public struct TranslationHTTPResponse: Equatable, Sendable {
     public var data: Data
     public var statusCode: Int
 
+    /// 创建 `TranslationHTTPResponse`，保存传入依赖并建立初始状态。
     public init(data: Data, statusCode: Int) {
         self.data = data
         self.statusCode = statusCode
     }
 }
 
+/// 定义 `TranslationHTTPClient` 在翻译领域中需要满足的能力边界。
 public protocol TranslationHTTPClient: Sendable {
+    /// 异步执行 `send` 对应的翻译领域输入输出操作。
     func send(_ request: URLRequest) async throws -> TranslationHTTPResponse
 }
 
+/// 封装 `URLSessionTranslationHTTPClient` 在翻译领域中的值语义和相关操作。
 public struct URLSessionTranslationHTTPClient: TranslationHTTPClient {
+    /// 创建 `URLSessionTranslationHTTPClient`，保存传入依赖并建立初始状态。
     public init() {}
 
+    /// 异步执行 `send` 对应的翻译领域输入输出操作。
     public func send(_ request: URLRequest) async throws -> TranslationHTTPResponse {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -39,12 +51,14 @@ public struct URLSessionTranslationHTTPClient: TranslationHTTPClient {
     }
 }
 
+/// 管理 `BailianTranslationProvider` 在翻译领域中的生命周期、依赖和可变状态。
 public final class BailianTranslationProvider: TranslationProvider, Sendable {
     public let providerID = "bailian"
 
     private let configuration: BailianTranslationConfiguration?
     private let httpClient: TranslationHTTPClient
 
+    /// 创建 `BailianTranslationProvider`，保存传入依赖并建立初始状态。
     public init(
         configuration: BailianTranslationConfiguration?,
         httpClient: TranslationHTTPClient = URLSessionTranslationHTTPClient()
@@ -53,6 +67,7 @@ public final class BailianTranslationProvider: TranslationProvider, Sendable {
         self.httpClient = httpClient
     }
 
+    /// 调用百炼兼容接口并将 HTTP 响应解码为统一翻译结果。
     public func translate(_ request: TranslationRequest) async -> Result<TranslationResponse, TranslationError> {
         guard let configuration, !configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .failure(.providerNotConfigured)
@@ -69,6 +84,7 @@ public final class BailianTranslationProvider: TranslationProvider, Sendable {
         }
     }
 
+    /// 构造并返回 `makeURLRequest` 所描述的翻译领域对象。
     private func makeURLRequest(
         configuration: BailianTranslationConfiguration,
         translationRequest: TranslationRequest
@@ -92,6 +108,7 @@ public final class BailianTranslationProvider: TranslationProvider, Sendable {
         return request
     }
 
+    /// 转换 `decode` 接收的翻译领域数据，并返回规范化结果。
     private func decode(
         _ response: TranslationHTTPResponse,
         providerID: String
@@ -112,6 +129,7 @@ public final class BailianTranslationProvider: TranslationProvider, Sendable {
         }
     }
 
+    /// 计算并返回 `errorMessage` 对应的翻译领域数据或状态结果。
     private func errorMessage(from data: Data) -> String? {
         guard let payload = try? JSONDecoder().decode(BailianErrorResponse.self, from: data) else {
             return nil
@@ -120,6 +138,7 @@ public final class BailianTranslationProvider: TranslationProvider, Sendable {
         return payload.error?.message
     }
 
+    /// 计算并返回 `languageName` 对应的翻译领域数据或状态结果。
     private static func languageName(for value: String?) -> String? {
         guard let value else {
             return nil
@@ -151,26 +170,31 @@ public final class BailianTranslationProvider: TranslationProvider, Sendable {
     }
 }
 
+/// 封装 `BailianChatCompletionRequest` 在翻译领域中的值语义和相关操作。
 private struct BailianChatCompletionRequest: Encodable {
     var model: String
     var messages: [Message]
     var translationOptions: TranslationOptions
 
+    /// 描述 `CodingKeys` 在翻译领域中可取的状态、选项或错误。
     enum CodingKeys: String, CodingKey {
         case model
         case messages
         case translationOptions = "translation_options"
     }
 
+    /// 封装 `Message` 在翻译领域中的值语义和相关操作。
     struct Message: Encodable {
         var role: String
         var content: String
     }
 
+    /// 封装 `TranslationOptions` 在翻译领域中的值语义和相关操作。
     struct TranslationOptions: Encodable {
         var sourceLang: String?
         var targetLang: String
 
+        /// 描述 `CodingKeys` 在翻译领域中可取的状态、选项或错误。
         enum CodingKeys: String, CodingKey {
             case sourceLang = "source_lang"
             case targetLang = "target_lang"
@@ -178,21 +202,26 @@ private struct BailianChatCompletionRequest: Encodable {
     }
 }
 
+/// 封装 `BailianChatCompletionResponse` 在翻译领域中的值语义和相关操作。
 private struct BailianChatCompletionResponse: Decodable {
     var choices: [Choice]
 
+    /// 封装 `Choice` 在翻译领域中的值语义和相关操作。
     struct Choice: Decodable {
         var message: Message
     }
 
+    /// 封装 `Message` 在翻译领域中的值语义和相关操作。
     struct Message: Decodable {
         var content: String
     }
 }
 
+/// 封装 `BailianErrorResponse` 在翻译领域中的值语义和相关操作。
 private struct BailianErrorResponse: Decodable {
     var error: ErrorPayload?
 
+    /// 封装 `ErrorPayload` 在翻译领域中的值语义和相关操作。
     struct ErrorPayload: Decodable {
         var message: String?
     }

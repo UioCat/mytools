@@ -1,19 +1,25 @@
+// `ScreenshotRenderer` 的截图录屏核心领域实现。
+// 负责选择、渲染和会话策略，不直接管理 ScreenCaptureKit 流。
+
 import CoreGraphics
 import CoreImage
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
+/// 描述 `ScreenshotRendererError` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenshotRendererError: Error, Equatable {
     case contextCreationFailed
     case imageEncodingFailed
     case mosaicFilterUnavailable
 }
 
+/// 在位图上下文中合成截图标注，并编码最终 PNG。
 public enum ScreenshotRenderer {
     private static let mosaicScale: CGFloat = 12
     private static let ciContext = CIContext(options: nil)
 
+    /// 按标注顺序合成原图、线条、箭头、矩形和马赛克，并编码为 PNG。
     public static func pngData(image: CGImage, annotations: [ScreenshotAnnotation]) throws -> Data {
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         guard let context = CGContext(
@@ -30,6 +36,7 @@ public enum ScreenshotRenderer {
 
         context.interpolationQuality = .high
         context.draw(image, in: bounds)
+        // 马赛克滤镜成本较高，整张图只生成一次，再通过 clip 复用到所有马赛克区域。
         let mosaicImage = try annotations.contains(where: isMosaic)
             ? mosaicImage(image: image)
             : nil
@@ -73,6 +80,7 @@ public enum ScreenshotRenderer {
         return data as Data
     }
 
+    /// 生成与原图像素尺寸一致的完整马赛克图，供编辑预览复用。
     public static func mosaicImage(image: CGImage) throws -> CGImage {
         try makeMosaicImage(
             sourceImage: image,
@@ -80,6 +88,7 @@ public enum ScreenshotRenderer {
         )
     }
 
+    /// 在当前图形上下文中绘制 `drawLine` 指定的截图标注内容。
     private static func drawLine(
         in context: CGContext,
         start: CGPoint,
@@ -97,6 +106,7 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
+    /// 在当前图形上下文中绘制 `drawArrow` 指定的截图标注内容。
     private static func drawArrow(
         in context: CGContext,
         start: CGPoint,
@@ -129,6 +139,7 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
+    /// 在当前图形上下文中绘制 `drawFreehand` 指定的截图标注内容。
     private static func drawFreehand(
         in context: CGContext,
         points: [CGPoint],
@@ -165,6 +176,7 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
+    /// 在当前图形上下文中绘制 `drawRectangle` 指定的截图标注内容。
     private static func drawRectangle(
         in context: CGContext,
         rect: CGRect,
@@ -178,6 +190,7 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
+    /// 构造并返回 `makeMosaicImage` 所描述的截图录屏核心领域对象。
     private static func makeMosaicImage(sourceImage: CGImage, bounds: CGRect) throws -> CGImage {
         guard let filter = CIFilter(name: "CIPixellate") else {
             throw ScreenshotRendererError.mosaicFilterUnavailable
@@ -199,12 +212,14 @@ public enum ScreenshotRenderer {
         return mosaicImage
     }
 
+    /// 在当前图形上下文中绘制 `drawMosaic` 指定的截图标注内容。
     private static func drawMosaic(
         in context: CGContext,
         mosaicImage: CGImage,
         rect: CGRect,
         bounds: CGRect
     ) {
+        // 先裁剪到图像边界并对齐整数像素，避免 Core Graphics 读取越界或产生半像素接缝。
         let mosaicRect = rect.standardized.intersection(bounds).integral
         guard !mosaicRect.isEmpty else {
             return
@@ -216,6 +231,7 @@ public enum ScreenshotRenderer {
         context.restoreGState()
     }
 
+    /// 判断 `isMosaic` 所描述的截图录屏核心领域条件是否成立。
     private static func isMosaic(_ annotation: ScreenshotAnnotation) -> Bool {
         if case .mosaic = annotation {
             return true

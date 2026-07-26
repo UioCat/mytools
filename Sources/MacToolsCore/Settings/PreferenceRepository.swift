@@ -1,12 +1,17 @@
+// `PreferenceRepository` 的设置与凭据领域实现。
+// 负责配置、凭据信封和偏好持久化，不管理具体设置界面。
+
 import Foundation
 import GRDB
 
+/// 封装 `PreferenceDomainDocument` 在设置与凭据领域中的值语义和相关操作。
 public struct PreferenceDomainDocument: Equatable, Sendable {
     public let domain: String
     public let value: Data
     public let clocks: [String: ClipboardFieldClock]
     public let updatedAt: Date
 
+    /// 创建 `PreferenceDomainDocument`，保存传入依赖并建立初始状态。
     public init(
         domain: String,
         value: Data,
@@ -20,6 +25,7 @@ public struct PreferenceDomainDocument: Equatable, Sendable {
     }
 }
 
+/// 管理 `PreferenceRepository` 在设置与凭据领域中的生命周期、依赖和可变状态。
 public final class PreferenceRepository: @unchecked Sendable {
     public static let appDomain = "preferences.app"
     public static let accountDomains: [String] = domainKeys.map(\.domain)
@@ -42,6 +48,7 @@ public final class PreferenceRepository: @unchecked Sendable {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    /// 创建 `PreferenceRepository`，保存传入依赖并建立初始状态。
     public init(database: MacToolsDatabase) {
         self.database = database
         self.encoder = JSONEncoder()
@@ -49,6 +56,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         self.encoder.outputFormatting = [.sortedKeys]
     }
 
+    /// 读取并返回 `load` 对应的设置与凭据领域数据。
     public func load() throws -> AppSettings? {
         try database.writer.read { db in
             guard let data = try Data.fetchOne(
@@ -60,6 +68,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `save` 接收的设置与凭据领域数据，并保持既有持久化约束。
     public func save(
         _ settings: AppSettings,
         at date: Date = Date(),
@@ -77,6 +86,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `save` 接收的设置与凭据领域数据，并保持既有持久化约束。
     public func save(
         _ settings: AppSettings,
         deviceSyncEnabled: Bool,
@@ -95,6 +105,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `domainDocument` 对应的设置与凭据领域数据或状态结果。
     public func domainDocument(_ domain: String) throws -> PreferenceDomainDocument? {
         guard let keys = Self.domainKeys.first(where: { $0.domain == domain })?.keys else {
             return nil
@@ -136,6 +147,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 应用 `applyRemoteDomain` 接收的新值，并更新相关设置与凭据领域状态。
     public func applyRemoteDomain(
         _ document: PreferenceDomainDocument,
         at date: Date = Date()
@@ -185,6 +197,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `rawData` 对应的设置与凭据领域数据或状态结果。
     public func rawData() throws -> Data? {
         try database.writer.read { db in
             try Data.fetchOne(
@@ -195,6 +208,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `save` 接收的设置与凭据领域数据，并保持既有持久化约束。
     private func save(
         data: Data,
         deviceSyncEnabled: Bool?,
@@ -255,6 +269,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 转换 `encodedSanitized` 接收的设置与凭据领域数据，并返回规范化结果。
     private func encodedSanitized(_ settings: AppSettings) throws -> Data {
         var sanitized = settings
         sanitized.translation.apiKey = ""
@@ -264,6 +279,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         return try encoder.encode(sanitized)
     }
 
+    /// 保存 `upsertPreference` 接收的设置与凭据领域数据，并保持既有持久化约束。
     private func upsertPreference(data: Data, at date: Date, in db: Database) throws {
         try db.execute(
             sql: """
@@ -278,6 +294,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         )
     }
 
+    /// 计算并返回 `fieldClocks` 对应的设置与凭据领域数据或状态结果。
     private func fieldClocks(
         domain: String,
         in db: Database
@@ -294,6 +311,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
+    /// 保存 `upsertClock` 接收的设置与凭据领域数据，并保持既有持久化约束。
     private func upsertClock(
         domain: String,
         path: String,
@@ -315,6 +333,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         )
     }
 
+    /// 安排或刷新 `enqueueDomain` 对应的设置与凭据领域工作。
     private func enqueueDomain(_ domain: String, at date: Date, in db: Database) throws {
         let generation = try Int.fetchOne(
             db,
@@ -336,6 +355,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         )
     }
 
+    /// 计算并返回 `deviceID` 对应的设置与凭据领域数据或状态结果。
     private func deviceID(in db: Database) throws -> String {
         if let data = try Data.fetchOne(
             db,
@@ -351,6 +371,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         return value
     }
 
+    /// 解析并校验 `jsonObject` 接收的数据，返回设置与凭据领域可用的结构。
     private static func jsonObject(_ data: Data) throws -> [String: Any] {
         guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PreferenceRepositoryError.invalidJSON
@@ -358,6 +379,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         return value
     }
 
+    /// 计算并返回 `changedLeafPaths` 对应的设置与凭据领域数据或状态结果。
     private static func changedLeafPaths(old: Any?, new: Any?, path: String) -> Set<String> {
         if let old = old as? [String: Any], let new = new as? [String: Any] {
             return Set(old.keys).union(new.keys).reduce(into: []) { result, key in
@@ -369,6 +391,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         return [path]
     }
 
+    /// 递归合并设置 JSON；叶子字段仅由对应字段时钟决定远端或本地值胜出。
     private static func merge(
         local: Any?,
         remote: Any?,
@@ -389,11 +412,13 @@ public final class PreferenceRepository: @unchecked Sendable {
             }
             return result
         }
+        // 缺少时钟的旧字段按 zero 处理；相同时钟保守保留本地值。
         let localClock = localClocks[path] ?? .zero
         let remoteClock = remoteClocks[path] ?? .zero
         return remoteClock.wins(over: localClock) ? remote : local
     }
 
+    /// 解析并校验 `jsonEqual` 接收的数据，返回设置与凭据领域可用的结构。
     private static func jsonEqual(_ lhs: Any?, _ rhs: Any?) -> Bool {
         switch (lhs, rhs) {
         case (nil, nil): return true
@@ -403,6 +428,7 @@ public final class PreferenceRepository: @unchecked Sendable {
     }
 }
 
+/// 描述 `PreferenceRepositoryError` 在设置与凭据领域中可取的状态、选项或错误。
 public enum PreferenceRepositoryError: Error, Equatable {
     case unknownDomain(String)
     case missingSettings

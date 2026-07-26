@@ -1,8 +1,12 @@
+// `ScreenCaptureCoordinator` 的屏幕捕获系统集成实现。
+// 负责选区、截图、标注和录屏生命周期，不承载可复用的纯业务模型。
+
 import AppKit
 import CoreGraphics
 import Foundation
 import MacToolsCore
 
+/// 管理 `ScreenCaptureCoordinator` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 @MainActor
 final class ScreenCaptureCoordinator {
     private let permissionService: PermissionService
@@ -17,6 +21,7 @@ final class ScreenCaptureCoordinator {
     private let pasteboard: WritablePasteboard
     private var state: ScreenCaptureSessionState = .idle
 
+    /// 创建 `ScreenCaptureCoordinator`，保存传入依赖并建立初始状态。
     init(
         permissionService: PermissionService,
         logger: Logger,
@@ -37,6 +42,7 @@ final class ScreenCaptureCoordinator {
         self.onSettingsChange = onSettingsChange
     }
 
+    /// 校验权限与会话互斥状态，同时预热共享内容并展示区域选择层。
     func start() {
         guard !isCaptureInProgress else {
             logger.info("screen capture request ignored while a session is active")
@@ -85,6 +91,7 @@ final class ScreenCaptureCoordinator {
         }
     }
 
+    /// 仅接受状态机认可的有效选择，再分派到截图或录屏流程。
     private func beginCapture(selection: ScreenCaptureSelection, mode: ScreenCaptureMode) {
         guard state.acceptSelection(selection) else {
             return
@@ -98,6 +105,7 @@ final class ScreenCaptureCoordinator {
         }
     }
 
+    /// 启动 `beginScreenshot` 对应的屏幕捕获系统集成流程，并建立所需资源。
     private func beginScreenshot(_ selection: ScreenCaptureSelection) {
         guard state.beginScreenshot() else {
             return
@@ -137,6 +145,7 @@ final class ScreenCaptureCoordinator {
         }
     }
 
+    /// 把编辑后的 PNG 写入剪贴板，并结束截图会话和预热缓存。
     private func completeScreenshot(with data: Data) {
         do {
             try pasteboard.writeImageData(data)
@@ -148,6 +157,7 @@ final class ScreenCaptureCoordinator {
         }
     }
 
+    /// 启动 `beginRecording` 对应的屏幕捕获系统集成流程，并建立所需资源。
     private func beginRecording(_ selection: ScreenCaptureSelection) {
         guard state.beginRecording() else {
             return
@@ -171,6 +181,7 @@ final class ScreenCaptureCoordinator {
         }
     }
 
+    /// 先关闭录制控制面板，再封口 MP4 并在 Finder 中定位成品。
     private func stopRecording() {
         recordingControl.hide()
         Task { [weak self] in
@@ -189,6 +200,7 @@ final class ScreenCaptureCoordinator {
         }
     }
 
+    /// 保存 `recordingDestination` 接收的屏幕捕获系统集成数据，并保持既有持久化约束。
     private func recordingDestination() throws -> URL {
         guard let downloadsDirectory = FileManager.default.urls(
             for: .downloadsDirectory,
@@ -199,6 +211,7 @@ final class ScreenCaptureCoordinator {
         return try RecordingDestinationResolver(directory: downloadsDirectory).nextURL()
     }
 
+    /// 计算并返回 `fail` 对应的屏幕捕获系统集成数据或状态结果。
     private func fail(message: String, error: Error) {
         overlay.dismiss()
         editor.dismiss()
@@ -214,6 +227,7 @@ final class ScreenCaptureCoordinator {
         alert.runModal()
     }
 
+    /// 展示 `showScreenRecordingPermissionAlert` 对应的屏幕捕获系统集成界面或系统位置。
     private func showScreenRecordingPermissionAlert() {
         let alert = NSAlert()
         alert.messageText = "需要屏幕录制权限"

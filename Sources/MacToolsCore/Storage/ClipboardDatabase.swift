@@ -1,14 +1,20 @@
+// `ClipboardDatabase` 的本地存储领域实现。
+// 负责数据库、载荷文件和迁移事务，不管理运行时面板状态。
+
 import Foundation
 import GRDB
 
+/// 管理 `MacToolsDatabase` 在本地存储领域中的生命周期、依赖和可变状态。
 public final class MacToolsDatabase: @unchecked Sendable {
     public let writer: any DatabaseWriter
 
+    /// 创建 `MacToolsDatabase`，保存传入依赖并建立初始状态。
     public init(writer: any DatabaseWriter) throws {
         self.writer = writer
         try Self.migrator.migrate(writer)
     }
 
+    /// 计算并返回 `inMemory` 对应的本地存储领域数据或状态结果。
     public static func inMemory() throws -> MacToolsDatabase {
         var configuration = Configuration()
         configuration.prepareDatabase { db in
@@ -17,6 +23,7 @@ public final class MacToolsDatabase: @unchecked Sendable {
         return try MacToolsDatabase(writer: DatabaseQueue(configuration: configuration))
     }
 
+    /// 计算并返回 `at` 对应的本地存储领域数据或状态结果。
     public static func at(_ url: URL) throws -> MacToolsDatabase {
         let directoryURL = url.deletingLastPathComponent()
         try SensitiveFilePermissions.prepareDirectory(at: directoryURL)
@@ -32,6 +39,7 @@ public final class MacToolsDatabase: @unchecked Sendable {
         return database
     }
 
+    /// 计算并返回 `secureDatabaseFiles` 对应的本地存储领域数据或状态结果。
     private static func secureDatabaseFiles(at url: URL) throws {
         for suffix in ["", "-shm", "-wal", "-journal"] {
             let fileURL = URL(fileURLWithPath: url.path + suffix)
@@ -329,4 +337,5 @@ public final class MacToolsDatabase: @unchecked Sendable {
     }
 }
 
+/// 为本地存储领域中的相关类型提供 `ClipboardDatabase` 别名。
 public typealias ClipboardDatabase = MacToolsDatabase

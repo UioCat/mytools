@@ -1,6 +1,10 @@
+// `RecordingControlPanelController` 的屏幕捕获系统集成实现。
+// 负责选区、截图、标注和录屏生命周期，不承载可复用的纯业务模型。
+
 import AppKit
 import MacToolsCore
 
+/// 管理 `RecordingControlPanelController` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 @MainActor
 final class RecordingControlPanelController {
     private var panel: NSPanel?
@@ -9,6 +13,7 @@ final class RecordingControlPanelController {
     private var timer: Timer?
     private var onStop: (() -> Void)?
 
+    /// 展示 `show` 对应的屏幕捕获系统集成界面或系统位置。
     func show(selection: ScreenCaptureSelection, onStop: @escaping () -> Void) {
         hide()
         self.onStop = onStop
@@ -79,6 +84,7 @@ final class RecordingControlPanelController {
         }
     }
 
+    /// 取消或关闭 `hide` 对应的屏幕捕获系统集成流程，并清理临时状态。
     func hide() {
         timer?.invalidate()
         timer = nil
@@ -89,6 +95,7 @@ final class RecordingControlPanelController {
         onStop = nil
     }
 
+    /// 应用 `updateElapsedLabel` 接收的新值，并更新相关屏幕捕获系统集成状态。
     private func updateElapsedLabel() {
         guard let startedAt else {
             return
@@ -97,6 +104,7 @@ final class RecordingControlPanelController {
         elapsedLabel?.stringValue = String(format: "%02d:%02d", elapsedSeconds / 60, elapsedSeconds % 60)
     }
 
+    /// 结束 `stopRecording` 对应的屏幕捕获系统集成流程，并释放或重置相关资源。
     @objc private func stopRecording() {
         let handler = onStop
         onStop = nil
@@ -104,6 +112,7 @@ final class RecordingControlPanelController {
     }
 }
 
+/// 管理 `RecordingControlPanel` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 private final class RecordingControlPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }

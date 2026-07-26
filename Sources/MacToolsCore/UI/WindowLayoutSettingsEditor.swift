@@ -1,6 +1,10 @@
+// `WindowLayoutSettingsEditor` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 封装 `WindowLayoutSettingsEditor` 在 SwiftUI 展示层中的值语义和相关操作。
 struct WindowLayoutSettingsEditor: View {
     let currentSettings: WindowLayoutSettings
     let reservedShortcuts: [HotKeyBinding]
@@ -76,6 +80,7 @@ struct WindowLayoutSettingsEditor: View {
         )
     }
 
+    /// 构建并返回 `modeGroupRow` 对应的 SwiftUI 界面内容或展示状态。
     private func modeGroupRow(_ group: WindowLayoutModeGroup) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Text(group.title)
@@ -106,6 +111,7 @@ struct WindowLayoutSettingsEditor: View {
         .padding(.vertical, 9)
     }
 
+    /// 更新布局模式是否出现在操作面板，并立即保存设置。
     private func setMode(_ mode: WindowLayoutMode, isEnabled: Bool) {
         if isEnabled {
             enabledModes.insert(mode)
@@ -115,16 +121,19 @@ struct WindowLayoutSettingsEditor: View {
         save()
     }
 
+    /// 构建并返回 `sectionHeader` 对应的 SwiftUI 界面内容或展示状态。
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(MacToolsGlassTheme.textTertiary)
     }
 
+    /// 构建并返回 `shortcuts` 对应的 SwiftUI 界面内容或展示状态。
     private func shortcuts(for mode: WindowLayoutMode) -> [HotKeyBinding] {
         modeShortcuts.first { $0.mode == mode }?.shortcuts ?? []
     }
 
+    /// 校验全局快捷键可用性和冲突后，替换指定布局模式的主快捷键。
     @discardableResult
     private func replaceShortcut(for mode: WindowLayoutMode, with shortcut: HotKeyBinding?) -> Bool {
         guard let shortcut else {
@@ -153,6 +162,7 @@ struct WindowLayoutSettingsEditor: View {
         return true
     }
 
+    /// 保存 `save` 接收的 SwiftUI 展示层数据，并保持既有持久化约束。
     private func save() {
         let updatedSettings = draftSettings
         modeShortcuts = updatedSettings.modeShortcuts
@@ -173,6 +183,7 @@ struct WindowLayoutSettingsEditor: View {
         )
     }
 }
+/// 封装 `WindowLayoutModeActionCell` 在 SwiftUI 展示层中的值语义和相关操作。
 struct WindowLayoutModeActionCell: View {
     let mode: WindowLayoutMode
     let isPresentedInPanel: Bool
@@ -267,17 +278,20 @@ struct WindowLayoutModeActionCell: View {
     }
 }
 
+/// 封装 `WindowLayoutShortcutCaptureField` 在 SwiftUI 展示层中的值语义和相关操作。
 struct WindowLayoutShortcutCaptureField: NSViewRepresentable {
     let shortcut: HotKeyBinding?
     let placeholder: String
     let onShortcutChange: (HotKeyBinding?) -> Bool
 
+    /// 构造并返回 `makeNSView` 所描述的 SwiftUI 展示层对象。
     func makeNSView(context: Context) -> WindowLayoutShortcutCaptureTextField {
         let field = WindowLayoutShortcutCaptureTextField()
         updateNSView(field, context: context)
         return field
     }
 
+    /// 更新快捷键捕获视图回调，并在请求令牌变化时重新获取焦点。
     func updateNSView(_ nsView: WindowLayoutShortcutCaptureTextField, context: Context) {
         nsView.configure(
             shortcut: shortcut,
@@ -287,6 +301,7 @@ struct WindowLayoutShortcutCaptureField: NSViewRepresentable {
     }
 }
 
+/// 管理 `WindowLayoutShortcutCaptureTextField` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 final class WindowLayoutShortcutCaptureTextField: NSTextField {
     private var currentShortcut: HotKeyBinding?
     private var onShortcutChange: (HotKeyBinding?) -> Bool = { _ in true }
@@ -297,6 +312,7 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
         NSSize(width: 150, height: 30)
     }
 
+    /// 创建 `WindowLayoutShortcutCaptureTextField`，保存传入依赖并建立初始状态。
     init() {
         super.init(frame: .zero)
         isBordered = false
@@ -313,11 +329,13 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
         setContentHuggingPriority(.defaultLow, for: .horizontal)
     }
 
+    /// 创建 `WindowLayoutShortcutCaptureTextField`，保存传入依赖并建立初始状态。
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// 更新快捷键捕获框的当前值、占位文本和变更回调。
     func configure(
         shortcut: HotKeyBinding?,
         placeholder: String,
@@ -332,14 +350,17 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
         }
     }
 
+    /// 响应 `mouseDown` 对应的系统或界面回调，并同步当前交互状态。
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
     }
 
+    /// 响应 `keyDown` 对应的系统或界面回调，并同步当前交互状态。
     override func keyDown(with event: NSEvent) {
         _ = capture(event)
     }
 
+    /// 拦截快捷键组合并交给捕获回调；无有效修饰键时保留系统处理。
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self else {
             return super.performKeyEquivalent(with: event)
@@ -347,6 +368,7 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
         return capture(event)
     }
 
+    /// 构建并返回 `capture` 对应的 SwiftUI 界面内容或展示状态。
     private func capture(_ event: NSEvent) -> Bool {
         if event.keyCode == 53, Self.modifierNames(from: event).isEmpty {
             if onShortcutChange(nil) {
@@ -370,6 +392,7 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
         return true
     }
 
+    /// 构建并返回 `shortcut` 对应的 SwiftUI 界面内容或展示状态。
     private static func shortcut(from event: NSEvent) -> HotKeyBinding? {
         let modifiers = modifierNames(from: event)
         guard !modifiers.isEmpty, let key = keyName(from: event) else {
@@ -378,6 +401,7 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
         return HotKeyBinding(key: key, modifiers: modifiers)
     }
 
+    /// 构建并返回 `modifierNames` 对应的 SwiftUI 界面内容或展示状态。
     private static func modifierNames(from event: NSEvent) -> [String] {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         var modifiers: [String] = []
@@ -396,6 +420,7 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
         return modifiers
     }
 
+    /// 构建并返回 `keyName` 对应的 SwiftUI 界面内容或展示状态。
     private static func keyName(from event: NSEvent) -> String? {
         if let keyName = keyNamesByCode[event.keyCode] {
             return keyName
@@ -439,15 +464,19 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
     ]
 }
 
+/// 管理 `VerticallyCenteredTextFieldCell` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 final class VerticallyCenteredTextFieldCell: NSTextFieldCell {
+    /// 构建并返回 `drawingRect` 对应的 SwiftUI 界面内容或展示状态。
     override func drawingRect(forBounds rect: NSRect) -> NSRect {
         centeredRect(super.drawingRect(forBounds: rect), in: rect)
     }
 
+    /// 构建并返回 `titleRect` 对应的 SwiftUI 界面内容或展示状态。
     override func titleRect(forBounds rect: NSRect) -> NSRect {
         centeredRect(super.titleRect(forBounds: rect), in: rect)
     }
 
+    /// 构建并返回 `centeredRect` 对应的 SwiftUI 界面内容或展示状态。
     private func centeredRect(_ textRect: NSRect, in bounds: NSRect) -> NSRect {
         var rect = textRect
         rect.size.height = min(bounds.height, ceil(cellSize(forBounds: bounds).height))
@@ -456,6 +485,7 @@ final class VerticallyCenteredTextFieldCell: NSTextFieldCell {
     }
 }
 
+/// 封装 `WindowLayoutModePreviewIcon` 在 SwiftUI 展示层中的值语义和相关操作。
 struct WindowLayoutModePreviewIcon: View {
     let mode: WindowLayoutMode
 
@@ -464,6 +494,7 @@ struct WindowLayoutModePreviewIcon: View {
     }
 }
 
+/// 封装 `WindowLayoutPreviewIcon` 在 SwiftUI 展示层中的值语义和相关操作。
 struct WindowLayoutPreviewIcon: View {
     let segments: [WindowLayoutPreviewSegment]
 

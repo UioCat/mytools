@@ -1,5 +1,9 @@
+// `ClipboardListView` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import SwiftUI
 
+/// 封装 `ClipboardListView` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct ClipboardListView: View {
     public let items: [ClipboardItem]
     public let selectedItemID: ClipboardItem.ID?
@@ -8,6 +12,7 @@ public struct ClipboardListView: View {
     public let onFavoriteToggle: (ClipboardItem) -> Void
     public let onDelete: (ClipboardItem) -> Void
 
+    /// 创建 `ClipboardListView`，保存传入依赖并建立初始状态。
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
         self.items = items
         self.selectedItemID = nil
@@ -17,6 +22,7 @@ public struct ClipboardListView: View {
         self.onDelete = { _ in }
     }
 
+    /// 创建 `ClipboardListView`，保存传入依赖并建立初始状态。
     public init(
         items: [ClipboardItem],
         selectedItemID: ClipboardItem.ID?,
@@ -83,10 +89,9 @@ public struct ClipboardListView: View {
             }
             .background(Color.clear)
             .task(id: selectedItemID) { @MainActor in
-                // Keyboard selection changes during the same update that can cause a
-                // LazyVStack to create a newly visible row. Wait for that layout pass
-                // before asking the proxy to reveal the row. task(id:) also cancels a
-                // stale request when the user presses an arrow key repeatedly.
+                // 键盘选择变化与 LazyVStack 创建新可见行可能发生在同一轮更新中。
+                // 先等待布局完成再要求 proxy 滚动；用户连续按方向键时，
+                // task(id:) 还会自动取消上一条过期滚动请求。
                 await Task.yield()
 
                 guard !Task.isCancelled else {
@@ -123,6 +128,7 @@ public struct ClipboardListView: View {
     }
 }
 
+/// 描述 `ClipboardListScrollAnchor` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardListScrollAnchor: Equatable {
     case top
     case center
@@ -140,7 +146,9 @@ enum ClipboardListScrollAnchor: Equatable {
     }
 }
 
+/// 描述 `ClipboardListScrollAnchorPolicy` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardListScrollAnchorPolicy {
+    /// 构建并返回 `anchor` 对应的 SwiftUI 界面内容或展示状态。
     static func anchor(for selectedItemID: ClipboardItem.ID, in items: [ClipboardItem]) -> ClipboardListScrollAnchor {
         guard let selectedIndex = items.firstIndex(where: { $0.id == selectedItemID }) else {
             return .center

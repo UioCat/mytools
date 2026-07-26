@@ -1,6 +1,10 @@
+// `SuperPanelLayout` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import Foundation
 
+/// 描述 `SuperPanelLayout` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum SuperPanelLayout {
     public static let scale: CGFloat = 0.5
 
@@ -39,6 +43,7 @@ public enum SuperPanelLayout {
     private static let windowLayoutHeaderFontSize: CGFloat = 12
     private static let maximumPanelHeight: CGFloat = 620
 
+    /// 构建并返回 `panelSize` 对应的 SwiftUI 界面内容或展示状态。
     public static func panelSize(for content: SuperPanelContent) -> CGSize {
         if content.kind == .text {
             return translationPanelSize(for: content)
@@ -80,6 +85,7 @@ public enum SuperPanelLayout {
         )
     }
 
+    /// 构建并返回 `translationPanelSize` 对应的 SwiftUI 界面内容或展示状态。
     private static func translationPanelSize(for content: SuperPanelContent) -> CGSize {
         let headerHeight = panelHeaderHeight
         let dividerHeight: CGFloat = 1
@@ -100,6 +106,7 @@ public enum SuperPanelLayout {
         )
     }
 
+    /// 构建并返回 `textTransitPanelSize` 对应的 SwiftUI 界面内容或展示状态。
     private static func textTransitPanelSize(for content: SuperPanelContent) -> CGSize {
         let dividerHeight: CGFloat = 1
         let previewHeight = textPreviewHeight(
@@ -125,6 +132,7 @@ public enum SuperPanelLayout {
         )
     }
 
+    /// 构建并返回 `textPreviewHeight` 对应的 SwiftUI 界面内容或展示状态。
     private static func textPreviewHeight(
         for content: SuperPanelContent,
         panelWidth: CGFloat
@@ -146,6 +154,7 @@ public enum SuperPanelLayout {
             + textPreviewSectionVerticalPadding * 2
     }
 
+    /// 构建并返回 `textPreviewRowHeight` 对应的 SwiftUI 界面内容或展示状态。
     private static func textPreviewRowHeight(
         for row: SuperPanelPreviewRow,
         contentKind: SuperPanelKind,
@@ -178,6 +187,7 @@ public enum SuperPanelLayout {
         return contentHeight + previewRowVerticalPadding * 2
     }
 
+    /// 按预览行的实际换行数估算展开面板高度，紧凑面板固定按单行计算。
     private static func estimatedPreviewRowsHeight(
         for content: SuperPanelContent,
         isExpandedPanel: Bool
@@ -202,6 +212,7 @@ public enum SuperPanelLayout {
         }
     }
 
+    /// 使用与预览文本一致的字体和可用宽度估算文本行数。
     private static func previewLineCount(for value: String) -> Int {
         let font = NSFont.systemFont(ofSize: textPreviewFontSize, weight: .medium)
         let valueWidth: CGFloat = 320
@@ -217,6 +228,7 @@ public enum SuperPanelLayout {
         return max(1, Int(ceil(bounds.height / lineHeight)))
     }
 
+    /// 构建并返回 `expandedPanelHeight` 对应的 SwiftUI 界面内容或展示状态。
     private static func expandedPanelHeight(
         previewRowsHeight: CGFloat,
         primaryActionCount: Int,
@@ -249,6 +261,7 @@ public enum SuperPanelLayout {
         ) + headerTopPadding + headerBottomPadding
     }
 
+    /// 构建并返回 `windowLayoutSectionHeight` 对应的 SwiftUI 界面内容或展示状态。
     private static func windowLayoutSectionHeight(rowCount: Int) -> CGFloat {
         guard rowCount > 0 else {
             return 0
@@ -264,6 +277,7 @@ public enum SuperPanelLayout {
             + gridHeight
     }
 
+    /// 构建并返回 `estimatedExpandedTextHeight` 对应的 SwiftUI 界面内容或展示状态。
     private static func estimatedExpandedTextHeight(for content: SuperPanelContent) -> CGFloat {
         guard content.kind == .text || content.kind == .textTransit else {
             return 0

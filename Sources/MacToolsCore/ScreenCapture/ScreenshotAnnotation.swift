@@ -1,5 +1,9 @@
+// `ScreenshotAnnotation` 的截图录屏核心领域实现。
+// 负责选择、渲染和会话策略，不直接管理 ScreenCaptureKit 流。
+
 import CoreGraphics
 
+/// 描述 `ScreenshotAnnotationTool` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenshotAnnotationTool: String, CaseIterable, Codable, Equatable, Hashable, Sendable {
     case line
     case freehand
@@ -8,12 +12,14 @@ public enum ScreenshotAnnotationTool: String, CaseIterable, Codable, Equatable, 
     case mosaic
 }
 
+/// 封装 `ScreenshotAnnotationColor` 在截图录屏核心领域中的值语义和相关操作。
 public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable, Sendable {
     public let red: CGFloat
     public let green: CGFloat
     public let blue: CGFloat
     public let alpha: CGFloat
 
+    /// 创建 `ScreenshotAnnotationColor`，保存传入依赖并建立初始状态。
     public init(red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat = 1) {
         self.red = red
         self.green = green
@@ -44,6 +50,7 @@ public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable, Sendable 
         } ?? .blue
     }
 
+    /// 计算并返回 `squaredDistance` 对应的截图录屏核心领域数据或状态结果。
     private func squaredDistance(to other: ScreenshotAnnotationColor) -> CGFloat {
         let redDelta = red - other.red
         let greenDelta = green - other.green
@@ -56,6 +63,7 @@ public struct ScreenshotAnnotationColor: Codable, Equatable, Hashable, Sendable 
     }
 }
 
+/// 描述 `ScreenshotAnnotationLineWidth` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenshotAnnotationLineWidth: String, CaseIterable, Codable, Equatable, Sendable {
     case thin
     case medium
@@ -73,20 +81,25 @@ public enum ScreenshotAnnotationLineWidth: String, CaseIterable, Codable, Equata
     }
 }
 
+/// 描述 `ScreenshotMosaicOutlinePolicy` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenshotMosaicOutlinePolicy {
+    /// 判断 `shouldShowOutline` 所描述的截图录屏核心领域条件是否成立。
     public static func shouldShowOutline(isPreview: Bool) -> Bool {
         isPreview
     }
 }
 
+/// 描述 `ScreenshotAnnotationArrowStyle` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenshotAnnotationArrowStyle {
     private static let headLengthToLineWidthRatio: CGFloat = 10.0 / 3.0
 
+    /// 计算并返回 `headLength` 对应的截图录屏核心领域数据或状态结果。
     public static func headLength(forLineWidth lineWidth: CGFloat) -> CGFloat {
         lineWidth * headLengthToLineWidthRatio
     }
 }
 
+/// 描述 `ScreenshotAnnotation` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenshotAnnotation: Equatable, Sendable {
     case line(
         start: CGPoint,
@@ -113,12 +126,15 @@ public enum ScreenshotAnnotation: Equatable, Sendable {
     case mosaic(CGRect)
 }
 
+/// 封装 `ScreenshotFreehandStroke` 在截图录屏核心领域中的值语义和相关操作。
 public struct ScreenshotFreehandStroke: Equatable, Sendable {
     public private(set) var points: [CGPoint] = []
     private var pathLength: CGFloat = 0
 
+    /// 创建 `ScreenshotFreehandStroke`，保存传入依赖并建立初始状态。
     public init() {}
 
+    /// 汇总或整理 `append` 涉及的截图录屏核心领域数据，并维护容量与保留规则。
     public mutating func append(_ point: CGPoint, minimumSampleDistance: CGFloat = 0.75) {
         guard let lastPoint = points.last else {
             points = [point]
@@ -133,6 +149,7 @@ public struct ScreenshotFreehandStroke: Equatable, Sendable {
         pathLength += segmentLength
     }
 
+    /// 计算并返回 `annotation` 对应的截图录屏核心领域数据或状态结果。
     public func annotation(
         color: ScreenshotAnnotationColor,
         lineWidth: CGFloat,
@@ -145,15 +162,19 @@ public struct ScreenshotFreehandStroke: Equatable, Sendable {
     }
 }
 
+/// 封装 `ScreenshotAnnotationStore` 在截图录屏核心领域中的值语义和相关操作。
 public struct ScreenshotAnnotationStore: Equatable, Sendable {
     public private(set) var annotations: [ScreenshotAnnotation] = []
 
+    /// 创建 `ScreenshotAnnotationStore`，保存传入依赖并建立初始状态。
     public init() {}
 
+    /// 汇总或整理 `append` 涉及的截图录屏核心领域数据，并维护容量与保留规则。
     public mutating func append(_ annotation: ScreenshotAnnotation) {
         annotations.append(annotation)
     }
 
+    /// 计算并返回 `undo` 对应的截图录屏核心领域数据或状态结果。
     @discardableResult
     public mutating func undo() -> ScreenshotAnnotation? {
         annotations.popLast()

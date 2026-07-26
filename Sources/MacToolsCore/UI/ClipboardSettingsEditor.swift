@@ -1,6 +1,10 @@
+// `ClipboardSettingsEditor` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 封装 `ClipboardSettingsEditor` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardSettingsEditor: View {
     let currentSettings: ClipboardSettings
     let defaultCacheDirectory: URL
@@ -70,6 +74,7 @@ struct ClipboardSettingsEditor: View {
         )
     }
 }
+/// 封装 `SuperRightClickSettingsEditor` 在 SwiftUI 展示层中的值语义和相关操作。
 struct SuperRightClickSettingsEditor: View {
     let currentSettings: SuperRightClickSettings
     @Binding var longPressMilliseconds: Double
@@ -150,6 +155,7 @@ struct SuperRightClickSettingsEditor: View {
         }
     }
 
+    /// 记录滑块是否仍在拖动，并在拖动结束时统一持久化归一化后的长按阈值。
     private func handleSliderEditingChanged(_ isEditing: Bool) {
         isEditingLongPressMilliseconds = isEditing
         if !isEditing {
@@ -157,6 +163,7 @@ struct SuperRightClickSettingsEditor: View {
         }
     }
 
+    /// 将滑块值吸附到支持的毫秒档位后保存，避免编辑过程中重复写入设置。
     private func commitSliderValue() {
         let milliseconds = normalizedMilliseconds
         if Int(longPressMilliseconds) != milliseconds {

@@ -1,9 +1,14 @@
+// `MacToolsStorePaths` 的本地存储领域实现。
+// 负责数据库、载荷文件和迁移事务，不管理运行时面板状态。
+
 import Foundation
 
+/// 封装 `MacToolsStorePaths` 在本地存储领域中的值语义和相关操作。
 public struct MacToolsStorePaths: Equatable {
     public let supportDirectory: URL
     private let storeDirectoryOverride: URL?
 
+    /// 创建 `MacToolsStorePaths`，保存传入依赖并建立初始状态。
     public init(supportDirectory: URL, storeDirectoryOverride: URL? = nil) {
         self.supportDirectory = supportDirectory
         self.storeDirectoryOverride = storeDirectoryOverride
@@ -34,6 +39,7 @@ public struct MacToolsStorePaths: Equatable {
         credentialsDirectory.appendingPathComponent("migration-v1.complete")
     }
 
+    /// 运行 `runtimePayloadsDirectory` 对应的本地存储领域流程，直到完成或进入下一调度点。
     public func runtimePayloadsDirectory(
         persistentStoreAvailable: Bool,
         temporaryDirectory: URL = FileManager.default.temporaryDirectory

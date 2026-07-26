@@ -1,5 +1,9 @@
+// `TranslationInputEditorLayout` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import CoreGraphics
 
+/// 封装 `TranslationInputEditorLayout` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct TranslationInputEditorLayout: Equatable, Sendable {
     public let placeholderLeadingPadding: CGFloat
     public let placeholderTopPadding: CGFloat
@@ -7,6 +11,7 @@ public struct TranslationInputEditorLayout: Equatable, Sendable {
     public let textContainerHeightInset: CGFloat
     public let lineFragmentPadding: CGFloat
 
+    /// 创建 `TranslationInputEditorLayout`，保存传入依赖并建立初始状态。
     public init(
         placeholderLeadingPadding: CGFloat,
         placeholderTopPadding: CGFloat,
@@ -38,10 +43,12 @@ public struct TranslationInputEditorLayout: Equatable, Sendable {
     }
 }
 
+/// 封装 `TranslationWorkspaceLayout` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct TranslationWorkspaceLayout: Equatable, Sendable {
     public let inputEditorMinimumHeight: CGFloat
     public let outputEditorMinimumHeight: CGFloat
 
+    /// 创建 `TranslationWorkspaceLayout`，保存传入依赖并建立初始状态。
     public init(
         inputEditorMinimumHeight: CGFloat,
         outputEditorMinimumHeight: CGFloat

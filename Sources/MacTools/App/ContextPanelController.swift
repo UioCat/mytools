@@ -1,12 +1,17 @@
+// `ContextPanelController` 的应用运行时与 AppKit 集成实现。
+// 负责生命周期、面板和 macOS 能力接线，不承载可复用的持久化规则。
+
 import AppKit
 import MacToolsCore
 import SwiftUI
 
+/// 描述 `ContextPanelActionResult` 在应用运行时与 AppKit 集成中可取的状态、选项或错误。
 private enum ContextPanelActionResult {
     case close
     case keepVisible
 }
 
+/// 管理 `ContextPanelController` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class ContextPanelController {
     private let fileActionService: FileActionService
@@ -19,6 +24,7 @@ final class ContextPanelController {
     private var localDismissMonitor: Any?
     private var globalDismissMonitor: Any?
 
+    /// 创建 `ContextPanelController`，保存传入依赖并建立初始状态。
     init(
         fileActionService: FileActionService,
         pasteboard: WritablePasteboard,
@@ -35,12 +41,14 @@ final class ContextPanelController {
         self.logger = logger
     }
 
+    /// 释放当前实例持有的观察者、任务或系统资源。
     deinit {
         MainActor.assumeIsolated {
             stopOutsideClickDismissMonitors()
         }
     }
 
+    /// 展示 `show` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func show(
         item: ClipboardItem,
         presentation: SuperPanelFileSystemPresentation = .selectedItem
@@ -56,6 +64,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 展示 `showWindowLayoutOnly` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func showWindowLayoutOnly() {
         let layoutButtons = windowLayoutButtons()
         let content = SuperPanelContent.windowLayoutOnly(
@@ -70,6 +79,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 展示文本操作面板；翻译从加载态更新为结果态时可保持原面板位置。
     func showText(
         originalText: String,
         translation: Result<TranslationResponse, TranslationError>?,
@@ -97,6 +107,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 重建 SwiftUI 内容并复用透明 NSPanel，统一处理尺寸、定位和外部点击关闭。
     private func show(
         content: SuperPanelContent,
         reposition: Bool = true,
@@ -139,6 +150,7 @@ final class ContextPanelController {
         startOutsideClickDismissMonitors()
     }
 
+    /// 内容刷新后若已找不到正在朗读的请求，则停止旧语音避免状态悬空。
     private func reconcileSpeechPlayback(with content: SuperPanelContent) {
         guard let activeRequest = speechController.state.activeRequest,
               activeRequest.source == .superRightClick else {
@@ -153,6 +165,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 构造并返回 `makePanel` 所描述的应用运行时与 AppKit 集成对象。
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 260, height: 210),
@@ -168,10 +181,12 @@ final class ContextPanelController {
         return panel
     }
 
+    /// 计算并返回 `panelSize` 对应的应用运行时与 AppKit 集成数据或状态结果。
     private func panelSize(for content: SuperPanelContent) -> NSSize {
         SuperPanelLayout.panelSize(for: content)
     }
 
+    /// 优先在鼠标右下方放置面板，并将最终位置约束在当前屏幕可见区域内。
     private func panelOrigin(for size: NSSize) -> NSPoint {
         let mouseLocation = NSEvent.mouseLocation
         guard let screenFrame = NSScreen.screens
@@ -200,11 +215,13 @@ final class ContextPanelController {
         return NSPoint(x: x, y: y)
     }
 
+    /// 取消或关闭 `hide` 对应的应用运行时与 AppKit 集成流程，并清理临时状态。
     private func hide() {
         panel?.orderOut(nil)
         stopOutsideClickDismissMonitors()
     }
 
+    /// 展示 `showTextTransit` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func showTextTransit(_ text: String) {
         let content = SuperPanelContent.textTransit(text: text)
         show(content: content, reposition: false) { [weak self] actionID in
@@ -216,6 +233,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 同时监听应用内外鼠标按下事件，确保非激活面板也能在外部点击时关闭。
     private func startOutsideClickDismissMonitors() {
         if localDismissMonitor == nil {
             localDismissMonitor = NSEvent.addLocalMonitorForEvents(
@@ -235,6 +253,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 结束 `stopOutsideClickDismissMonitors` 对应的应用运行时与 AppKit 集成流程，并释放或重置相关资源。
     private func stopOutsideClickDismissMonitors() {
         if let localDismissMonitor {
             NSEvent.removeMonitor(localDismissMonitor)
@@ -247,6 +266,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 取消或关闭 `hideIfClickIsOutsidePanel` 对应的应用运行时与 AppKit 集成流程，并清理临时状态。
     private func hideIfClickIsOutsidePanel(eventScreenLocation: NSPoint) {
         guard let panel, panel.isVisible else {
             return
@@ -260,6 +280,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 计算并返回 `screenLocation` 对应的应用运行时与 AppKit 集成数据或状态结果。
     private static func screenLocation(for event: NSEvent) -> NSPoint {
         guard let window = event.window else {
             return NSEvent.mouseLocation
@@ -268,6 +289,7 @@ final class ContextPanelController {
         return window.convertPoint(toScreen: event.locationInWindow)
     }
 
+    /// 执行 `performTextAction` 指定的应用运行时与 AppKit 集成动作，并返回执行结果。
     private func performTextAction(
         _ actionID: SuperPanelActionID,
         originalText: String,
@@ -296,6 +318,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 执行 `performFileAction` 指定的应用运行时与 AppKit 集成动作，并返回执行结果。
     private func performFileAction(
         _ actionID: SuperPanelActionID,
         item: ClipboardItem,
@@ -321,6 +344,7 @@ final class ContextPanelController {
         return .close
     }
 
+    /// 执行 `performWindowLayoutAction` 指定的应用运行时与 AppKit 集成动作，并返回执行结果。
     private func performWindowLayoutAction(
         _ id: String,
         buttons: [WindowLayoutButton]
@@ -339,6 +363,7 @@ final class ContextPanelController {
         return .close
     }
 
+    /// 执行 `copyPath` 对应的应用运行时与 AppKit 集成输入输出操作。
     private func copyPath(_ item: ClipboardItem) {
         do {
             try fileActionService.copyPath(item: item, pasteboard: pasteboard)
@@ -347,6 +372,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 展示 `openTerminal` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func openTerminal(_ item: ClipboardItem) {
         do {
             guard let path = item.originalPath else {
@@ -358,6 +384,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 构造并返回 `createNewFile` 所描述的应用运行时与 AppKit 集成对象。
     private func createNewFile(_ item: ClipboardItem) {
         do {
             let fileURL = try fileActionService.createNewFile(in: item)
@@ -368,6 +395,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 展示 `openClaudeCode` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func openClaudeCode(_ item: ClipboardItem, skipConfirmation: Bool) {
         do {
             guard let path = item.originalPath else {
@@ -380,6 +408,7 @@ final class ContextPanelController {
         }
     }
 
+    /// 展示 `reveal` 对应的应用运行时与 AppKit 集成界面或系统位置。
     private func reveal(_ item: ClipboardItem) {
         do {
             try fileActionService.revealInFinder(item)
@@ -388,12 +417,14 @@ final class ContextPanelController {
         }
     }
 
+    /// 转换 `normalizedText` 接收的应用运行时与 AppKit 集成数据，并返回规范化结果。
     private static func normalizedText(_ text: String) -> String {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedText.isEmpty ? text : trimmedText
     }
 }
 
+/// 封装 `RuntimeContextActionView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 private struct RuntimeContextActionView: View {
     let content: SuperPanelContent
     @ObservedObject var speechController: TranslationSpeechController

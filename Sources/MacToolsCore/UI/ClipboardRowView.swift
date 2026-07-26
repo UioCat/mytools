@@ -1,7 +1,11 @@
+// `ClipboardRowView` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import ImageIO
 import SwiftUI
 
+/// 封装 `ClipboardRowView` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct ClipboardRowView: View {
     public let item: ClipboardItem
     public let index: Int
@@ -11,6 +15,7 @@ public struct ClipboardRowView: View {
     @State private var isFavoriteButtonHovered = false
     @State private var loadedImagePreview: ClipboardLoadedImagePreview?
 
+    /// 创建 `ClipboardRowView`，保存传入依赖并建立初始状态。
     public init(item: ClipboardItem) {
         self.item = item
         self.index = 1
@@ -19,6 +24,7 @@ public struct ClipboardRowView: View {
         self.onFavoriteToggle = {}
     }
 
+    /// 创建 `ClipboardRowView`，保存传入依赖并建立初始状态。
     public init(
         item: ClipboardItem,
         index: Int = 1,
@@ -60,6 +66,7 @@ public struct ClipboardRowView: View {
         }
     }
 
+    /// 构造并返回 `standardRowContent` 所描述的 SwiftUI 展示层对象。
     private func standardRowContent(metadata: ClipboardRowMetadataPresentation) -> some View {
         HStack(spacing: 14) {
             leadingVisual
@@ -96,6 +103,7 @@ public struct ClipboardRowView: View {
         .padding(.vertical, 10)
     }
 
+    /// 构建并返回 `imageRowContent` 对应的 SwiftUI 界面内容或展示状态。
     private func imageRowContent(metadata: ClipboardRowMetadataPresentation) -> some View {
         VStack(spacing: 10) {
             Group {
@@ -217,6 +225,7 @@ public struct ClipboardRowView: View {
         return loadedImagePreview
     }
 
+    /// 异步读取并返回 `loadImagePreview` 对应的 SwiftUI 展示层数据。
     private func loadImagePreview() async {
         guard let imagePreviewSource else {
             loadedImagePreview = nil
@@ -267,15 +276,18 @@ public struct ClipboardRowView: View {
 
 }
 
+/// 描述 `ClipboardRowTextPresentation` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardRowTextPresentation {
     static let fontSize: CGFloat = 12
     static let lineLimit = 3
 }
 
+/// 描述 `ClipboardRowContentStyle` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum ClipboardRowContentStyle: Equatable {
     case standard
     case expandedImagePreview
 
+    /// 构建并返回 `style` 对应的 SwiftUI 界面内容或展示状态。
     static func style(for kind: ClipboardContentKind) -> ClipboardRowContentStyle {
         switch kind {
         case .imageFile, .imageData:
@@ -286,10 +298,12 @@ enum ClipboardRowContentStyle: Equatable {
     }
 }
 
+/// 封装 `ClipboardRowMetadataPresentation` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardRowMetadataPresentation: Equatable {
     let pasteTime: String
     let contentSummary: String
 
+    /// 创建 `ClipboardRowMetadataPresentation`，保存传入依赖并建立初始状态。
     init(
         item: ClipboardItem,
         imageMetric: String? = nil,
@@ -315,6 +329,7 @@ struct ClipboardRowMetadataPresentation: Equatable {
         }
     }
 
+    /// 构建并返回 `relativeTime` 对应的 SwiftUI 界面内容或展示状态。
     private static func relativeTime(from createdAt: Date, to now: Date) -> String {
         let elapsed = max(0, now.timeIntervalSince(createdAt))
 
@@ -334,15 +349,18 @@ struct ClipboardRowMetadataPresentation: Equatable {
     }
 }
 
+/// 封装 `ClipboardImagePreviewSource` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
     let path: String
     let cacheKey: String
 
+    /// 创建 `ClipboardImagePreviewSource`，保存传入依赖并建立初始状态。
     init(path: String, cacheKey: String? = nil) {
         self.path = path
         self.cacheKey = cacheKey ?? path
     }
 
+    /// 按缩略图、缓存文件、原始路径的顺序选择首个可用图片来源。
     static func source(for item: ClipboardItem) -> ClipboardImagePreviewSource? {
         guard item.kind == .imageData || item.kind == .imageFile else {
             return nil
@@ -357,7 +375,9 @@ struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
         return ClipboardImagePreviewSource(path: path, cacheKey: cacheKey(forPath: path, contentHash: item.contentHash))
     }
 
+    /// 使用路径、文件大小、修改时间和内容哈希生成预览缓存键。
     static func cacheKey(forPath path: String, contentHash: String? = nil) -> String {
+        // 文件属性查询发生在调用线程；路径来自 File Provider 时可能触发同步 I/O。
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
             return [path, normalizedContentHash(contentHash)]
                 .compactMap(\.self)
@@ -376,6 +396,7 @@ struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
         .joined(separator: "|")
     }
 
+    /// 转换 `normalizedContentHash` 接收的 SwiftUI 展示层数据，并返回规范化结果。
     private static func normalizedContentHash(_ contentHash: String?) -> String? {
         guard let hash = contentHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               !hash.isEmpty else {
@@ -386,6 +407,7 @@ struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
     }
 }
 
+/// 封装 `ClipboardLoadedImagePreview` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardLoadedImagePreview: @unchecked Sendable {
     let source: ClipboardImagePreviewSource
     let cgImage: CGImage
@@ -401,7 +423,9 @@ struct ClipboardLoadedImagePreview: @unchecked Sendable {
     }
 }
 
+/// 管理 `ClipboardImagePreviewCache` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 final class ClipboardImagePreviewCache: @unchecked Sendable {
+    /// 封装 `Configuration` 在 SwiftUI 展示层中的值语义和相关操作。
     struct Configuration: Equatable {
         let countLimit: Int
         let totalCostLimit: Int
@@ -416,11 +440,13 @@ final class ClipboardImagePreviewCache: @unchecked Sendable {
 
     private let cache = NSCache<NSString, ClipboardLoadedImagePreviewBox>()
 
+    /// 创建 `ClipboardImagePreviewCache`，保存传入依赖并建立初始状态。
     init(configuration: Configuration = .standard) {
         cache.countLimit = configuration.countLimit
         cache.totalCostLimit = configuration.totalCostLimit
     }
 
+    /// 返回缓存缩略图；未命中时同步解码并按像素内存成本写入 NSCache。
     func preview(for source: ClipboardImagePreviewSource) -> ClipboardLoadedImagePreview? {
         let key = NSString(string: source.cacheKey)
         if let cached = cache.object(forKey: key)?.preview {
@@ -439,6 +465,7 @@ final class ClipboardImagePreviewCache: @unchecked Sendable {
         return preview
     }
 
+    /// 使用 ImageIO 创建最长边不超过 720 像素的方向校正缩略图。
     private static func loadPreview(for source: ClipboardImagePreviewSource) -> ClipboardLoadedImagePreview? {
         let url = URL(fileURLWithPath: source.path)
         let sourceOptions = [
@@ -469,14 +496,17 @@ final class ClipboardImagePreviewCache: @unchecked Sendable {
     }
 }
 
+/// 管理 `ClipboardLoadedImagePreviewBox` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。
 private final class ClipboardLoadedImagePreviewBox {
     let preview: ClipboardLoadedImagePreview
 
+    /// 创建 `ClipboardLoadedImagePreviewBox`，保存传入依赖并建立初始状态。
     init(_ preview: ClipboardLoadedImagePreview) {
         self.preview = preview
     }
 }
 
+/// 封装 `ClipboardFavoriteButtonPresentation` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardFavoriteButtonPresentation: Equatable {
     let iconName: String
     let helpText: String
@@ -487,6 +517,7 @@ struct ClipboardFavoriteButtonPresentation: Equatable {
     let scale: CGFloat
     let hitSize: CGSize
 
+    /// 创建 `ClipboardFavoriteButtonPresentation`，保存传入依赖并建立初始状态。
     init(isFavorite: Bool, isHovered: Bool) {
         self.iconName = isFavorite ? "star.fill" : "star"
         self.helpText = isFavorite ? "取消收藏" : "加入收藏"

@@ -1,6 +1,10 @@
+// `PayloadStore` 的本地存储领域实现。
+// 负责数据库、载荷文件和迁移事务，不管理运行时面板状态。
+
 import Foundation
 import ImageIO
 
+/// 封装 `PayloadObjectDescriptor` 在本地存储领域中的值语义和相关操作。
 public struct PayloadObjectDescriptor: Equatable, Sendable {
     public let id: String
     public let contentHash: String
@@ -9,6 +13,7 @@ public struct PayloadObjectDescriptor: Equatable, Sendable {
     public let byteCount: Int
     public let wasCreated: Bool
 
+    /// 创建 `PayloadObjectDescriptor`，保存传入依赖并建立初始状态。
     public init(
         id: String,
         contentHash: String,
@@ -26,6 +31,7 @@ public struct PayloadObjectDescriptor: Equatable, Sendable {
     }
 }
 
+/// 描述 `PayloadStoreError` 在本地存储领域中可取的状态、选项或错误。
 public enum PayloadStoreError: Error, Equatable {
     case emptyPayload
     case invalidPNG
@@ -33,6 +39,7 @@ public enum PayloadStoreError: Error, Equatable {
     case missingObject
 }
 
+/// 以 SHA-256 内容寻址保存载荷文件，并通过递归锁串行化写入、删除和垃圾回收。
 public final class PayloadStore: @unchecked Sendable {
     public static let formatVersion = 1
 
@@ -40,11 +47,13 @@ public final class PayloadStore: @unchecked Sendable {
     private let fileManager: FileManager
     private let accessLock = NSRecursiveLock()
 
+    /// 创建 `PayloadStore`，保存传入依赖并建立初始状态。
     public init(rootDirectory: URL, fileManager: FileManager = .default) {
         self.rootDirectory = rootDirectory
         self.fileManager = fileManager
     }
 
+    /// 校验 PNG 完整性后按内容哈希去重保存，并返回对象描述。
     public func storePNG(_ data: Data) throws -> PayloadObjectDescriptor {
         try withExclusiveAccess {
             guard !data.isEmpty else {
@@ -58,18 +67,21 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
+    /// 保存 `store` 接收的本地存储领域数据，并保持既有持久化约束。
     public func store(_ data: Data, format: String) throws -> PayloadObjectDescriptor {
         try withExclusiveAccess {
             try storeUnlocked(data, format: format)
         }
     }
 
+    /// 在载荷存储的独占访问范围内执行传入操作，避免并发文件修改。
     public func withExclusiveAccess<Value>(_ operation: () throws -> Value) rethrows -> Value {
         accessLock.lock()
         defer { accessLock.unlock() }
         return try operation()
     }
 
+    /// 判断 `contains` 所描述的本地存储领域条件是否成立。
     public func contains(relativePath: String) -> Bool {
         withExclusiveAccess {
             guard let fileURL = fileURL(for: relativePath) else { return false }
@@ -77,6 +89,7 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `objectRelativePaths` 对应的本地存储领域数据或状态结果。
     public func objectRelativePaths() throws -> [String] {
         try withExclusiveAccess {
             guard fileManager.fileExists(atPath: objectsDirectory.path) else { return [] }
@@ -97,6 +110,7 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
+    /// 在已持有独占锁时写入内容寻址对象；相同哈希存在时校验并复用。
     private func storeUnlocked(_ data: Data, format: String) throws -> PayloadObjectDescriptor {
         guard !data.isEmpty else {
             throw PayloadStoreError.emptyPayload
@@ -108,6 +122,7 @@ public final class PayloadStore: @unchecked Sendable {
         let relativePath = Self.relativeObjectPath(contentHash: contentHash, format: normalizedFormat)
         let destinationURL = rootDirectory.appendingPathComponent(relativePath)
 
+        // 同一哈希路径必须先回读校验；损坏对象会被当前已验证数据原子修复。
         if fileManager.fileExists(atPath: destinationURL.path) {
             let existing = try Data(contentsOf: destinationURL, options: [.mappedIfSafe])
             if Self.isValidStoredObject(existing, contentHash: contentHash, format: normalizedFormat) {
@@ -132,6 +147,7 @@ public final class PayloadStore: @unchecked Sendable {
             )
         }
 
+        // 新对象先写入 staging 并收紧权限，再移动到最终哈希路径，避免暴露半写文件。
         let stagingURL = stagingDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(normalizedFormat)
@@ -161,6 +177,7 @@ public final class PayloadStore: @unchecked Sendable {
         )
     }
 
+    /// 计算并返回 `fileURL` 对应的本地存储领域数据或状态结果。
     public func fileURL(for relativePath: String) -> URL? {
         guard Self.isValidRelativePath(relativePath) else {
             return nil
@@ -168,6 +185,7 @@ public final class PayloadStore: @unchecked Sendable {
         return rootDirectory.appendingPathComponent(relativePath)
     }
 
+    /// 移除 `remove` 指定的本地存储领域数据，并维护关联状态。
     public func remove(relativePath: String) throws {
         try withExclusiveAccess {
             guard let fileURL = fileURL(for: relativePath) else {
@@ -180,6 +198,7 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
+    /// 调整 `discardIfCreated` 涉及的本地存储领域状态，并保持迁移或恢复语义。
     public func discardIfCreated(_ descriptor: PayloadObjectDescriptor) {
         guard descriptor.wasCreated else {
             return
@@ -187,6 +206,7 @@ public final class PayloadStore: @unchecked Sendable {
         try? remove(relativePath: descriptor.relativePath)
     }
 
+    /// 移除 `removeStagingFiles` 指定的本地存储领域数据，并维护关联状态。
     public func removeStagingFiles(olderThan cutoff: Date = .distantFuture) throws {
         try withExclusiveAccess {
             try prepareStorage()
@@ -205,6 +225,7 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
+    /// 计算并返回 `totalBytes` 对应的本地存储领域数据或状态结果。
     public func totalBytes() throws -> Int {
         guard fileManager.fileExists(atPath: objectsDirectory.path) else {
             return 0
@@ -237,6 +258,7 @@ public final class PayloadStore: @unchecked Sendable {
         rootDirectory.appendingPathComponent("store.json")
     }
 
+    /// 安排或刷新 `prepareStorage` 对应的本地存储领域工作。
     private func prepareStorage() throws {
         try SensitiveFilePermissions.prepareDirectory(at: rootDirectory)
         try SensitiveFilePermissions.prepareDirectory(at: objectsDirectory)
@@ -248,17 +270,20 @@ public final class PayloadStore: @unchecked Sendable {
         try SensitiveFilePermissions.secureFile(at: manifestURL)
     }
 
+    /// 计算并返回 `relativeObjectPath` 对应的本地存储领域数据或状态结果。
     private static func relativeObjectPath(contentHash: String, format: String) -> String {
         let prefix = String(contentHash.prefix(2))
         return "objects/sha256/\(prefix)/\(contentHash).\(format)"
     }
 
+    /// 转换 `normalizedExtension` 接收的本地存储领域数据，并返回规范化结果。
     private static func normalizedExtension(_ value: String) -> String {
         let withoutDot = value.hasPrefix(".") ? String(value.dropFirst()) : value
         let filtered = withoutDot.lowercased().filter { $0.isLetter || $0.isNumber }
         return filtered.isEmpty ? "bin" : filtered
     }
 
+    /// 判断 `isValidStoredObject` 所描述的本地存储领域条件是否成立。
     private static func isValidStoredObject(
         _ data: Data,
         contentHash: String,
@@ -271,6 +296,7 @@ public final class PayloadStore: @unchecked Sendable {
         return isValidPNGData(data)
     }
 
+    /// 判断 `isValidPNGData` 所描述的本地存储领域条件是否成立。
     static func isValidPNGData(_ data: Data) -> Bool {
         guard data.starts(with: pngSignature),
               let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
@@ -281,6 +307,7 @@ public final class PayloadStore: @unchecked Sendable {
         return CGImageSourceCreateImageAtIndex(imageSource, 0, nil) != nil
     }
 
+    /// 判断 `isValidRelativePath` 所描述的本地存储领域条件是否成立。
     private static func isValidRelativePath(_ value: String) -> Bool {
         guard !value.isEmpty, !value.hasPrefix("/"), !value.contains("..") else {
             return false

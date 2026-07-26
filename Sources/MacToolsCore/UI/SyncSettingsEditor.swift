@@ -1,15 +1,22 @@
+// `SyncSettingsEditor` 的 SwiftUI 展示层实现。
+// 负责视图状态、布局和用户操作回调，不直接拥有系统集成生命周期。
+
 import AppKit
 import SwiftUI
 
+/// 描述 `SyncFolderOpenDecision` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum SyncFolderOpenDecision: Equatable {
     case openFolder
     case showFolderSelectionRequired
 }
+/// 描述 `FolderOpenInteraction` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum FolderOpenInteraction {
+    /// 触发打开本地剪贴板存储目录的系统操作。
     static func openClipboardStorage(openFolder: () -> Void) {
         openFolder()
     }
 
+    /// 有已选路径时打开同步目录，否则要求界面提示先选择目录。
     static func openSyncFolder(
         folderPath: String?,
         openFolder: () -> Void
@@ -23,6 +30,7 @@ enum FolderOpenInteraction {
     }
 }
 
+/// 封装 `SyncSettingsEditor` 在 SwiftUI 展示层中的值语义和相关操作。
 struct SyncSettingsEditor: View {
     let currentSettings: SyncSettings
     let status: SyncStatus
@@ -301,6 +309,7 @@ struct SyncSettingsEditor: View {
         }
     }
 
+    /// 根据目录是否已配置执行打开操作或展示选择提示。
     private func handleOpenFolder() {
         switch FolderOpenInteraction.openSyncFolder(
             folderPath: folderPath,
@@ -313,6 +322,7 @@ struct SyncSettingsEditor: View {
         }
     }
 
+    /// 组装当前同步草稿并交给外部保存闭包，错误转换为页面提示。
     private func save(
         previousEnabled: Bool,
         previousScope: ClipboardSyncScope,
@@ -344,6 +354,7 @@ struct SyncSettingsEditor: View {
         return formatter
     }()
 
+    /// 构建并返回 `lastSeenText` 对应的 SwiftUI 界面内容或展示状态。
     private func lastSeenText(for device: SyncDeviceSummary) -> String {
         guard let date = device.lastUpdatedAt else { return "尚未完成同步" }
         return "最近同步 \(date.formatted(date: .abbreviated, time: .shortened))"

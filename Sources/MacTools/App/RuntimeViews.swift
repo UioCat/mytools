@@ -1,17 +1,23 @@
+// `RuntimeViews` 的应用运行时与 AppKit 集成实现。
+// 负责生命周期、面板和 macOS 能力接线，不承载可复用的持久化规则。
+
 import AppKit
 import Combine
 import MacToolsCore
 import SwiftUI
 
+/// 管理 `MainPanelRouter` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class MainPanelRouter: ObservableObject {
     @Published var selectedModule: MainToolModule = MainToolModule.defaultModule
 
+    /// 展示 `open` 对应的应用运行时与 AppKit 集成界面或系统位置。
     func open(_ module: MainToolModule) {
         selectedModule = module
     }
 }
 
+/// 管理 `SyncViewModel` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class SyncViewModel: ObservableObject {
     @Published var status: SyncStatus
@@ -20,6 +26,7 @@ final class SyncViewModel: ObservableObject {
     @Published var folderIsUbiquitous: Bool?
     @Published var devices: [SyncDeviceSummary]
 
+    /// 创建 `SyncViewModel`，保存传入依赖并建立初始状态。
     init(status: SyncStatus = .unconfigured, folderPath: String? = nil) {
         self.status = status
         self.remoteSettings = nil
@@ -29,25 +36,30 @@ final class SyncViewModel: ObservableObject {
     }
 }
 
+/// 管理 `TranslationCredentialViewModel` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class TranslationCredentialViewModel: ObservableObject {
     @Published var apiKey: String
     @Published var isUnavailable: Bool
 
+    /// 创建 `TranslationCredentialViewModel`，保存传入依赖并建立初始状态。
     init(apiKey: String = "", isUnavailable: Bool = false) {
         self.apiKey = apiKey
         self.isUnavailable = isUnavailable
     }
 }
 
+/// 管理 `PanelDismissHandler` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 final class PanelDismissHandler {
     var onDismiss: () -> Void = {}
 
+    /// 取消或关闭 `dismiss` 对应的应用运行时与 AppKit 集成流程，并清理临时状态。
     func dismiss() {
         onDismiss()
     }
 }
 
+/// 封装 `RuntimeMainWorkspaceView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 struct RuntimeMainWorkspaceView: View {
     @ObservedObject var router: MainPanelRouter
     @ObservedObject var model: ClipboardPanelModel
@@ -75,6 +87,7 @@ struct RuntimeMainWorkspaceView: View {
     @State private var translationCredentialUnavailable: Bool
     @State private var clipboardSearchFocusToken = 0
 
+    /// 创建 `RuntimeMainWorkspaceView`，保存传入依赖并建立初始状态。
     init(
         router: MainPanelRouter,
         model: ClipboardPanelModel,
@@ -212,6 +225,7 @@ struct RuntimeMainWorkspaceView: View {
         }
     }
 
+    /// 构建并返回 `advanceClipboardSearchFocus` 对应的 SwiftUI 界面内容或展示状态。
     private func advanceClipboardSearchFocus() {
         clipboardSearchFocusToken = ClipboardSearchFocusPolicy.focusToken(
             afterOpening: .clipboard,
@@ -220,6 +234,7 @@ struct RuntimeMainWorkspaceView: View {
     }
 }
 
+/// 封装 `RuntimeClipboardModuleView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 struct RuntimeClipboardModuleView: View {
     @ObservedObject var model: ClipboardPanelModel
     let searchFocusToken: Int
@@ -258,6 +273,7 @@ struct RuntimeClipboardModuleView: View {
     }
 }
 
+/// 封装 `RuntimeSettingsView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 struct RuntimeSettingsView: View {
     let settings: AppSettings
     @ObservedObject var syncModel: SyncViewModel
@@ -279,6 +295,7 @@ struct RuntimeSettingsView: View {
     let presentation: ToolModulePresentation
     @State private var permissionSummary: PermissionSummary
 
+    /// 创建 `RuntimeSettingsView`，保存传入依赖并建立初始状态。
     init(
         settings: AppSettings,
         syncModel: SyncViewModel,
@@ -352,6 +369,7 @@ struct RuntimeSettingsView: View {
     }
 }
 
+/// 封装 `RuntimeTranslationModuleView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 struct RuntimeTranslationModuleView: View {
     let settings: AppSettings
     @ObservedObject var speechController: TranslationSpeechController
@@ -536,6 +554,7 @@ struct RuntimeTranslationModuleView: View {
         .animation(.easeInOut(duration: 0.16), value: isSpeakingTranslation)
     }
 
+    /// 构建并返回 `speechButton` 对应的 SwiftUI 界面内容或展示状态。
     private func speechButton(
         for request: TranslationSpeechRequest?,
         textRole: String
@@ -574,6 +593,7 @@ struct RuntimeTranslationModuleView: View {
         .help(title)
     }
 
+    /// 构建并返回 `speechStatus` 对应的 SwiftUI 界面内容或展示状态。
     private func speechStatus(for request: TranslationSpeechRequest) -> some View {
         Label(
             "正在朗读\(TranslationSpeechLanguagePolicy.displayName(for: request.languageCode)) · 系统音色",
@@ -586,6 +606,7 @@ struct RuntimeTranslationModuleView: View {
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
+    /// 执行 `copyOutputText` 对应的应用运行时与 AppKit 集成输入输出操作。
     private func copyOutputText() {
         guard let outputText = content.copyableOutputText else {
             return
@@ -595,6 +616,7 @@ struct RuntimeTranslationModuleView: View {
         NSPasteboard.general.setString(outputText, forType: .string)
     }
 
+    /// 提交当前输入并将异步翻译结果写回工作区状态。
     private func translateInputText() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard content.canSubmit(inputText: text) else {
@@ -604,6 +626,7 @@ struct RuntimeTranslationModuleView: View {
         speechController.stop(ifSource: .translationWorkspace)
         workspaceState = .translating
         Task {
+            // 当前实现未使用请求代际；若允许连续提交，较晚完成的旧请求仍可能覆盖新结果。
             let service = TranslationService(
                 provider: BailianTranslationProvider(configuration: settings.translation.bailianConfiguration)
             )
@@ -621,6 +644,7 @@ struct RuntimeTranslationModuleView: View {
         }
     }
 
+    /// 构建并返回 `message` 对应的 SwiftUI 界面内容或展示状态。
     private static func message(for error: TranslationError) -> String {
         switch error {
         case .providerNotConfigured:
@@ -633,16 +657,19 @@ struct RuntimeTranslationModuleView: View {
     }
 }
 
+/// 封装 `TranslationTextInputEditor` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 private struct TranslationTextInputEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var isComposingText: Bool
     let layout: TranslationInputEditorLayout
     let onSubmit: () -> Void
 
+    /// 构造并返回 `makeCoordinator` 所描述的应用运行时与 AppKit 集成对象。
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, isComposingText: $isComposingText)
     }
 
+    /// 构造并返回 `makeNSView` 所描述的应用运行时与 AppKit 集成对象。
     func makeNSView(context: Context) -> NSScrollView {
         let textView = TranslationInputTextView()
         textView.delegate = context.coordinator
@@ -679,6 +706,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
         return scrollView
     }
 
+    /// 应用 `updateNSView` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? TranslationInputTextView else {
             return
@@ -697,15 +725,18 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
         }
     }
 
+    /// 管理 `Coordinator` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding private var text: String
         @Binding private var isComposingText: Bool
 
+        /// 创建 `Coordinator`，保存传入依赖并建立初始状态。
         init(text: Binding<String>, isComposingText: Binding<Bool>) {
             self._text = text
             self._isComposingText = isComposingText
         }
 
+        /// 构建并返回 `textDidChange` 对应的 SwiftUI 界面内容或展示状态。
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else {
                 return
@@ -715,6 +746,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
             setComposingText(textView.hasMarkedText())
         }
 
+        /// 应用 `setComposingText` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
         func setComposingText(_ hasMarkedText: Bool) {
             guard isComposingText != hasMarkedText else {
                 return
@@ -725,30 +757,36 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
     }
 }
 
+/// 管理 `TranslationInputTextView` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 private final class TranslationInputTextView: NSTextView {
     var onSubmit: () -> Void = {}
     var onMarkedTextStateChange: (Bool) -> Void = { _ in }
 
+    /// 应用 `setMarkedText` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
         notifyMarkedTextState()
     }
 
+    /// 构建并返回 `unmarkText` 对应的 SwiftUI 界面内容或展示状态。
     override func unmarkText() {
         super.unmarkText()
         notifyMarkedTextState()
     }
 
+    /// 保存 `insertText` 接收的应用运行时与 AppKit 集成数据，并保持既有持久化约束。
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
         super.insertText(insertString, replacementRange: replacementRange)
         notifyMarkedTextState()
     }
 
+    /// 响应 `didChangeText` 对应的系统或界面回调，并同步当前交互状态。
     override func didChangeText() {
         super.didChangeText()
         notifyMarkedTextState()
     }
 
+    /// 响应 `keyDown` 对应的系统或界面回调，并同步当前交互状态。
     override func keyDown(with event: NSEvent) {
         if let command = TranslationInputKeyCommandResolver.command(
             forKeyCode: event.keyCode,
@@ -780,15 +818,18 @@ private final class TranslationInputTextView: NSTextView {
         super.keyDown(with: event)
     }
 
+    /// 发布或记录 `notifyMarkedTextState` 对应的应用运行时与 AppKit 集成状态。
     private func notifyMarkedTextState() {
         onMarkedTextStateChange(hasMarkedText())
     }
 }
 
+/// 封装 `TranslationOutputTextView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 private struct TranslationOutputTextView: NSViewRepresentable {
     var text: String
     var isPlaceholder: Bool
 
+    /// 构造并返回 `makeNSView` 所描述的应用运行时与 AppKit 集成对象。
     func makeNSView(context: Context) -> NSScrollView {
         let textView = TranslationOutputNSTextView()
         textView.font = .systemFont(ofSize: 14, weight: .medium)
@@ -819,6 +860,7 @@ private struct TranslationOutputTextView: NSViewRepresentable {
         return scrollView
     }
 
+    /// 应用 `updateNSView` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? TranslationOutputNSTextView else {
             return
@@ -827,6 +869,7 @@ private struct TranslationOutputTextView: NSViewRepresentable {
         configure(textView)
     }
 
+    /// 应用 `configure` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     private func configure(_ textView: TranslationOutputNSTextView) {
         textView.textColor = isPlaceholder ? .secondaryLabelColor : .labelColor
         if textView.string != text {
@@ -835,11 +878,13 @@ private struct TranslationOutputTextView: NSViewRepresentable {
     }
 }
 
+/// 管理 `TranslationOutputNSTextView` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 private final class TranslationOutputNSTextView: NSTextView {
     override var acceptsFirstResponder: Bool {
         true
     }
 
+    /// 响应 `keyDown` 对应的系统或界面回调，并同步当前交互状态。
     override func keyDown(with event: NSEvent) {
         guard let command = TranslationInputKeyCommandResolver.command(
             forKeyCode: event.keyCode,
