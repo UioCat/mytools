@@ -4,38 +4,6 @@
 import Foundation
 import GRDB
 
-/// 封装 `ClipboardUpsertResult` 在本地存储领域中的值语义和相关操作。
-public struct ClipboardUpsertResult: Equatable {
-    public let itemID: UUID
-    public let inserted: Bool
-    public let prunedItemIDs: [UUID]
-    public let duplicateRecordIDs: [UUID]
-
-    /// 创建 `ClipboardUpsertResult`，保存传入依赖并建立初始状态。
-    public init(
-        itemID: UUID,
-        inserted: Bool,
-        prunedItemIDs: [UUID],
-        duplicateRecordIDs: [UUID] = []
-    ) {
-        self.itemID = itemID
-        self.inserted = inserted
-        self.prunedItemIDs = prunedItemIDs
-        self.duplicateRecordIDs = duplicateRecordIDs
-    }
-}
-
-/// 同步导出使用的轻量记录，附带本地 payload 元数据但不读取文件内容。
-public struct ClipboardSyncCandidate: Sendable {
-    public var item: ClipboardItem
-    public var payloadByteCount: Int64?
-
-    public init(item: ClipboardItem, payloadByteCount: Int64?) {
-        self.item = item
-        self.payloadByteCount = payloadByteCount
-    }
-}
-
 /// 管理 `ClipboardRepository` 在本地存储领域中的生命周期、依赖和可变状态。
 public final class ClipboardRepository: @unchecked Sendable {
     private let database: MacToolsDatabase
