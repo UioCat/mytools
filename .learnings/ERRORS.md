@@ -672,3 +672,37 @@ Query `pragma_table_info` or the emitted `.schema` result before composing ad ho
 - **Notes**: Updated the read-only aggregation to group by `edges.kind`.
 
 ---
+
+## [ERR-20260727-004] Sensitive-word scan treated expected identifiers as credentials
+
+**Logged**: 2026-07-27T14:57:43+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The pre-push merge-diff scan failed because broad sensitive-word matching treated expected identifiers such as `credential` and `session` as credential literals.
+
+### Error
+```
+translationCredentialUnavailable
+testRuntimeRetainsSelectionForCurrentAppSessionAndDefaultsToGeneral
+```
+
+### Context
+- Scanned the complete diff, including unchanged context lines, with a broad credential-related regular expression.
+- The matches were legitimate Swift identifiers and did not contain credential values.
+- The failed command stopped before `git push origin main`, so no remote state was changed.
+
+### Suggested Fix
+Limit the automated scan to added lines, retain the repository exclusions, and review each match in context instead of treating every sensitive field name as a secret.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/App/RuntimeViews.swift, Tests/MacToolsCoreTests/SettingsNavigationTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T14:57:43+08:00
+- **Notes**: Replaced the blocking broad match with an added-line scan and contextual review.
+
+---
