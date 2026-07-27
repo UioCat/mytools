@@ -2,20 +2,19 @@ import Foundation
 import XCTest
 
 final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
-    func testSyncCycleReusesContentAcrossTwoExportsWithoutThirdFullExport() throws {
+    func testSyncCycleUsesMetadataDraftsBeforeOnDemandContentPreparation() throws {
         let source = try sourceFile(
             "Sources/MacToolsCore/Sync/DriveSyncCycleRunner.swift"
         )
 
         XCTAssertEqual(
-            source.components(separatedBy: "localRepository.exportBundle(").count - 1,
+            source.components(separatedBy: "localRepository.exportDraft(").count - 1,
             2
         )
-        XCTAssertEqual(
-            source.components(separatedBy: "contentCache: &exportContentCache").count - 1,
-            2
-        )
-        XCTAssertTrue(source.contains("draft.excludingContentIDs("))
+        XCTAssertFalse(source.contains("localRepository.exportBundle("))
+        XCTAssertFalse(source.contains("SyncExportContentCache"))
+        XCTAssertTrue(source.contains("store.prepareContents("))
+        XCTAssertTrue(source.contains("preparedDraft.contentDescriptors"))
     }
 
     func testSyncCycleOnlyAppliesPeerReplicasWithoutMatchingReceipts() throws {

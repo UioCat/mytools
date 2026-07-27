@@ -249,6 +249,81 @@ public struct SyncExportContent: Equatable, Sendable {
     }
 }
 
+/// 描述同步内容的本地来源；导出阶段不读取或持有实体 Data。
+public enum SyncContentSource: Equatable, Sendable {
+    case text(String)
+    case payloadFile(URL)
+}
+
+/// 容量决策和按需物化使用的内容描述符，不参与远端协议编码。
+public struct SyncContentDescriptor: Equatable, Sendable {
+    public var contentID: String
+    public var kind: ClipboardContentKind
+    public var storedByteCount: Int64
+    public var source: SyncContentSource
+
+    public init(
+        contentID: String,
+        kind: ClipboardContentKind,
+        storedByteCount: Int64,
+        source: SyncContentSource
+    ) {
+        self.contentID = contentID
+        self.kind = kind
+        self.storedByteCount = storedByteCount
+        self.source = source
+    }
+}
+
+/// 不含内容 Data 的本地同步草稿；两次导出和容量裁剪都使用该模型。
+public struct SyncExportDraft: Equatable, Sendable {
+    public var clipboard: SyncClipboardSnapshot
+    public var preferences: SyncPreferencesSnapshot
+    public var tombstones: SyncTombstoneSnapshot
+    public var contentDescriptors: [SyncContentDescriptor]
+    public var outboxCutoff: Date
+    public var unavailableClipboardRecordNames: Set<String>
+
+    public init(
+        clipboard: SyncClipboardSnapshot,
+        preferences: SyncPreferencesSnapshot,
+        tombstones: SyncTombstoneSnapshot,
+        contentDescriptors: [SyncContentDescriptor],
+        outboxCutoff: Date,
+        unavailableClipboardRecordNames: Set<String> = []
+    ) {
+        self.clipboard = clipboard
+        self.preferences = preferences
+        self.tombstones = tombstones
+        self.contentDescriptors = contentDescriptors
+        self.outboxCutoff = outboxCutoff
+        self.unavailableClipboardRecordNames = unavailableClipboardRecordNames
+    }
+
+    public func excludingContentIDs(_ excludedContentIDs: Set<String>) -> Self {
+        guard !excludedContentIDs.isEmpty else { return self }
+        var filtered = self
+        filtered.clipboard.records.removeAll {
+            excludedContentIDs.contains($0.contentID)
+        }
+        filtered.contentDescriptors.removeAll {
+            excludedContentIDs.contains($0.contentID)
+        }
+        return filtered
+    }
+
+    public func bundle(contents: [SyncExportContent] = []) -> SyncExportBundle {
+        SyncExportBundle(
+            clipboard: clipboard,
+            preferences: preferences,
+            tombstones: tombstones,
+            contents: contents,
+            outboxCutoff: outboxCutoff,
+            unavailableClipboardRecordNames: unavailableClipboardRecordNames
+        )
+    }
+}
+
 /// 封装 `SyncExportContentCache` 在同步核心领域中的值语义和相关操作。
 public struct SyncExportContentCache: Sendable {
     /// 封装 `Key` 在同步核心领域中的值语义和相关操作。

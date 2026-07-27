@@ -170,6 +170,33 @@ final class DriveSyncStoreTests: XCTestCase {
         }
     }
 
+    func testExistingSharedObjectDoesNotMaterializeLocalDescriptor() throws {
+        try withStore { store, _ in
+            _ = try store.prepare()
+            let bundle = try makeBundle(deviceID: "device-a", revision: 1, text: "shared")
+            let content = try XCTUnwrap(bundle.contents.first)
+            _ = try store.write(bundle, seenRevisions: [:], updatedAt: Date())
+            var providerCallCount = 0
+
+            let result = try store.prepareContents([
+                SyncContentDescriptor(
+                    contentID: content.contentID,
+                    kind: content.kind,
+                    storedByteCount: Int64(content.data.count),
+                    source: .text("shared")
+                )
+            ]) { _ in
+                providerCallCount += 1
+                return content
+            }
+
+            XCTAssertEqual(providerCallCount, 0)
+            XCTAssertEqual(result.availableContentIDs, [content.contentID])
+            XCTAssertTrue(result.uploadedContentIDs.isEmpty)
+            XCTAssertTrue(result.unavailableContentIDs.isEmpty)
+        }
+    }
+
     func testStoredObjectBytesMatchTextUsageCategory() throws {
         try withStore { store, _ in
             _ = try store.prepare()

@@ -25,6 +25,17 @@ public struct ClipboardUpsertResult: Equatable {
     }
 }
 
+/// 同步导出使用的轻量记录，附带本地 payload 元数据但不读取文件内容。
+public struct ClipboardSyncCandidate: Sendable {
+    public var item: ClipboardItem
+    public var payloadByteCount: Int64?
+
+    public init(item: ClipboardItem, payloadByteCount: Int64?) {
+        self.item = item
+        self.payloadByteCount = payloadByteCount
+    }
+}
+
 /// 管理 `ClipboardRepository` 在本地存储领域中的生命周期、依赖和可变状态。
 public final class ClipboardRepository: @unchecked Sendable {
     private let database: MacToolsDatabase
@@ -309,6 +320,39 @@ public final class ClipboardRepository: @unchecked Sendable {
                 """,
                 arguments: [payloadRootPath, payloadRootPath, pattern, pattern, boundedLimit]
             )
+        }
+    }
+
+    /// 读取同步所需记录与 payload 元数据，在 SQL 层完成类型和范围过滤。
+    public func syncCandidates(scope: ClipboardSyncScope) throws -> [ClipboardSyncCandidate] {
+        let payloadRootPath = payloadStore?.rootDirectory.path
+        return try database.writer.read { db in
+            let scopeClause = scope == .favoritesAndPinned
+                ? "AND (ci.isFavorite = 1 OR ci.isPinned = 1)"
+                : ""
+            return try Row.fetchAll(
+                db,
+                sql: """
+                SELECT ci.*,
+                       po.byteCount AS payloadByteCount,
+                       CASE
+                           WHEN po.relativePath IS NULL THEN NULL
+                           WHEN ? IS NULL THEN po.relativePath
+                           ELSE ? || '/' || po.relativePath
+                       END AS cachedFilePath
+                FROM clipboard_items AS ci
+                LEFT JOIN payload_objects AS po ON po.id = ci.payloadID
+                WHERE ci.kind IN ('text', 'url', 'imageData')
+                  \(scopeClause)
+                ORDER BY ci.id ASC
+                """,
+                arguments: [payloadRootPath, payloadRootPath]
+            ).map { row in
+                ClipboardSyncCandidate(
+                    item: try ClipboardItem(row: row),
+                    payloadByteCount: row["payloadByteCount"]
+                )
+            }
         }
     }
 

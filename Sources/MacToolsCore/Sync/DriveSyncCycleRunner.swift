@@ -41,6 +41,20 @@ public struct DriveSyncCycleResult: Sendable {
 
 /// 管理 `DriveSyncCycleRunner` 在同步核心领域中的生命周期、依赖和可变状态。
 public final class DriveSyncCycleRunner: @unchecked Sendable {
+    private struct ContentKey: Hashable {
+        var contentID: String
+        var kind: ClipboardContentKind
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.contentID == rhs.contentID && lhs.kind == rhs.kind
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(contentID)
+            hasher.combine(kind.rawValue)
+        }
+    }
+
     /// 为同步核心领域中的相关类型提供 `DateProvider` 别名。
     public typealias DateProvider = @Sendable () -> Date
     /// 为同步核心领域中的相关类型提供 `DeviceNameProvider` 别名。
@@ -184,15 +198,12 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             )
         }
 
-        var exportContentCache = SyncExportContentCache()
-        var draft = try localRepository.exportBundle(
+        var draft = try localRepository.exportDraft(
             deviceID: deviceID,
             generation: generation,
             revision: nextRevision,
-            scope: configuration.clipboardScope,
-            contentCache: &exportContentCache
+            scope: configuration.clipboardScope
         )
-        var contentByID = Dictionary(uniqueKeysWithValues: draft.contents.map { ($0.contentID, $0.data) })
         var missingRemoteContent = peerReplicaFailures.contains {
             if case .itemNotDownloaded = $0.error { return true }
             return false
@@ -204,27 +215,6 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         var hasInvalidRemoteContent = false
         var incompleteDeviceIDs: Set<String> = []
 
-        for replica in unappliedPeerReplicas {
-            for record in replica.clipboard.records where contentByID[record.contentID] == nil {
-                do {
-                    if let data = try store.contentData(contentID: record.contentID, kind: record.kind) {
-                        contentByID[record.contentID] = data
-                    } else {
-                        hasInvalidRemoteContent = true
-                        incompleteDeviceIDs.insert(replica.manifest.deviceID)
-                    }
-                } catch let error as DriveSyncStoreError {
-                    incompleteDeviceIDs.insert(replica.manifest.deviceID)
-                    if case let .itemNotDownloaded(url) = error {
-                        missingRemoteContent = true
-                        try requestDownload(url)
-                    } else {
-                        hasInvalidRemoteContent = true
-                    }
-                }
-            }
-        }
-
         try cancellation.check()
         for replica in unappliedPeerReplicas {
             try localRepository.apply(tombstones: replica.tombstones)
@@ -232,12 +222,19 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let tombstonedRecordNames = try localRepository.tombstonedRecordNames(
             generation: generation
         )
-        draft = try localRepository.exportBundle(
+        draft = try localRepository.exportDraft(
             deviceID: deviceID,
             generation: generation,
             revision: nextRevision,
-            scope: configuration.clipboardScope,
-            contentCache: &exportContentCache
+            scope: configuration.clipboardScope
+        )
+        let localDescriptorsByKey = Dictionary(
+            uniqueKeysWithValues: draft.contentDescriptors.map {
+                (
+                    ContentKey(contentID: $0.contentID, kind: $0.kind),
+                    $0
+                )
+            }
         )
         var unavailableLocalRecordNames = draft.unavailableClipboardRecordNames
         var allRecords = draft.clipboard.records
@@ -247,20 +244,32 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             })
         }
 
-        var candidates = allRecords.map { record in
-            SyncRetentionCandidate(
+        var candidates: [SyncRetentionCandidate] = []
+        var unknownContentIDs: Set<String> = []
+        for record in allRecords {
+            let key = ContentKey(contentID: record.contentID, kind: record.kind)
+            guard let byteCount = localDescriptorsByKey[key]?.storedByteCount
+                    ?? storedBytesByContentID[record.contentID] else {
+                unknownContentIDs.insert(record.contentID)
+                hasInvalidRemoteContent = true
+                continue
+            }
+            candidates.append(SyncRetentionCandidate(
                 contentID: record.contentID,
                 kind: record.kind,
-                byteCount: Int64(contentByID[record.contentID]?.count ?? 0) > 0
-                    ? Int64(contentByID[record.contentID]?.count ?? 0)
-                    : storedBytesByContentID[record.contentID] ?? 0,
+                byteCount: byteCount,
                 createdAt: record.createdAt,
                 retentionAt: record.retentionAt,
                 isFavorite: record.isFavorite,
                 isPinned: record.isPinned,
                 favoriteClock: record.favoriteClock,
                 pinnedClock: record.pinnedClock
-            )
+            ))
+        }
+        for replica in unappliedPeerReplicas where replica.clipboard.records.contains(
+            where: { unknownContentIDs.contains($0.contentID) }
+        ) {
+            incompleteDeviceIDs.insert(replica.manifest.deviceID)
         }
         var mergedCandidates: [String: SyncRetentionCandidate] = [:]
         for candidate in candidates {
@@ -305,13 +314,13 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let excludedContentIDs = effectiveRemoteEvictionIDs.union(
             Set(decision.evictions.map(\.contentID))
         )
-        let newObjectBytes = draft.contents.lazy
+        let newObjectBytes = draft.contentDescriptors.lazy
             .filter {
                 decision.keptContentIDs.contains($0.contentID)
                     && !excludedContentIDs.contains($0.contentID)
                     && !storedContentIDs.contains($0.contentID)
             }
-            .reduce(Int64(0)) { $0 + Int64($1.data.count) }
+            .reduce(Int64(0)) { $0 + $1.storedByteCount }
         let shouldPauseImageUploads = SyncRetentionPolicy.mustPauseImageUploads(
             decision: decision,
             currentUsedBytes: currentUsage.usedBytes,
@@ -343,22 +352,62 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         try cancellation.check()
         for replica in unappliedPeerReplicas {
             try cancellation.check()
-            let filtered = SyncClipboardSnapshot(
-                deviceID: replica.clipboard.deviceID,
-                generation: replica.clipboard.generation,
-                revision: replica.clipboard.revision,
-                records: replica.clipboard.records.filter {
+            let filteredRecords = replica.clipboard.records.filter {
                     !tombstonedRecordNames.contains($0.recordName)
                         && decision.keptContentIDs.contains($0.contentID)
                         && !excludedContentIDs.contains($0.contentID)
+                        && !unknownContentIDs.contains($0.contentID)
                 }
-            )
-            try localRepository.apply(
-                clipboard: filtered,
-                contents: contentByID,
-                payloadStore: payloadStore,
-                historyLimit: configuration.historyLimit
-            )
+            let recordsByContent = Dictionary(grouping: filteredRecords) {
+                ContentKey(contentID: $0.contentID, kind: $0.kind)
+            }
+            for (key, records) in recordsByContent.sorted(by: {
+                if $0.key.contentID != $1.key.contentID {
+                    return $0.key.contentID < $1.key.contentID
+                }
+                return $0.key.kind.rawValue < $1.key.kind.rawValue
+            }) {
+                try cancellation.check()
+                var contentData: Data?
+                var sharedContentError: DriveSyncStoreError?
+                do {
+                    contentData = try store.contentData(
+                        contentID: key.contentID,
+                        kind: key.kind
+                    )
+                } catch let error as DriveSyncStoreError {
+                    sharedContentError = error
+                } catch {
+                    sharedContentError = .unreadableContent(key.contentID)
+                }
+
+                if contentData == nil,
+                   let descriptor = localDescriptorsByKey[key] {
+                    contentData = try? localRepository.materializeContent(descriptor).data
+                }
+                guard let contentData else {
+                    incompleteDeviceIDs.insert(replica.manifest.deviceID)
+                    if case let .itemNotDownloaded(url) = sharedContentError {
+                        missingRemoteContent = true
+                        try requestDownload(url)
+                    } else {
+                        hasInvalidRemoteContent = true
+                    }
+                    continue
+                }
+
+                try localRepository.apply(
+                    clipboard: SyncClipboardSnapshot(
+                        deviceID: replica.clipboard.deviceID,
+                        generation: replica.clipboard.generation,
+                        revision: replica.clipboard.revision,
+                        records: records
+                    ),
+                    contents: [key.contentID: contentData],
+                    payloadStore: payloadStore,
+                    historyLimit: configuration.historyLimit
+                )
+            }
             remoteSettings = try localRepository.apply(preferences: replica.preferences) ?? remoteSettings
             if !incompleteDeviceIDs.contains(replica.manifest.deviceID) {
                 seenRevisions[replica.manifest.deviceID] = max(
@@ -413,10 +462,26 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         if needsWrite {
             try cancellation.check()
             seenRevisions[deviceID] = nextRevision
-            let finalBundle = draft.excludingContentIDs(
+            let preparedDraft = draft.excludingContentIDs(
                 excludedContentIDs.union(blockedImageContentIDs)
             )
-            unavailableLocalRecordNames.formUnion(finalBundle.unavailableClipboardRecordNames)
+            let preparation = try store.prepareContents(
+                preparedDraft.contentDescriptors,
+                cancellation: cancellation
+            ) { descriptor in
+                try? self.localRepository.materializeContent(descriptor)
+            }
+            unavailableLocalRecordNames.formUnion(
+                preparedDraft.clipboard.records.compactMap { record in
+                    preparation.unavailableContentIDs.contains(record.contentID)
+                        ? record.recordName
+                        : nil
+                }
+            )
+            let finalDraft = preparedDraft.excludingContentIDs(
+                preparation.unavailableContentIDs
+            )
+            let finalBundle = finalDraft.bundle()
             let manifest = try store.write(
                 finalBundle,
                 seenRevisions: seenRevisions,
@@ -440,7 +505,9 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 excludingClipboardRecordNames: blockedClipboardRecordNames.union(
                     unavailableLocalRecordNames
                 ),
-                uploadedContentIDs: Set(finalBundle.contents.map(\.contentID))
+                uploadedContentIDs: preparation.availableContentIDs.intersection(
+                    Set(finalDraft.contentDescriptors.map(\.contentID))
+                )
             )
             try deviceOverrideRepository.setReplicaRevision(manifest.revision)
             try deviceOverrideRepository.setSeenRevisions(seenRevisions)

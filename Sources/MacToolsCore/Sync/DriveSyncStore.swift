@@ -134,6 +134,23 @@ public struct DriveSyncReplicaScan: Equatable, Sendable {
     }
 }
 
+/// 按需准备共享内容对象后的可用、上传和不可用集合。
+public struct SyncContentPreparationResult: Equatable, Sendable {
+    public var availableContentIDs: Set<String>
+    public var uploadedContentIDs: Set<String>
+    public var unavailableContentIDs: Set<String>
+
+    public init(
+        availableContentIDs: Set<String> = [],
+        uploadedContentIDs: Set<String> = [],
+        unavailableContentIDs: Set<String> = []
+    ) {
+        self.availableContentIDs = availableContentIDs
+        self.uploadedContentIDs = uploadedContentIDs
+        self.unavailableContentIDs = unavailableContentIDs
+    }
+}
+
 /// 管理同步目录的协议、设备快照、内容对象和生命周期标记。
 public final class DriveSyncStore: @unchecked Sendable {
     public static let rootDirectoryName = "MacTools Sync"
@@ -299,6 +316,67 @@ public final class DriveSyncStore: @unchecked Sendable {
             keeping: Set([snapshotDirectoryName, previousManifest?.snapshotDirectory].compactMap { $0 })
         )
         return try SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: manifestData)
+    }
+
+    /// 只在共享对象缺失或损坏时调用 provider，并把单内容不可用隔离到结果中。
+    public func prepareContents(
+        _ descriptors: [SyncContentDescriptor],
+        cancellation: SyncCycleCancellation = SyncCycleCancellation(),
+        provider: (SyncContentDescriptor) throws -> SyncExportContent?
+    ) throws -> SyncContentPreparationResult {
+        var result = SyncContentPreparationResult()
+        for descriptor in descriptors {
+            try cancellation.check()
+            let url = try contentURL(
+                contentID: descriptor.contentID,
+                kind: descriptor.kind
+            )
+            if fileManager.fileExists(atPath: url.path) {
+                do {
+                    try validateContent(
+                        readData(at: url, options: [.mappedIfSafe]),
+                        contentID: descriptor.contentID,
+                        kind: descriptor.kind
+                    )
+                    result.availableContentIDs.insert(descriptor.contentID)
+                    continue
+                } catch let error as DriveSyncStoreError {
+                    switch error {
+                    case .itemNotDownloaded, .fileConflict:
+                        throw error
+                    default:
+                        break
+                    }
+                } catch {
+                    // 损坏的共享对象可以由完整本地内容修复。
+                }
+            }
+
+            guard let content = try provider(descriptor) else {
+                result.unavailableContentIDs.insert(descriptor.contentID)
+                continue
+            }
+            guard content.contentID == descriptor.contentID,
+                  content.kind == descriptor.kind else {
+                result.unavailableContentIDs.insert(descriptor.contentID)
+                continue
+            }
+            do {
+                try validateContent(
+                    content.data,
+                    contentID: descriptor.contentID,
+                    kind: descriptor.kind
+                )
+            } catch {
+                result.unavailableContentIDs.insert(descriptor.contentID)
+                continue
+            }
+            try cancellation.check()
+            try verifiedWrite(content.data, to: url)
+            result.availableContentIDs.insert(descriptor.contentID)
+            result.uploadedContentIDs.insert(descriptor.contentID)
+        }
+        return result
     }
 
     /// 计算并返回 `contentData` 对应的同步核心领域数据或状态结果。

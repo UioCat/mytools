@@ -256,72 +256,125 @@ public final class SyncLocalRepository: @unchecked Sendable {
         contentCache: inout SyncExportContentCache,
         at cutoff: Date = Date()
     ) throws -> SyncExportBundle {
-        let allItems = try clipboardRepository.search("", limit: Int.max)
-        var records: [SyncClipboardRecord] = []
+        var draft = try exportDraft(
+            deviceID: deviceID,
+            generation: generation,
+            revision: revision,
+            scope: scope,
+            excludingContentIDs: excludingContentIDs,
+            at: cutoff
+        )
         var contentsByID: [String: SyncExportContent] = [:]
+        var unavailableContentIDs: Set<String> = []
+        for descriptor in draft.contentDescriptors {
+            if let cachedContent = contentCache.content(
+                kind: descriptor.kind,
+                contentID: descriptor.contentID
+            ) {
+                contentsByID[descriptor.contentID] = cachedContent
+            } else {
+                do {
+                    let content = try materializeContent(descriptor)
+                    contentCache.store(content)
+                    contentsByID[descriptor.contentID] = content
+                } catch {
+                    unavailableContentIDs.insert(descriptor.contentID)
+                }
+            }
+        }
+        if !unavailableContentIDs.isEmpty {
+            draft.unavailableClipboardRecordNames.formUnion(
+                draft.clipboard.records.compactMap { record in
+                    unavailableContentIDs.contains(record.contentID)
+                        ? record.recordName
+                        : nil
+                }
+            )
+            draft = draft.excludingContentIDs(unavailableContentIDs)
+        }
+        return draft.bundle(
+            contents: contentsByID.values
+                .filter { !unavailableContentIDs.contains($0.contentID) }
+                .sorted { $0.contentID < $1.contentID }
+        )
+    }
+
+    /// 导出不含内容 Data 的同步草稿，容量决策前只访问记录与文件元数据。
+    public func exportDraft(
+        deviceID: String,
+        generation: Int,
+        revision: Int64,
+        scope: ClipboardSyncScope,
+        excludingContentIDs: Set<String> = [],
+        at cutoff: Date = Date()
+    ) throws -> SyncExportDraft {
+        let candidates = try clipboardRepository.syncCandidates(scope: scope)
+        var records: [SyncClipboardRecord] = []
+        var descriptorsByID: [String: SyncContentDescriptor] = [:]
         var unavailableClipboardRecordNames: Set<String> = []
 
-        for item in allItems where Self.isSyncable(item.kind) {
-            guard scope == .allHistory || item.isFavorite || item.isPinned else {
-                continue
-            }
+        for candidate in candidates {
+            let item = candidate.item
             guard let contentID = item.contentHash else {
                 unavailableClipboardRecordNames.insert(item.id.uuidString)
                 continue
             }
             guard !excludingContentIDs.contains(contentID) else { continue }
 
-            let content: SyncExportContent
-            if let cachedContent = contentCache.content(kind: item.kind, contentID: contentID) {
-                content = cachedContent
-            } else {
-                switch item.kind {
-                case .text, .url:
-                    guard let text = item.text else {
-                        unavailableClipboardRecordNames.insert(item.id.uuidString)
-                        continue
-                    }
-                    let value = SyncTextContentObject(
-                        contentID: contentID,
-                        kind: item.kind,
-                        text: text,
-                        byteCount: Int64(Data(text.utf8).count)
-                    )
-                    content = SyncExportContent(
-                        contentID: contentID,
-                        kind: item.kind,
-                        data: try SyncSnapshotCodec.encode(value)
-                    )
-                case .imageData:
-                    guard let path = item.cachedFilePath else {
-                        unavailableClipboardRecordNames.insert(item.id.uuidString)
-                        continue
-                    }
-                    let data: Data
-                    do {
-                        data = try Data(
-                            contentsOf: URL(fileURLWithPath: path),
-                            options: [.mappedIfSafe]
-                        )
-                    } catch {
-                        unavailableClipboardRecordNames.insert(item.id.uuidString)
-                        continue
-                    }
-                    guard Int64(data.count) <= SyncRetentionPolicy.maximumImageBytes else {
-                        continue
-                    }
-                    guard ClipboardContentHasher.sha256String(for: data) == contentID else {
-                        unavailableClipboardRecordNames.insert(item.id.uuidString)
-                        continue
-                    }
-                    content = SyncExportContent(contentID: contentID, kind: item.kind, data: data)
-                default:
+            let descriptor: SyncContentDescriptor
+            switch item.kind {
+            case .text, .url:
+                guard let text = item.text else {
+                    unavailableClipboardRecordNames.insert(item.id.uuidString)
                     continue
                 }
-                contentCache.store(content)
+                let value = SyncTextContentObject(
+                    contentID: contentID,
+                    kind: item.kind,
+                    text: text,
+                    byteCount: Int64(Data(text.utf8).count)
+                )
+                descriptor = SyncContentDescriptor(
+                    contentID: contentID,
+                    kind: item.kind,
+                    storedByteCount: Int64(try SyncSnapshotCodec.encode(value).count),
+                    source: .text(text)
+                )
+            case .imageData:
+                guard let path = item.cachedFilePath,
+                      let expectedByteCount = candidate.payloadByteCount else {
+                    unavailableClipboardRecordNames.insert(item.id.uuidString)
+                    continue
+                }
+                guard expectedByteCount <= SyncRetentionPolicy.maximumImageBytes else {
+                    continue
+                }
+                let url = URL(fileURLWithPath: path)
+                let values: URLResourceValues
+                do {
+                    values = try url.resourceValues(
+                        forKeys: [.isRegularFileKey, .fileSizeKey]
+                    )
+                } catch {
+                    unavailableClipboardRecordNames.insert(item.id.uuidString)
+                    continue
+                }
+                guard values.isRegularFile == true,
+                      Int64(values.fileSize ?? -1) == expectedByteCount else {
+                    unavailableClipboardRecordNames.insert(item.id.uuidString)
+                    continue
+                }
+                descriptor = SyncContentDescriptor(
+                    contentID: contentID,
+                    kind: item.kind,
+                    storedByteCount: expectedByteCount,
+                    source: .payloadFile(url)
+                )
+            default:
+                continue
             }
 
-            contentsByID[contentID] = content
+            descriptorsByID[contentID] = descriptor
             records.append(
                 SyncClipboardRecord(
                     recordName: item.id.uuidString,
@@ -388,7 +441,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
             }
         }
 
-        return SyncExportBundle(
+        return SyncExportDraft(
             clipboard: SyncClipboardSnapshot(
                 deviceID: deviceID,
                 generation: generation,
@@ -407,9 +460,43 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 revision: revision,
                 records: tombstones
             ),
-            contents: contentsByID.values.sorted { $0.contentID < $1.contentID },
+            contentDescriptors: descriptorsByID.values.sorted {
+                if $0.contentID != $1.contentID {
+                    return $0.contentID < $1.contentID
+                }
+                return $0.kind.rawValue < $1.kind.rawValue
+            },
             outboxCutoff: cutoff,
             unavailableClipboardRecordNames: unavailableClipboardRecordNames
+        )
+    }
+
+    /// 按需读取并校验一个本地内容对象；调用方应在使用后立即释放返回 Data。
+    public func materializeContent(
+        _ descriptor: SyncContentDescriptor
+    ) throws -> SyncExportContent {
+        let data: Data
+        switch descriptor.source {
+        case let .text(text):
+            let value = SyncTextContentObject(
+                contentID: descriptor.contentID,
+                kind: descriptor.kind,
+                text: text,
+                byteCount: Int64(Data(text.utf8).count)
+            )
+            data = try SyncSnapshotCodec.encode(value)
+        case let .payloadFile(url):
+            data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            guard Int64(data.count) == descriptor.storedByteCount,
+                  Int64(data.count) <= SyncRetentionPolicy.maximumImageBytes,
+                  ClipboardContentHasher.sha256String(for: data) == descriptor.contentID else {
+                throw DriveSyncStoreError.contentHashMismatch(descriptor.contentID)
+            }
+        }
+        return SyncExportContent(
+            contentID: descriptor.contentID,
+            kind: descriptor.kind,
+            data: data
         )
     }
 
