@@ -13,7 +13,7 @@
 
 ## 现状与根因
 
-`ScreenSelectionOverlayController` 在收到有效选区后立即执行 `dismiss()`，关闭所有选区面板，再把选区交给 `ScreenCaptureCoordinator`。协调器随后异步等待 `SCScreenshotManager.captureImage`，取得图像后才由 `ScreenshotEditorPanelController` 创建并置前新的全屏编辑面板。
+初始实现中，`ScreenSelectionOverlayController` 在收到有效选区后立即执行 `dismiss()`，关闭所有选区面板，再把选区交给 `ScreenCaptureCoordinator`。协调器随后异步等待 `SCScreenshotManager.captureImage`，取得图像后才由 `ScreenshotEditorPanelController` 创建并置前新的全屏编辑面板。
 
 当前 41 次运行记录中的静态抓图耗时如下：
 
@@ -30,7 +30,9 @@
 
 `选区遮罩 → 裸桌面 → 编辑遮罩与截图`
 
-编辑器展示时还会执行 `NSApp.activate(ignoringOtherApps: true)` 和 `makeKey()`。如果窗口交接跨越不同的 WindowServer 显示批次，原应用焦点变化会进一步强化闪烁。
+首轮优化已经让选区层保留到编辑器面板置前，并将连续热截图总耗时降到 `50–81 ms`；用户仍能稳定感知到闪烁，说明剩余问题不是抓图等待空档，而是两个透明全屏窗口的合成和焦点切换。
+
+选区层与编辑器层分别绘制 `42%` 黑色遮罩。若 WindowServer 在交接帧同时合成两层，等效黑色不透明度为 `1 - (1 - 0.42)² = 66.36%`，会形成明显的整屏暗帧。编辑器展示同时执行 `NSApp.activate(ignoringOtherApps: true)` 和 `makeKey()`，应用激活与 key window 外观变化也可能落在不同显示批次，进一步强化亮度跳变。
 
 选区边缘还存在次要的位置差异：拖动层使用原始浮点矩形绘制，抓图和编辑器使用 `ScreenCaptureSelection.frame` 的 `.integral` 矩形。两者边缘最多相差不足 `1 pt`，在 Retina 屏幕上可能表现为约两个物理像素的跳动。
 
@@ -40,13 +42,13 @@
 
 | 方案 | 优点 | 代价与边界 |
 | --- | --- | --- |
-| 保留选区层并进行两阶段窗口交接（采用） | 不暴露裸桌面；改动集中在现有三个控制器；继续沿用选区窗口与编辑窗口的焦点边界 | 需要锁定已提交选区，并保证编辑器首帧准备、置前和旧面板关闭的顺序 |
-| 选区与编辑器复用同一个 `NSPanel` | 理论上不存在跨窗口空档 | 需要重构 `.nonactivatingPanel`、`canBecomeKey` 和应用激活策略，容易破坏框选时不抢焦点及编辑器快捷键 |
+| 选区与编辑器复用同一个 `NSPanel`（采用） | 不发生跨窗口合成；遮罩亮度保持一致；无需激活应用 | 需要让选区面板只在编辑态具备 key window 能力，并在同一内容树内切换交互 |
+| 保留选区层并进行两阶段窗口交接 | 不暴露裸桌面；改动集中在现有三个控制器 | 实测仍可能出现双层透明遮罩暗帧和应用激活造成的焦点帧变化 |
 | 仅优化抓图耗时或添加淡入淡出 | 实现范围较小 | 无法覆盖 ScreenCaptureKit 冷路径；淡入淡出仍会显示错误的中间画面，只能弱化而不能消除闪烁 |
 
 ## 当前方案
 
-采用“保留选区层、预备编辑器、同批次交接”的两阶段展示策略。
+采用“单一非激活面板、单一持久遮罩、原位切换编辑内容”的展示策略。交互形态参考飞书截图的原位选区与标注体验，但不依赖其未公开实现。
 
 ### 选区提交
 
@@ -64,12 +66,12 @@
 
 `ScreenCaptureCoordinator` 在选区层仍可见时调用 `captureStill(for:)`。`SystemScreenCaptureService` 继续按进程和 bundle identifier 排除 MacTools，因此保留的选区面板、模式控件和边框不会进入截图。
 
-截图成功后，协调器先要求 `ScreenshotEditorPanelController` 准备隐藏的编辑面板。准备阶段完成以下工作，但不改变窗口顺序：
+截图成功后，协调器先要求 `ScreenshotEditorPanelController` 准备独立的编辑内容视图。准备阶段完成以下工作，但不创建窗口、不改变窗口顺序：
 
 - 创建 `ScreenshotEditorView` 和 `NSHostingView`；
-- 设置全屏面板、截图画布及工具条位置；
+- 设置截图画布及工具条位置；
 - 执行必要的 AppKit/SwiftUI 布局和首次绘制准备；
-- 保持面板不可见，不提前激活 MacTools。
+- 保持编辑内容不进入窗口，不激活 MacTools。
 
 ### 抓图性能优化
 
@@ -85,7 +87,7 @@
 | 捕获源准备 | 查找显示器、构造应用排除列表、`SCContentFilter` 和 `SCStreamConfiguration` |
 | 系统抓帧 | 调用 `SCScreenshotManager.captureImage` 到返回 `CGImage` |
 | 编辑器准备 | 创建隐藏面板到完成首次布局和绘制准备 |
-| 窗口交接 | 开始激活 MacTools 到编辑器成为 key window |
+| 内容交接 | 开始挂载编辑内容到原选区面板成为 key window |
 | 用户感知总耗时 | 有效 `mouseUp` 到编辑器可交互 |
 
 日志只记录阶段名称、耗时和成功或失败状态，不记录选区坐标、窗口标题、截图内容、显示器名称或图像字节。
@@ -130,19 +132,20 @@ WindowServer 和 ScreenCaptureKit 的尾部延迟不受应用完全控制，因�
 
 临时流会增加显存、能耗、帧同步和资源清理复杂度，不进入首轮实现，也不能通过降低 Retina 输出分辨率换取速度。
 
-### 无动画交接
+### 单表面无动画交接
 
-编辑器首帧准备完成后，在 `MainActor` 的同一次同步显示提交中按以下顺序交接：
+编辑器内容准备完成后，在 `MainActor` 的同一个现有选区面板内按以下顺序切换：
 
-1. 激活 MacTools；
-2. 将已准备的编辑面板置于选区面板之上；
-3. 确认编辑面板已接受展示；
-4. 立即关闭全部选区面板；
-5. 让编辑面板成为 key window。
+1. 移除截图/录屏模式控件；
+2. 隐藏已完成选区的描边，但保留同一 `42%` 遮罩与选区镂空；
+3. 把已准备的透明编辑内容挂到当前选区面板；
+4. 关闭其他显示器上的选区面板；
+5. 允许当前 `.nonactivatingPanel` 成为 key window，并调用 `makeKey()`；
+6. 确认原面板持续可见且编辑内容已经挂载。
 
-交接过程不使用延迟、淡入淡出或窗口缩放动画。旧选区层只有在新编辑器已经置前后才退出，因此 ScreenCaptureKit 耗时不会形成可见空档；窗口顺序变更也不会留下稳定的双层遮罩状态。
+`ScreenshotEditorView` 不再绘制第二层全屏黑色背景，屏幕始终只由 `ScreenSelectionView` 提供一层遮罩。交接过程不创建或置前第二个 `NSPanel`，不调用 `NSApp.activate`，也不使用延迟、淡入淡出或窗口缩放动画。当前面板的窗口编号、层级和遮罩像素持续不变，只在内容树内增加截图和工具条。
 
-如果编辑面板未能成功展示，协调器保留现有失败处理：清理选区层和编辑器，结束会话并显示错误提示，不将会话留在锁定状态。
+如果找不到对应显示器面板、编辑内容未准备完成或无法挂载，协调器保留现有失败处理：清理选区层和编辑内容，结束会话并显示错误提示，不将会话留在锁定状态。
 
 ### 录屏边界
 
@@ -165,9 +168,9 @@ MacTools 已从 ScreenCaptureKit 内容过滤器中排除，因此等待录制�
 
 | 组件 | 职责变化 |
 | --- | --- |
-| `ScreenSelectionOverlayController` | 管理选区未提交、已提交和关闭状态；提交后锁定交互但保持画面；由协调器决定最终关闭时机 |
-| `ScreenCaptureCoordinator` | 负责抓图或录屏启动期间的选区层生命周期，并编排编辑器准备、窗口交接、取消和失败清理 |
-| `ScreenshotEditorPanelController` | 将现有一次性 `present` 拆分为隐藏准备与正式展示两个阶段；展示前完成布局，展示后保持现有复制和取消回调 |
+| `ScreenSelectionOverlayController` | 管理选区未提交、已提交、编辑和关闭状态；在当前显示器的原面板内挂载编辑内容，并按阶段控制 key window 能力 |
+| `ScreenCaptureCoordinator` | 负责抓图或录屏启动期间的选区层生命周期，并编排编辑内容准备、原位切换、取消和失败清理 |
+| `ScreenshotEditorPanelController` | 只构造、预布局和持有编辑内容视图，不再创建、激活或排序窗口 |
 | `ScreenCaptureSelection` | 继续作为唯一的选区归一化与坐标转换来源，不引入另一套窗口坐标模型 |
 | `ScreenCapturePreparationCache` | 为成功结果增加带时钟注入的 `5 秒` 有效期，并保留现有并发任务复用和 generation 保护 |
 | `SystemScreenCaptureService` | 保持当前 MacTools 应用排除和截图分辨率策略；记录内容准备、捕获源构造和系统抓帧耗时；响应屏幕参数变化；在内容查询错误或显示器缺失时刷新并重试一次 |
@@ -187,7 +190,7 @@ MacTools 已从 ScreenCaptureKit 内容过滤器中排除，因此等待录制�
 ### 自动测试
 
 - 增加选区提交生命周期测试，验证有效选区只提交一次，提交后保持展示并拒绝后续拖动，取消或显式关闭后恢复干净状态。
-- 增加窗口交接顺序测试或源契约测试，验证编辑器先准备和置前，选区层后关闭，且交接路径不包含固定延迟或淡入淡出。
+- 增加单表面交接源契约测试，验证编辑器控制器不创建窗口、不激活应用，编辑视图不绘制第二层遮罩，选区面板只在编辑态允许成为 key window。
 - 增加取消竞争测试：抓图返回前取消会话，返回后不得进入编辑状态或展示编辑器。
 - 扩充 `ScreenCaptureSelectionTests`，覆盖小数坐标、反向拖动和显示器边缘裁切，验证选区绘制、抓图源矩形与编辑器矩形使用同一归一化结果。
 - 扩充 `ScreenCapturePreparationCacheTests`，使用注入时钟验证 `5 秒` 内复用、到期刷新、显式失效、并发请求合并和旧代际结果隔离。
@@ -212,7 +215,7 @@ MacTools 已从 ScreenCaptureKit 内容过滤器中排除，因此等待录制�
 
 ## 成功标准
 
-- 任意实际抓图耗时下，鼠标松开到编辑器首帧之间始终有正确的 MacTools 表面覆盖屏幕；
+- 任意实际抓图耗时下，鼠标松开到编辑器首帧之间始终由同一个 MacTools 面板和同一层遮罩覆盖屏幕；
 - 逐帧检查不出现裸桌面、亮度闪烁、重复遮罩或选区位置跳动；
 - 至少 50 次打包应用截图的新基线达到取得 `CGImage` 的 `P50 ≤ 50 ms`、`P95 ≤ 150 ms`，以及编辑器可交互的 `P95 ≤ 200 ms`；
 - 阶段数据未达预算时必须指出具体瓶颈；只有系统抓帧阶段仍超过预算才进入临时 `SCStream` 方案评估；
