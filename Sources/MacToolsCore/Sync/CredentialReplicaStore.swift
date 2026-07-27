@@ -147,6 +147,16 @@ public final class CredentialReplicaStore: @unchecked Sendable {
         }
     }
 
+    /// removal marker 生效后删除指定设备的加密凭据副本；当前获胜值已由保留设备接管。
+    public func removeReplica(deviceID: String) throws {
+        guard UUID(uuidString: deviceID) != nil else {
+            throw CredentialReplicaStoreError.invalidDeviceID(deviceID)
+        }
+        let url = replicaURL(deviceID: deviceID)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
+    }
+
     /// 读取并返回 `readData` 对应的同步核心领域数据。
     private func readData(at url: URL) throws -> Data {
         // File Provider 占位文件尚未完整下载时不得读取，否则会把暂时不可用误判为损坏。

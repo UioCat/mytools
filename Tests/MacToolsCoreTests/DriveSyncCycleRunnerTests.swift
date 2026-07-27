@@ -48,6 +48,9 @@ final class DriveSyncCycleRunnerTests: XCTestCase {
 
         let first = try runner.run(rootURL: rootURL, configuration: configuration)
         let firstReplica = try XCTUnwrap(store.replicas(generation: 1).first)
+        try Data(repeating: 7, count: 1_024).write(
+            to: rootURL.appendingPathComponent("inventory-probe.bin")
+        )
         let second = try runner.run(rootURL: rootURL, configuration: configuration)
         let secondReplica = try XCTUnwrap(store.replicas(generation: 1).first)
 
@@ -59,11 +62,22 @@ final class DriveSyncCycleRunnerTests: XCTestCase {
         XCTAssertNil(second.remoteSettings)
         XCTAssertEqual(first.devices, second.devices)
         XCTAssertEqual(first.devices.map(\.id), [deviceID])
+        guard case let .synced(_, firstUsage) = first.status else {
+            return XCTFail("Expected the initial cycle to sync")
+        }
         guard case let .synced(lastSyncAt, usage) = second.status else {
             return XCTFail("Expected a synced status")
         }
         XCTAssertEqual(lastSyncAt, now)
         XCTAssertEqual(usage.ordinaryHistoryCount, 0)
+        XCTAssertEqual(usage, firstUsage)
+
+        runner.invalidateObservationCache()
+        let audited = try runner.run(rootURL: rootURL, configuration: configuration)
+        guard case let .synced(_, auditedUsage) = audited.status else {
+            return XCTFail("Expected the audited cycle to sync")
+        }
+        XCTAssertEqual(auditedUsage.metadataBytes, firstUsage.metadataBytes + 1_024)
     }
 
     func testStableRerunDoesNotMaterializeAlreadyUploadedLocalImage() throws {

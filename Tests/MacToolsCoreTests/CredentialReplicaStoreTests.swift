@@ -46,6 +46,28 @@ final class CredentialReplicaStoreTests: XCTestCase {
         }
     }
 
+    func testRemovedDeviceReplicaCanBePhysicallyDeleted() throws {
+        try withStore { store, root in
+            try store.write(
+                envelope(value: "first", counter: 1, deviceID: deviceA),
+                deviceID: deviceA
+            )
+            try store.write(
+                envelope(value: "second", counter: 2, deviceID: deviceB),
+                deviceID: deviceB
+            )
+
+            try store.removeReplica(deviceID: deviceB)
+
+            XCTAssertEqual(try store.scan(excluding: []).replicas.map(\.deviceID), [deviceA])
+            XCTAssertFalse(FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(
+                    "credentials/replicas/\(deviceB).v1.json"
+                ).path
+            ))
+        }
+    }
+
     func testCorruptedReplicaIsIsolatedFromHealthyPeer() throws {
         try withStore { store, root in
             let healthy = try envelope(value: "healthy", counter: 1, deviceID: deviceA)

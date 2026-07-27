@@ -55,6 +55,17 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         }
     }
 
+    private struct ObservationCache {
+        var rootURL: URL
+        var storeID: UUID
+        var generation: Int
+        var replicasByDeviceID: [String: DriveSyncReplica]
+        var replicaDigests: [String: String]
+        var removedDeviceIDs: Set<String>
+        var inventory: SyncStorageInventory
+        var lastFullInventoryAuditAt: Date
+    }
+
     /// 为同步核心领域中的相关类型提供 `DateProvider` 别名。
     public typealias DateProvider = @Sendable () -> Date
     /// 为同步核心领域中的相关类型提供 `DeviceNameProvider` 别名。
@@ -71,6 +82,9 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
     private let deviceName: DeviceNameProvider
     private let requestDownload: DownloadRequester
     private let makeStore: StoreFactory
+    private let inventoryAuditInterval: TimeInterval
+    private let observationLock = NSLock()
+    private var observationCache: ObservationCache?
 
     /// 创建 `DriveSyncCycleRunner`，保存传入依赖并建立初始状态。
     public init(
@@ -80,7 +94,8 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         currentDate: @escaping DateProvider = { Date() },
         deviceName: @escaping DeviceNameProvider,
         requestDownload: @escaping DownloadRequester,
-        makeStore: @escaping StoreFactory = { DriveSyncStore(rootURL: $0) }
+        makeStore: @escaping StoreFactory = { DriveSyncStore(rootURL: $0) },
+        inventoryAuditInterval: TimeInterval = 5 * 60
     ) {
         self.localRepository = localRepository
         self.deviceOverrideRepository = deviceOverrideRepository
@@ -89,13 +104,22 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         self.deviceName = deviceName
         self.requestDownload = requestDownload
         self.makeStore = makeStore
+        self.inventoryAuditInterval = max(0, inventoryAuditInterval)
+    }
+
+    /// 主动失效观察缓存；目录清理或协调器外部写入后，下轮会完整重建。
+    public func invalidateObservationCache() {
+        observationLock.withLock {
+            observationCache = nil
+        }
     }
 
     /// 执行一次完整同步：采纳代际、读取副本、应用墓碑、容量裁剪、写回并确认 receipt。
     public func run(
         rootURL: URL,
         configuration: DriveSyncCycleConfiguration,
-        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+        cancellation: SyncCycleCancellation = SyncCycleCancellation(),
+        forceWrite: Bool = false
     ) throws -> DriveSyncCycleResult {
         try cancellation.check()
         let now = currentDate()
@@ -127,7 +151,15 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             resetReplicaState = true
         }
 
-        let replicaScan = try store.scanReplicas(generation: generation)
+        let cachedObservation = cachedObservation(
+            rootURL: rootURL,
+            storeID: descriptor.storeID,
+            generation: generation
+        )
+        let replicaScan = try store.scanReplicas(
+            generation: generation,
+            cachedReplicasByDeviceID: cachedObservation?.replicasByDeviceID ?? [:]
+        )
         let replicas = replicaScan.replicas.filter {
             !removedDeviceIDs.contains($0.manifest.deviceID)
         }
@@ -141,7 +173,32 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 try? requestDownload(url)
             }
         }
-        var storageInventory = try store.storageInventory()
+        let replicaDigests = Dictionary(
+            uniqueKeysWithValues: replicas.map {
+                ($0.manifest.deviceID, $0.manifestDigest)
+            }
+        )
+        let cachedInventoryIsFresh: Bool
+        if let cachedObservation {
+            let auditAge = now.timeIntervalSince(
+                cachedObservation.lastFullInventoryAuditAt
+            )
+            cachedInventoryIsFresh = cachedObservation.replicaDigests == replicaDigests
+                && cachedObservation.removedDeviceIDs == removedDeviceIDs
+                && auditAge >= 0
+                && auditAge < inventoryAuditInterval
+        } else {
+            cachedInventoryIsFresh = false
+        }
+        let lastFullInventoryAuditAt: Date
+        var storageInventory: SyncStorageInventory
+        if cachedInventoryIsFresh, let cachedObservation {
+            storageInventory = cachedObservation.inventory
+            lastFullInventoryAuditAt = cachedObservation.lastFullInventoryAuditAt
+        } else {
+            storageInventory = try store.storageInventory()
+            lastFullInventoryAuditAt = now
+        }
         let storedObjectsBeforeWrite = storageInventory.objects
         var storedBytesByContentID: [String: Int64] = [:]
         for object in storedObjectsBeforeWrite {
@@ -453,13 +510,18 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let needsWrite = resetReplicaState
             || currentRevision == 0
             || ownReplicaUnverifiable
+            || forceWrite
             || hasRelevantPendingChanges
             || seenRevisions != persistedSeenRevisions
             || !compactedTombstones.isEmpty
             || evictionSnapshotChanged
 
         var writtenBundle: SyncExportBundle?
+        var writtenManifestDigest: String?
+        var writtenReplica: DriveSyncReplica?
         if needsWrite {
+            // 从这里开始会改变目录；任一步失败都让下轮回退为完整 inventory 审计。
+            invalidateObservationCache()
             try cancellation.check()
             seenRevisions[deviceID] = nextRevision
             let preparedDraft = draft.excludingContentIDs(
@@ -482,21 +544,31 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 preparation.unavailableContentIDs
             )
             let finalBundle = finalDraft.bundle()
-            let manifest = try store.write(
+            storageInventory = storageInventory.applyingPreparedContents(
+                preparedDraft.contentDescriptors,
+                uploadedContentIDs: preparation.uploadedContentIDs
+            )
+            let writeResult = try store.writeWithMetadataDelta(
                 finalBundle,
                 seenRevisions: seenRevisions,
                 deviceName: currentDeviceName,
                 updatedAt: now,
                 cancellation: cancellation
             )
+            storageInventory = storageInventory.adjustingMetadataBytes(
+                by: writeResult.metadataByteDelta
+            )
             if evictionSnapshotChanged {
                 try cancellation.check()
-                try store.writeEvictions(
+                let evictionMetadataDelta = try store.writeEvictions(
                     SyncEvictionSnapshot(
                         deviceID: deviceID,
                         generation: generation,
                         records: localEvictions
                     )
+                )
+                storageInventory = storageInventory.adjustingMetadataBytes(
+                    by: evictionMetadataDelta
                 )
             }
             try cancellation.check()
@@ -509,12 +581,17 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                     Set(finalDraft.contentDescriptors.map(\.contentID))
                 )
             )
-            try deviceOverrideRepository.setReplicaRevision(manifest.revision)
+            try deviceOverrideRepository.setReplicaRevision(writeResult.manifest.revision)
             try deviceOverrideRepository.setSeenRevisions(seenRevisions)
             writtenBundle = finalBundle
-        }
-        if writtenBundle != nil {
-            storageInventory = try store.storageInventory()
+            writtenManifestDigest = writeResult.manifestDigest
+            writtenReplica = DriveSyncReplica(
+                manifest: writeResult.manifest,
+                clipboard: finalBundle.clipboard,
+                preferences: finalBundle.preferences,
+                tombstones: finalBundle.tombstones,
+                manifestDigest: writeResult.manifestDigest
+            )
         }
 
         var referencedContentIDs: Set<String> = []
@@ -533,6 +610,9 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 allContentIDs: Set(storedObjects.map(\.contentID)),
                 referencedContentIDs: referencedContentIDs
             )
+            if !garbageIDs.isEmpty {
+                invalidateObservationCache()
+            }
             for object in storedObjects where garbageIDs.contains(object.contentID) {
                 try cancellation.check()
                 try store.removeObject(object)
@@ -543,6 +623,28 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
 
         let finalStorageInventory = storageInventory.removingObjects(
             withContentIDs: removedGarbageIDs
+        )
+        var reusableReplicasByDeviceID = Dictionary(
+            uniqueKeysWithValues: replicas.map {
+                ($0.manifest.deviceID, $0)
+            }
+        )
+        var resultingReplicaDigests = replicaDigests
+        if let writtenManifestDigest, let writtenReplica {
+            reusableReplicasByDeviceID[deviceID] = writtenReplica
+            resultingReplicaDigests[deviceID] = writtenManifestDigest
+        }
+        storeObservation(
+            ObservationCache(
+                rootURL: rootURL.standardizedFileURL,
+                storeID: descriptor.storeID,
+                generation: generation,
+                replicasByDeviceID: reusableReplicasByDeviceID,
+                replicaDigests: resultingReplicaDigests,
+                removedDeviceIDs: removedDeviceIDs,
+                inventory: finalStorageInventory,
+                lastFullInventoryAuditAt: lastFullInventoryAuditAt
+            )
         )
         let usage = finalStorageInventory.usage(
             capacityBytes: configuration.storageLimit.byteLimit,
@@ -591,6 +693,30 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             remoteSettings: remoteSettings,
             devices: devices
         )
+    }
+
+    /// 只返回与当前目录、store 和 generation 完全匹配的观察缓存。
+    private func cachedObservation(
+        rootURL: URL,
+        storeID: UUID,
+        generation: Int
+    ) -> ObservationCache? {
+        observationLock.withLock {
+            guard let observationCache,
+                  observationCache.rootURL == rootURL.standardizedFileURL,
+                  observationCache.storeID == storeID,
+                  observationCache.generation == generation else {
+                return nil
+            }
+            return observationCache
+        }
+    }
+
+    /// 原子替换观察缓存；缓存丢失只会让下轮回退到完整扫描。
+    private func storeObservation(_ observation: ObservationCache) {
+        observationLock.withLock {
+            observationCache = observation
+        }
     }
 
     /// 计算并返回 `fallbackDeviceName` 对应的同步核心领域数据或状态结果。

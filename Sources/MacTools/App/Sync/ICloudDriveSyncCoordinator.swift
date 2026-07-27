@@ -270,6 +270,24 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                             removedAt: Date()
                         )
                     )
+                    try cancellation.check()
+                    _ = try self.cycleRunner.run(
+                        rootURL: coordinatedRoot,
+                        configuration: snapshot.cycleConfiguration,
+                        cancellation: cancellation,
+                        forceWrite: true
+                    )
+                    defer {
+                        self.cycleRunner.invalidateObservationCache()
+                    }
+                    try cancellation.check()
+                    try store.removeDeviceData(
+                        deviceID: removedDeviceID,
+                        cancellation: cancellation
+                    )
+                    try cancellation.check()
+                    try CredentialReplicaStore(rootURL: coordinatedRoot)
+                        .removeReplica(deviceID: removedDeviceID)
                 }
                 if self.isCurrent(lease) {
                     self.syncNow()

@@ -108,6 +108,64 @@ public struct SyncStorageInventory: Equatable, Sendable {
         updated.objects.removeAll { contentIDs.contains($0.contentID) }
         return updated
     }
+
+    /// 使用本轮实际写入或修复的对象更新 inventory，不重新遍历同步根目录。
+    public func applyingPreparedContents(
+        _ descriptors: [SyncContentDescriptor],
+        uploadedContentIDs: Set<String>
+    ) -> Self {
+        guard !uploadedContentIDs.isEmpty else { return self }
+        var updated = self
+        let descriptorsByID = Dictionary(
+            uniqueKeysWithValues: descriptors.map { ($0.contentID, $0) }
+        )
+        for contentID in uploadedContentIDs {
+            guard let descriptor = descriptorsByID[contentID] else { continue }
+            if let existing = updated.objects.first(where: { $0.contentID == contentID }) {
+                updated.subtractBytes(existing.byteCount, kind: existing.kind)
+            }
+            updated.objects.removeAll { $0.contentID == contentID }
+            updated.objects.append(
+                SyncStoredObject(
+                    contentID: contentID,
+                    kind: descriptor.kind,
+                    byteCount: descriptor.storedByteCount
+                )
+            )
+            updated.addBytes(descriptor.storedByteCount, kind: descriptor.kind)
+        }
+        updated.objects.sort { $0.contentID < $1.contentID }
+        return updated
+    }
+
+    /// 应用已知元数据文件字节差，保持计数非负。
+    public func adjustingMetadataBytes(by delta: Int64) -> Self {
+        var updated = self
+        updated.metadataBytes = max(0, updated.metadataBytes + delta)
+        return updated
+    }
+
+    private mutating func addBytes(_ bytes: Int64, kind: ClipboardContentKind) {
+        switch kind {
+        case .imageData:
+            imageBytes += bytes
+        case .text, .url:
+            textBytes += bytes
+        default:
+            break
+        }
+    }
+
+    private mutating func subtractBytes(_ bytes: Int64, kind: ClipboardContentKind) {
+        switch kind {
+        case .imageData:
+            imageBytes = max(0, imageBytes - bytes)
+        case .text, .url:
+            textBytes = max(0, textBytes - bytes)
+        default:
+            break
+        }
+    }
 }
 
 /// 封装 `DriveSyncReplicaFailure` 在同步核心领域中的值语义和相关操作。
@@ -148,6 +206,23 @@ public struct SyncContentPreparationResult: Equatable, Sendable {
         self.availableContentIDs = availableContentIDs
         self.uploadedContentIDs = uploadedContentIDs
         self.unavailableContentIDs = unavailableContentIDs
+    }
+}
+
+/// 发布设备 revision 后返回的 manifest 与可用于更新缓存的元数据字节差。
+public struct DriveSyncWriteResult: Equatable, Sendable {
+    public var manifest: SyncReplicaManifest
+    public var manifestDigest: String
+    public var metadataByteDelta: Int64
+
+    public init(
+        manifest: SyncReplicaManifest,
+        manifestDigest: String,
+        metadataByteDelta: Int64
+    ) {
+        self.manifest = manifest
+        self.manifestDigest = manifestDigest
+        self.metadataByteDelta = metadataByteDelta
     }
 }
 
@@ -209,8 +284,11 @@ public final class DriveSyncStore: @unchecked Sendable {
         try scanReplicas(generation: generation).replicas
     }
 
-    /// 扫描指定 generation 的设备副本，并把单副本错误保留在失败列表中。
-    public func scanReplicas(generation: Int) throws -> DriveSyncReplicaScan {
+    /// 每轮读取 manifest；摘要未变化时复用已校验 snapshot，变化时才读取 revision 内容。
+    public func scanReplicas(
+        generation: Int,
+        cachedReplicasByDeviceID: [String: DriveSyncReplica] = [:]
+    ) throws -> DriveSyncReplicaScan {
         guard fileManager.fileExists(atPath: replicasURL.path) else {
             return DriveSyncReplicaScan(replicas: [], failures: [])
         }
@@ -226,7 +304,11 @@ public final class DriveSyncStore: @unchecked Sendable {
             do {
                 let values = try directory.resourceValues(forKeys: [.isDirectoryKey])
                 guard values.isDirectory == true else { continue }
-                if let replica = try readReplica(at: directory, generation: generation) {
+                if let replica = try readReplica(
+                    at: directory,
+                    generation: generation,
+                    cachedReplica: cachedReplicasByDeviceID[deviceID]
+                ) {
                     replicas.append(replica)
                 }
             } catch let error as DriveSyncStoreError {
@@ -254,6 +336,23 @@ public final class DriveSyncStore: @unchecked Sendable {
         updatedAt: Date,
         cancellation: SyncCycleCancellation = SyncCycleCancellation()
     ) throws -> SyncReplicaManifest {
+        try writeWithMetadataDelta(
+            bundle,
+            seenRevisions: seenRevisions,
+            deviceName: deviceName,
+            updatedAt: updatedAt,
+            cancellation: cancellation
+        ).manifest
+    }
+
+    /// 写入设备 revision，并返回可直接合并进 inventory 缓存的元数据字节差。
+    public func writeWithMetadataDelta(
+        _ bundle: SyncExportBundle,
+        seenRevisions: [String: Int64],
+        deviceName: String? = nil,
+        updatedAt: Date,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> DriveSyncWriteResult {
         try cancellation.check()
         for content in bundle.contents {
             try cancellation.check()
@@ -265,6 +364,7 @@ public final class DriveSyncStore: @unchecked Sendable {
             bundle.clipboard.deviceID,
             isDirectory: true
         )
+        let metadataBytesBeforeWrite = try regularFileBytes(in: deviceDirectory)
         try fileManager.createDirectory(at: deviceDirectory, withIntermediateDirectories: true)
 
         let clipboardData = try SyncSnapshotCodec.encode(bundle.clipboard)
@@ -315,7 +415,16 @@ public final class DriveSyncStore: @unchecked Sendable {
             in: revisionsDirectory,
             keeping: Set([snapshotDirectoryName, previousManifest?.snapshotDirectory].compactMap { $0 })
         )
-        return try SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: manifestData)
+        let publishedManifest = try SyncSnapshotCodec.decode(
+            SyncReplicaManifest.self,
+            from: manifestData
+        )
+        let metadataBytesAfterWrite = try regularFileBytes(in: deviceDirectory)
+        return DriveSyncWriteResult(
+            manifest: publishedManifest,
+            manifestDigest: SyncSnapshotCodec.digest(manifestData),
+            metadataByteDelta: metadataBytesAfterWrite - metadataBytesBeforeWrite
+        )
     }
 
     /// 只在共享对象缺失或损坏时调用 provider，并把单内容不可用隔离到结果中。
@@ -401,11 +510,13 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     /// 保存 `writeEvictions` 接收的同步核心领域数据，并保持既有持久化约束。
-    public func writeEvictions(_ snapshot: SyncEvictionSnapshot) throws {
-        try verifiedWrite(
-            SyncSnapshotCodec.encode(snapshot),
-            to: evictionsURL.appendingPathComponent("\(snapshot.deviceID).json")
-        )
+    @discardableResult
+    public func writeEvictions(_ snapshot: SyncEvictionSnapshot) throws -> Int64 {
+        let url = evictionsURL.appendingPathComponent("\(snapshot.deviceID).json")
+        let bytesBeforeWrite = try regularFileBytes(at: url)
+        let data = try SyncSnapshotCodec.encode(snapshot)
+        try verifiedWrite(data, to: url)
+        return Int64(data.count) - bytesBeforeWrite
     }
 
     /// 移除 `evictions` 指定的同步核心领域数据，并维护关联状态。
@@ -593,6 +704,25 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// removal marker 生效且接管 revision 发布后，物理清理指定设备的副本与 eviction。
+    public func removeDeviceData(
+        deviceID: String,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws {
+        guard Self.isValidPathComponent(deviceID) else {
+            throw DriveSyncStoreError.inconsistentReplica(deviceID: deviceID)
+        }
+        let targets = [
+            replicasURL.appendingPathComponent(deviceID, isDirectory: true),
+            evictionsURL.appendingPathComponent("\(deviceID).json")
+        ]
+        for target in targets {
+            try cancellation.check()
+            guard fileManager.fileExists(atPath: target.path) else { continue }
+            try fileManager.removeItem(at: target)
+        }
+    }
+
     /// 保存 `storedObjects` 接收的同步核心领域数据，并保持既有持久化约束。
     public func storedObjects() throws -> [SyncStoredObject] {
         try storageInventory().objects
@@ -613,7 +743,11 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     /// 读取 manifest 指向的 revision，并校验 generation、设备 ID 和所有快照摘要。
-    private func readReplica(at directory: URL, generation: Int) throws -> DriveSyncReplica? {
+    private func readReplica(
+        at directory: URL,
+        generation: Int,
+        cachedReplica: DriveSyncReplica?
+    ) throws -> DriveSyncReplica? {
         let manifestURL = directory.appendingPathComponent("manifest.json")
         guard fileManager.fileExists(atPath: manifestURL.path) else { return nil }
         let manifestData = try readData(at: manifestURL)
@@ -627,6 +761,12 @@ public final class DriveSyncStore: @unchecked Sendable {
         guard manifest.generation == generation else { return nil }
         guard manifest.deviceID == directory.lastPathComponent else {
             throw DriveSyncStoreError.inconsistentReplica(deviceID: directory.lastPathComponent)
+        }
+        let manifestDigest = SyncSnapshotCodec.digest(manifestData)
+        if let cachedReplica,
+           cachedReplica.manifestDigest == manifestDigest,
+           cachedReplica.manifest == manifest {
+            return cachedReplica
         }
 
         let snapshotDirectory: URL
@@ -692,7 +832,7 @@ public final class DriveSyncStore: @unchecked Sendable {
             clipboard: clipboard,
             preferences: preferences,
             tombstones: tombstones,
-            manifestDigest: SyncSnapshotCodec.digest(manifestData)
+            manifestDigest: manifestDigest
         )
     }
 
@@ -919,11 +1059,48 @@ public final class DriveSyncStore: @unchecked Sendable {
         ).filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    /// 读取单文件大小；文件不存在时返回 0。
+    private func regularFileBytes(at url: URL) throws -> Int64 {
+        guard fileManager.fileExists(atPath: url.path) else { return 0 }
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true else { return 0 }
+        return Int64(values.fileSize ?? 0)
+    }
+
+    /// 统计一个局部目录下的普通文件大小，只用于实际写入周期的 delta。
+    private func regularFileBytes(in directory: URL) throws -> Int64 {
+        guard fileManager.fileExists(atPath: directory.path) else { return 0 }
+        let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        )
+        var bytes: Int64 = 0
+        while let url = enumerator?.nextObject() as? URL {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            if values.isRegularFile == true {
+                bytes += Int64(values.fileSize ?? 0)
+            }
+        }
+        return bytes
+    }
+
     /// 判断 `isValidContentID` 所描述的同步核心领域条件是否成立。
     private static func isValidContentID(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy {
             (48...57).contains($0) || (97...102).contains($0)
         }
+    }
+
+    /// 校验设备 ID 可安全作为单个目录或文件名使用。
+    private static func isValidPathComponent(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= 255
+            && value != "."
+            && value != ".."
+            && !value.contains("/")
+            && !value.contains("\\")
+            && !value.hasPrefix(".")
     }
 
     /// 计算并返回 `snapshotDirectoryName` 对应的同步核心领域数据或状态结果。

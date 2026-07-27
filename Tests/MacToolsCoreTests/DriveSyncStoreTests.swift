@@ -116,6 +116,33 @@ final class DriveSyncStoreTests: XCTestCase {
         }
     }
 
+    func testUnchangedManifestReusesCachedReplicaWithoutReadingSnapshotAgain() throws {
+        try withStore { store, root in
+            _ = try store.prepare()
+            let manifest = try store.write(
+                makeBundle(deviceID: "device-a", revision: 1, text: "cached"),
+                seenRevisions: [:],
+                updatedAt: Date()
+            )
+            let first = try XCTUnwrap(store.scanReplicas(generation: 1).replicas.first)
+            let snapshotDirectory = try XCTUnwrap(manifest.snapshotDirectory)
+            try FileManager.default.removeItem(
+                at: root.appendingPathComponent(
+                    "replicas/device-a/revisions/\(snapshotDirectory)/clipboard.json"
+                )
+            )
+
+            let cached = try store.scanReplicas(
+                generation: 1,
+                cachedReplicasByDeviceID: ["device-a": first]
+            )
+
+            XCTAssertEqual(cached.replicas, [first])
+            XCTAssertTrue(cached.failures.isEmpty)
+            XCTAssertTrue(try store.scanReplicas(generation: 1).replicas.isEmpty)
+        }
+    }
+
     func testInterruptedUncommittedRevisionCannotInvalidateCommittedReplica() throws {
         try withStore { store, root in
             _ = try store.prepare()
@@ -250,6 +277,39 @@ final class DriveSyncStoreTests: XCTestCase {
             XCTAssertEqual(updated.textBytes, 0)
             XCTAssertEqual(updated.imageBytes, inventory.imageBytes)
             XCTAssertEqual(updated.metadataBytes, inventory.metadataBytes)
+        }
+    }
+
+    func testWriteMetadataDeltaMatchesFreshInventory() throws {
+        try withStore { store, _ in
+            _ = try store.prepare()
+            let bundle = try makeBundle(deviceID: "device-a", revision: 1, text: "delta")
+            let content = try XCTUnwrap(bundle.contents.first)
+            let descriptor = SyncContentDescriptor(
+                contentID: content.contentID,
+                kind: content.kind,
+                storedByteCount: Int64(content.data.count),
+                source: .text("delta")
+            )
+            let preparation = try store.prepareContents([descriptor]) { _ in content }
+            let inventoryBeforeRevision = try store.storageInventory()
+                .applyingPreparedContents(
+                    [descriptor],
+                    uploadedContentIDs: preparation.uploadedContentIDs
+                )
+            var snapshotOnlyBundle = bundle
+            snapshotOnlyBundle.contents = []
+
+            let result = try store.writeWithMetadataDelta(
+                snapshotOnlyBundle,
+                seenRevisions: [:],
+                updatedAt: Date()
+            )
+            let updated = inventoryBeforeRevision.adjustingMetadataBytes(
+                by: result.metadataByteDelta
+            )
+
+            XCTAssertEqual(updated, try store.storageInventory())
         }
     }
 
@@ -394,6 +454,48 @@ final class DriveSyncStoreTests: XCTestCase {
             XCTAssertTrue(try store.removedDeviceIDs(generation: 1).isEmpty)
             XCTAssertEqual(try store.removedDeviceIDs(generation: 2), ["device-b"])
             XCTAssertEqual(try store.removedDeviceIDs(generation: 3), ["device-b"])
+        }
+    }
+
+    func testRemovingDeviceDataKeepsMarkerAndOtherDeviceReplica() throws {
+        try withStore { store, root in
+            _ = try store.prepare()
+            _ = try store.write(
+                makeBundle(deviceID: "device-a", revision: 1, text: "a"),
+                seenRevisions: [:],
+                updatedAt: Date()
+            )
+            _ = try store.write(
+                makeBundle(deviceID: "device-b", revision: 1, text: "b"),
+                seenRevisions: [:],
+                updatedAt: Date()
+            )
+            try store.writeEvictions(
+                SyncEvictionSnapshot(
+                    deviceID: "device-b",
+                    generation: 1,
+                    records: []
+                )
+            )
+            try store.writeRemovedDevice(
+                SyncRemovedDeviceMarker(
+                    removedDeviceID: "device-b",
+                    removerDeviceID: "device-a",
+                    generation: 1,
+                    removedAt: Date()
+                )
+            )
+
+            try store.removeDeviceData(deviceID: "device-b")
+
+            XCTAssertEqual(
+                try store.scanReplicas(generation: 1).replicas.map(\.manifest.deviceID),
+                ["device-a"]
+            )
+            XCTAssertFalse(FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("evictions/device-b.json").path
+            ))
+            XCTAssertEqual(try store.removedDeviceIDs(generation: 1), ["device-b"])
         }
     }
 

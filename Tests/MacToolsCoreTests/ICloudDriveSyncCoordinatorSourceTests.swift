@@ -30,17 +30,20 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         )
     }
 
-    func testSyncCycleUsesAtMostTwoUnifiedStorageInventoryScans() throws {
+    func testSyncCycleUsesOneFullInventoryScanSiteAndCachesStableCycles() throws {
         let source = try sourceFile(
             "Sources/MacToolsCore/Sync/DriveSyncCycleRunner.swift"
         )
 
         XCTAssertEqual(
             source.components(separatedBy: "store.storageInventory()").count - 1,
-            2
+            1
         )
         XCTAssertFalse(source.contains("store.storedObjects()"))
         XCTAssertFalse(source.contains("store.usage("))
+        XCTAssertTrue(source.contains("cachedInventoryIsFresh"))
+        XCTAssertTrue(source.contains("cachedReplicasByDeviceID:"))
+        XCTAssertTrue(source.contains("writeWithMetadataDelta("))
     }
 
     func testCoordinatorDelegatesSingleCycleWorkToCoreRunner() throws {
@@ -92,6 +95,18 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
             removeBody.range(of: "store.writeRemovedDevice(")
         )
         XCTAssertLessThan(preserveCredential.lowerBound, writeRemoval.lowerBound)
+        let publishTakeover = try XCTUnwrap(
+            removeBody.range(of: "forceWrite: true")
+        )
+        let removeDriveReplica = try XCTUnwrap(
+            removeBody.range(of: "store.removeDeviceData(")
+        )
+        let removeCredentialReplica = try XCTUnwrap(
+            removeBody.range(of: ".removeReplica(deviceID: removedDeviceID)")
+        )
+        XCTAssertLessThan(writeRemoval.lowerBound, publishTakeover.lowerBound)
+        XCTAssertLessThan(publishTakeover.lowerBound, removeDriveReplica.lowerBound)
+        XCTAssertLessThan(removeDriveReplica.lowerBound, removeCredentialReplica.lowerBound)
     }
 
     private func sourceFile(_ path: String) throws -> String {
