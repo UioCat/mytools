@@ -19,36 +19,57 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("selection.displayRelativeFrame"))
     }
 
-    func testScreenshotEditorPreparesBeforeReplacingSelectionOverlay() throws {
+    func testScreenshotEditorReusesSelectionPanelWithoutSecondDimLayerOrApplicationActivation() throws {
         let controllerSource = try sourceFile(
             "Sources/MacTools/App/ScreenCapture/ScreenshotEditorPanelController.swift"
         )
         let coordinatorSource = try sourceFile(
             "Sources/MacTools/App/ScreenCapture/ScreenCaptureCoordinator.swift"
         )
+        let overlaySource = try sourceFile(
+            "Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift"
+        )
+        let editorViewSource = try sourceFile(
+            "Sources/MacTools/App/ScreenCapture/ScreenshotEditorView.swift"
+        )
 
-        let activation = try XCTUnwrap(
-            controllerSource.range(of: "NSApp.activate(ignoringOtherApps: true)")
+        let presentationStart = try XCTUnwrap(
+            overlaySource.range(of: "func presentEditor(")
         )
-        let ordering = try XCTUnwrap(
-            controllerSource.range(of: "panel.orderFrontRegardless()")
+        let nextFunction = try XCTUnwrap(
+            overlaySource.range(
+                of: "private func prepareForNewSelection",
+                range: presentationStart.upperBound..<overlaySource.endIndex
+            )
         )
-        let replacing = try XCTUnwrap(
-            controllerSource.range(of: "replaceVisibleSurface()")
+        let presentationBlock = overlaySource[presentationStart.lowerBound..<nextFunction.lowerBound]
+        let attaching = try XCTUnwrap(
+            presentationBlock.range(of: "selectionView.presentEditor(")
+        )
+        let allowingKey = try XCTUnwrap(
+            presentationBlock.range(of: "panel.allowsKeyWindow = true")
         )
         let keying = try XCTUnwrap(
-            controllerSource.range(of: "panel.makeKey()")
+            presentationBlock.range(of: "panel.makeKey()")
         )
 
-        XCTAssertLessThan(activation.lowerBound, ordering.lowerBound)
-        XCTAssertLessThan(ordering.lowerBound, replacing.lowerBound)
-        XCTAssertLessThan(replacing.lowerBound, keying.lowerBound)
-        XCTAssertFalse(controllerSource.contains("panel.makeKeyAndOrderFront(nil)"))
+        XCTAssertLessThan(attaching.lowerBound, allowingKey.lowerBound)
+        XCTAssertLessThan(allowingKey.lowerBound, keying.lowerBound)
+        XCTAssertFalse(presentationBlock.contains("orderFront"))
+        XCTAssertFalse(presentationBlock.contains("NSApp.activate"))
+        XCTAssertFalse(controllerSource.contains("NSPanel("))
+        XCTAssertFalse(controllerSource.contains("NSApp.activate"))
+        XCTAssertFalse(controllerSource.contains("orderFront"))
+        XCTAssertFalse(editorViewSource.contains("Color.black.opacity(0.42)"))
         XCTAssertTrue(controllerSource.contains("func prepare("))
-        XCTAssertTrue(controllerSource.contains("func presentPrepared("))
+        XCTAssertTrue(controllerSource.contains("func preparedContentView()"))
+        XCTAssertTrue(overlaySource.contains("styleMask: [.borderless, .nonactivatingPanel]"))
+        XCTAssertTrue(overlaySource.contains("override var canBecomeKey: Bool { allowsKeyWindow }"))
+        XCTAssertTrue(presentationBlock.contains("panel.isKeyWindow"))
         XCTAssertTrue(coordinatorSource.contains("editor.prepare("))
-        XCTAssertTrue(coordinatorSource.contains("editor.presentPrepared"))
-        XCTAssertTrue(coordinatorSource.contains("self?.overlay.dismiss()"))
+        XCTAssertTrue(coordinatorSource.contains("editor.preparedContentView()"))
+        XCTAssertTrue(coordinatorSource.contains("overlay.presentEditor("))
+        XCTAssertFalse(coordinatorSource.contains("editor.presentPrepared"))
     }
 
     func testSelectionOverlayStaysVisibleAndLocksAfterSubmission() throws {

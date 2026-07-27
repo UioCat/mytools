@@ -101,6 +101,7 @@ final class ScreenSelectionOverlayController {
     func dismiss() {
         removeModeToolbar()
         for panel in panels {
+            panel.allowsKeyWindow = false
             panel.orderOut(nil)
         }
         panels.removeAll()
@@ -115,6 +116,33 @@ final class ScreenSelectionOverlayController {
         onSelection = nil
         onCancel = nil
         isSelectionCommitted = false
+    }
+
+    /// 在当前选区面板内原位挂载编辑内容，保持窗口和遮罩层不变。
+    func presentEditor(_ editorView: NSView, for selection: ScreenCaptureSelection) -> Bool {
+        guard isSelectionCommitted,
+              let panel = panels.first(where: {
+                  ($0.contentView as? ScreenSelectionView)?.displayID == selection.displayID
+              }),
+              let selectionView = panel.contentView as? ScreenSelectionView else {
+            return false
+        }
+
+        removeModeToolbar()
+        selectionView.presentEditor(editorView)
+        for candidate in panels where candidate !== panel {
+            candidate.orderOut(nil)
+        }
+        selectionView.layoutSubtreeIfNeeded()
+        selectionView.displayIfNeeded()
+        panel.displayIfNeeded()
+        panel.allowsKeyWindow = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.makeKey()
+        panel.displayIfNeeded()
+        return panel.isVisible
+            && panel.isKeyWindow
+            && editorView.superview === selectionView
     }
 
     /// 将新的拖动屏幕设为唯一活动选区，并清除其他屏幕上的旧选择。
@@ -213,7 +241,9 @@ final class ScreenSelectionOverlayController {
 
 /// 管理 `ScreenSelectionPanel` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 private final class ScreenSelectionPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var allowsKeyWindow = false
+
+    override var canBecomeKey: Bool { allowsKeyWindow }
     override var canBecomeMain: Bool { false }
 }
 
@@ -228,6 +258,8 @@ private final class ScreenSelectionView: NSView {
     private var dragStart: CGPoint?
     private var currentPoint: CGPoint?
     private var completedSelectionFrame: CGRect?
+    private var isEditing = false
+    private weak var editorView: NSView?
 
     /// 创建 `ScreenSelectionView`，保存传入依赖并建立初始状态。
     init(displayID: UInt32, displayFrame: CGRect) {
@@ -303,6 +335,18 @@ private final class ScreenSelectionView: NSView {
         needsDisplay = true
     }
 
+    /// 在选区视图上叠加透明编辑内容，并继续复用当前遮罩和选区镂空。
+    func presentEditor(_ editorView: NSView) {
+        self.editorView?.removeFromSuperview()
+        self.editorView = editorView
+        isInteractionLocked = true
+        isEditing = true
+        editorView.frame = bounds
+        editorView.autoresizingMask = [.width, .height]
+        addSubview(editorView)
+        needsDisplay = true
+    }
+
     /// 在当前图形上下文中绘制 `draw` 指定的截图标注内容。
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.42).setFill()
@@ -324,6 +368,10 @@ private final class ScreenSelectionView: NSView {
         context.setBlendMode(.clear)
         context.fill(rect)
         context.restoreGState()
+
+        guard !isEditing else {
+            return
+        }
 
         NSColor.white.withAlphaComponent(0.92).setStroke()
         let outerPath = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)

@@ -178,9 +178,8 @@ final class ScreenCaptureCoordinator {
                 )
 
                 let handoffStartedAt = DispatchTime.now().uptimeNanoseconds
-                guard editor.presentPrepared(replaceVisibleSurface: { [weak self] in
-                    self?.overlay.dismiss()
-                }) else {
+                guard let editorView = editor.preparedContentView(),
+                      overlay.presentEditor(editorView, for: selection) else {
                     throw ScreenCaptureError.editorPresentationFailed
                 }
                 logger.info(
@@ -199,6 +198,8 @@ final class ScreenCaptureCoordinator {
 
     /// 把编辑后的 PNG 写入剪贴板并结束截图会话，保留短期预热缓存。
     private func completeScreenshot(with data: Data) {
+        overlay.dismiss()
+        editor.dismiss()
         do {
             try pasteboard.writeImageData(data)
             state.finish()
@@ -296,6 +297,8 @@ final class ScreenCaptureCoordinator {
 
     /// 取消当前会话但保留短期共享内容缓存，便于快速重新截图。
     private func cancelCurrentSession() {
+        overlay.dismiss()
+        editor.dismiss()
         state.cancel()
         sessionGeneration += 1
     }

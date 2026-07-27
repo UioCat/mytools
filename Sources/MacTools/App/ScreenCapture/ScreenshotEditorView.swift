@@ -83,7 +83,7 @@ struct ScreenshotEditorView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black.opacity(0.42)
+            Color.clear
                 .ignoresSafeArea()
 
             editorCanvas
