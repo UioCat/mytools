@@ -23,17 +23,6 @@ public actor TranslationService {
 
         return await provider.translate(request)
     }
-
-    /// 将输入文本固定翻译为中文。
-    public func translateToChinese(_ text: String) async -> Result<TranslationResponse, TranslationError> {
-        let request = TranslationRequest(
-            text: text,
-            sourceLanguage: nil,
-            targetLanguage: "zh"
-        )
-
-        return await provider.translate(request)
-    }
 }
 
 /// 描述 `TranslationLanguageRouter` 在翻译领域中可取的状态、选项或错误。

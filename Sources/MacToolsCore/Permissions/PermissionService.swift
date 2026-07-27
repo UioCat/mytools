@@ -185,21 +185,6 @@ public final class PermissionService {
         checker.requestScreenRecordingPermission()
     }
 
-    /// 执行 `requestSuperRightClickPermissions` 对应的权限领域输入输出操作。
-    public func requestSuperRightClickPermissions() -> PermissionSummary {
-        let currentSummary = summary()
-
-        if !currentSummary.hasAccessibility {
-            _ = checker.requestAccessibilityPermission()
-        }
-
-        if !currentSummary.hasInputMonitoring {
-            _ = checker.requestInputMonitoringPermission()
-        }
-
-        return summary()
-    }
-
     /// 展示 `openSystemSettings` 对应的权限领域界面或系统位置。
     public func openSystemSettings() {
         openSystemSettings(for: .accessibility)

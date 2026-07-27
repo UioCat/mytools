@@ -53,11 +53,6 @@ public final class FileActionService {
         )
     }
 
-    /// 计算并返回 `terminalOpenCommand` 对应的文件操作领域数据或状态结果。
-    public func terminalOpenCommand(for path: String) -> String {
-        "open -a Terminal \(path)"
-    }
-
     /// 展示 `revealInFinder` 对应的文件操作领域界面或系统位置。
     public func revealInFinder(_ item: ClipboardItem) throws {
         let path = try originalPath(for: item)

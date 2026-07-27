@@ -22,25 +22,6 @@ public struct HotKeyBinding: Codable, Equatable, Hashable, Sendable {
         !key.isEmpty && !modifiers.isEmpty
     }
 
-    /// 解析并校验 `parse` 接收的数据，返回设置与凭据领域可用的结构。
-    public static func parse(displayValue: String) -> HotKeyBinding? {
-        let parts = displayValue
-            .split(separator: "+")
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard parts.count >= 2, let key = parts.last else {
-            return nil
-        }
-
-        let modifiers = Array(parts.prefix(parts.count - 1))
-        guard modifiers.allSatisfy({ canonicalModifier($0) != nil }) else {
-            return nil
-        }
-
-        let binding = HotKeyBinding(key: key, modifiers: modifiers)
-        return binding.isUsableGlobalShortcut ? binding : nil
-    }
-
     /// 描述 `CodingKeys` 在设置与凭据领域中可取的状态、选项或错误。
     private enum CodingKeys: String, CodingKey {
         case key
@@ -355,15 +336,6 @@ public struct TranslationSettings: Codable, Equatable, Sendable {
 
     public var isConfigured: Bool {
         !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// 计算并返回 `displayAPIKey` 对应的设置与凭据领域数据或状态结果。
-    public func displayAPIKey(isRevealed: Bool) -> String {
-        guard !apiKey.isEmpty else {
-            return ""
-        }
-
-        return isRevealed ? apiKey : String(repeating: "*", count: apiKey.count)
     }
 
     /// 计算并返回 `resolvingAPIKey` 对应的设置与凭据领域数据或状态结果。

@@ -99,22 +99,6 @@ final class PermissionServiceTests: XCTestCase {
         XCTAssertEqual(summary.missingPermissions, [])
     }
 
-    func testRequestSuperRightClickPermissionsPromptsOnlyMissingMonitorPermissions() {
-        let checker = FakePermissionChecker(
-            hasAccessibility: false,
-            hasInputMonitoring: false,
-            hasPostEvent: false
-        )
-        let service = PermissionService(checker: checker)
-
-        let summary = service.requestSuperRightClickPermissions()
-
-        XCTAssertFalse(summary.canUseSuperRightClick)
-        XCTAssertEqual(checker.accessibilityRequestCount, 1)
-        XCTAssertEqual(checker.inputMonitoringRequestCount, 1)
-        XCTAssertEqual(checker.postEventRequestCount, 0)
-    }
-
     func testPermissionSettingsActionsRequestPermissionAndOpenMatchingPane() {
         let checker = FakePermissionChecker(
             hasAccessibility: false,

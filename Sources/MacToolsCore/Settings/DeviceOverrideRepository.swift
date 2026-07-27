@@ -29,11 +29,6 @@ public final class DeviceOverrideRepository: @unchecked Sendable {
         try value(for: Key.syncEnabled, as: Bool.self) ?? false
     }
 
-    /// 应用 `setSyncEnabled` 接收的新值，并更新相关设置与凭据领域状态。
-    public func setSyncEnabled(_ isEnabled: Bool) throws {
-        try setValue(isEnabled, for: Key.syncEnabled)
-    }
-
     /// 计算并返回 `deviceID` 对应的设置与凭据领域数据或状态结果。
     public func deviceID() throws -> UUID {
         if let value = try value(for: Key.deviceID, as: String.self),

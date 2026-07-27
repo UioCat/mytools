@@ -608,3 +608,67 @@ When splitting a method, review its declaration, all call sites, and the compile
 - **Notes**: Removed the stale return type and reran the focused suite successfully.
 
 ---
+
+## [ERR-20260727-003] Generated CodeGraph directory removal rejected
+
+**Logged**: 2026-07-27T14:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The command guard rejected recursive removal of the generated repository-local CodeGraph index.
+
+### Error
+```
+rm -f style commands are not permitted. Use a safer approach
+```
+
+### Context
+- The `.codegraph` directory was generated during the current review and was not user-owned source.
+- The command used an explicit validated path, but the environment still blocks recursive forced removal.
+
+### Suggested Fix
+Move generated review artifacts out of the workspace to a unique temporary path instead of removing them recursively.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .codegraph/
+
+### Resolution
+- **Resolved**: 2026-07-27T14:40:00+08:00
+- **Notes**: Moved the generated index to a task-specific path under `/tmp`.
+
+---
+
+## [ERR-20260727-002] CodeGraph edge schema field mismatch
+
+**Logged**: 2026-07-27T14:28:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The first CodeGraph edge statistics query used `type`, while the local index schema names the relation column `kind`.
+
+### Error
+```
+no such column: type
+```
+
+### Context
+- Initialized the repository CodeGraph index to review unused Swift symbols.
+- Inspected the `edges` table schema but reused a generic graph field name in the following aggregation query.
+
+### Suggested Fix
+Query `pragma_table_info` or the emitted `.schema` result before composing ad hoc CodeGraph SQL.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .codegraph/codegraph.db
+
+### Resolution
+- **Resolved**: 2026-07-27T14:28:00+08:00
+- **Notes**: Updated the read-only aggregation to group by `edges.kind`.
+
+---

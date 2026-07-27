@@ -3,14 +3,6 @@ import XCTest
 @testable import MacToolsCore
 
 final class FileActionServiceTests: XCTestCase {
-    func testTerminalOpenCommandUsesBuiltInTerminal() {
-        let service = FileActionService(workspace: FakeWorkspaceOpening())
-
-        let command = service.terminalOpenCommand(for: "/Users/example/Project")
-
-        XCTAssertEqual(command, "open -a Terminal /Users/example/Project")
-    }
-
     func testOpenTerminalRunsBuiltInTerminalForFolderPath() throws {
         let processRunner = FakeProcessRunner()
         let folderURL = temporaryFolderURL()

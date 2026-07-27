@@ -21,7 +21,6 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.translation.endpointURLString, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")
         XCTAssertEqual(settings.translation.apiKey, "")
         XCTAssertFalse(settings.translation.isConfigured)
-        XCTAssertEqual(settings.translation.displayAPIKey(isRevealed: false), "")
         XCTAssertEqual(settings.screenCapture.annotationColor, .blue)
         XCTAssertEqual(settings.screenCapture.annotationLineWidth, .medium)
         XCTAssertEqual(settings.screenCapture.annotationTool, .line)
@@ -128,11 +127,6 @@ final class SettingsStoreTests: XCTestCase {
             HotKeyBinding(key: "left", modifiers: ["cmd", "option", "option"]).displayValue,
             "Option+Command+Left"
         )
-        XCTAssertEqual(
-            HotKeyBinding.parse(displayValue: "ctrl + alt + 1")?.displayValue,
-            "Control+Option+1"
-        )
-        XCTAssertNil(HotKeyBinding.parse(displayValue: "1"))
     }
 
     func testLegacyClipboardSettingsWithoutCacheStoragePathUseDefaultStoragePath() throws {
@@ -359,13 +353,14 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(SuperRightClickResponseSpeed.committedMilliseconds(forSliderValue: 276.5), 300)
     }
 
-    func testTranslationAPIKeyDisplayMasksConfiguredSecretUntilRevealed() {
+    func testTranslationAPIKeyConfigurationRequiresNonWhitespaceSecret() {
         var settings = AppSettings.defaults
         settings.translation.apiKey = "sk-1234567890"
 
-        XCTAssertEqual(settings.translation.displayAPIKey(isRevealed: false), "*************")
-        XCTAssertEqual(settings.translation.displayAPIKey(isRevealed: true), "sk-1234567890")
         XCTAssertTrue(settings.translation.isConfigured)
+
+        settings.translation.apiKey = " \n "
+        XCTAssertFalse(settings.translation.isConfigured)
     }
 
     func testTranslationAPIKeyInputUsesSecureFieldUntilRevealed() {
@@ -492,9 +487,10 @@ final class SettingsStoreTests: XCTestCase {
     func testSyncFolderStateAndDeviceIdentifierAreDeviceOverrides() throws {
         let database = try MacToolsDatabase.inMemory()
         let repository = DeviceOverrideRepository(database: database)
+        let preferenceRepository = PreferenceRepository(database: database)
 
         XCTAssertFalse(try repository.isSyncEnabled())
-        try repository.setSyncEnabled(true)
+        try preferenceRepository.save(.defaults, deviceSyncEnabled: true)
         try repository.setSyncFolder(
             bookmark: Data("bookmark".utf8),
             displayPath: "/example/MacTools Sync"

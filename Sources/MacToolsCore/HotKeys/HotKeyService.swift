@@ -17,7 +17,6 @@ public enum HotKeyRegistrationError: Error, Equatable {
 /// 管理 `HotKeyService` 在全局快捷键领域中的生命周期、依赖和可变状态。
 public final class HotKeyService {
     private let registrar: HotKeyRegistrar
-    private var bindings: [String: HotKeyTarget] = [:]
 
     /// 创建 `HotKeyService`，保存传入依赖并建立初始状态。
     public init(registrar: HotKeyRegistrar) {
@@ -30,20 +29,12 @@ public final class HotKeyService {
         handler: @escaping (HotKeyTarget) -> Void = { _ in }
     ) {
         registrar.unregisterAll()
-        bindings.removeAll()
 
-        // 当前实现先记录显示值映射，再尝试系统注册；注册错误由调用路径忽略。
         for (hotKey, target) in uniqueHotKeys(from: settings) {
-            bindings[hotKey.displayValue] = target
             try? registrar.register(hotKey) {
                 handler(target)
             }
         }
-    }
-
-    /// 返回当前配置记录的显示值映射，不代表 Carbon 注册一定成功。
-    public func binding(for displayValue: String) -> HotKeyTarget? {
-        bindings[displayValue]
     }
 
     /// 计算并返回 `hotKeys` 对应的全局快捷键领域数据或状态结果。

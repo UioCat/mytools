@@ -2,22 +2,35 @@ import XCTest
 @testable import MacToolsCore
 
 final class HotKeyServiceTests: XCTestCase {
-    func testDefaultBindingsProduceToolIDs() {
-        let service = HotKeyService(registrar: FakeHotKeyRegistrar())
-        service.configure(settings: .defaults) { _ in }
+    func testDefaultRegistrationsInvokeToolAndWindowLayoutTargets() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        var invokedTargets: [HotKeyTarget] = []
+        service.configure(settings: .defaults) { target in
+            invokedTargets.append(target)
+        }
 
-        XCTAssertEqual(service.binding(for: "Option+Space"), .mainPanel)
-        XCTAssertEqual(service.binding(for: "Option+1"), .clipboard)
-        XCTAssertEqual(service.binding(for: "Option+2"), .translation)
-        XCTAssertEqual(service.binding(for: "Option+3"), .screenCapture)
-        XCTAssertEqual(service.binding(for: "Control+Command+Left"), .windowLayout(.leftHalf))
-        XCTAssertEqual(service.binding(for: "Control+Command+Right"), .windowLayout(.rightHalf))
-        XCTAssertEqual(service.binding(for: "Control+Option+Left"), .windowLayout(.leftThird))
-        XCTAssertEqual(service.binding(for: "Control+Option+Right"), .windowLayout(.rightThird))
-        XCTAssertEqual(service.binding(for: "Option+Command+Left"), .windowLayout(.leftTwoThirds))
-        XCTAssertEqual(service.binding(for: "Option+Command+Right"), .windowLayout(.rightTwoThirds))
-        XCTAssertEqual(service.binding(for: "Control+Option+0"), .windowLayout(.centered))
-        XCTAssertEqual(service.binding(for: "Control+Command+0"), .windowLayout(.maximize))
+        for hotKey in registrar.registeredHotKeys {
+            registrar.handler(for: hotKey.displayValue)?()
+        }
+
+        XCTAssertEqual(
+            invokedTargets,
+            [
+                .mainPanel,
+                .clipboard,
+                .translation,
+                .screenCapture,
+                .windowLayout(.leftHalf),
+                .windowLayout(.rightHalf),
+                .windowLayout(.leftThird),
+                .windowLayout(.rightThird),
+                .windowLayout(.leftTwoThirds),
+                .windowLayout(.rightTwoThirds),
+                .windowLayout(.centered),
+                .windowLayout(.maximize)
+            ]
+        )
     }
 
     func testConfigureUnregistersAndRegistersDefaultHotKeys() {
@@ -62,10 +75,14 @@ final class HotKeyServiceTests: XCTestCase {
             ]
         )
 
-        service.configure(settings: settings) { _ in }
+        var invokedTargets: [HotKeyTarget] = []
+        service.configure(settings: settings) { target in
+            invokedTargets.append(target)
+        }
+        registrar.handler(for: "Option+Command+Left")?()
+        registrar.handler(for: "Control+Option+1")?()
 
-        XCTAssertEqual(service.binding(for: "Option+Command+Left"), .windowLayout(.leftHalf))
-        XCTAssertEqual(service.binding(for: "Control+Option+1"), .windowLayout(.leftHalf))
+        XCTAssertEqual(invokedTargets, [.windowLayout(.leftHalf), .windowLayout(.leftHalf)])
         XCTAssertEqual(
             registrar.registeredHotKeys.map(\.displayValue),
             ["Option+Space", "Option+1", "Option+2", "Option+3", "Option+Command+Left", "Control+Option+1"]
@@ -85,9 +102,13 @@ final class HotKeyServiceTests: XCTestCase {
             ]
         )
 
-        service.configure(settings: settings) { _ in }
+        var invokedTargets: [HotKeyTarget] = []
+        service.configure(settings: settings) { target in
+            invokedTargets.append(target)
+        }
+        registrar.handler(for: "Option+Space")?()
 
-        XCTAssertEqual(service.binding(for: "Option+Space"), .mainPanel)
+        XCTAssertEqual(invokedTargets, [.mainPanel])
         XCTAssertEqual(
             registrar.registeredHotKeys.map(\.displayValue),
             ["Option+Space", "Option+1", "Option+2", "Option+3"]
