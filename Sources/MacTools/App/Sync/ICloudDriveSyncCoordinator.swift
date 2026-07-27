@@ -162,30 +162,9 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
-    /// 启动 `bootstrapCredential` 对应的 iCloud Drive 同步系统集成流程，并建立所需资源。
-    func bootstrapCredential() {
-        let snapshot = lock.withLock { configuration }
-        guard snapshot.isEnabled else {
-            credentialStateHandler(.unavailable)
-            return
-        }
-        guard let rootURL = snapshot.rootURL else {
-            credentialStateHandler(.unavailable)
-            return
-        }
-        queue.async { [weak self] in
-            guard let self else { return }
-            do {
-                let result = try self.withCoordinatedWrite(at: rootURL) { coordinatedRoot in
-                    try self.synchronizeCredential(at: coordinatedRoot)
-                }
-                self.publishCredential(result)
-            } catch let error as DriveSyncStoreError {
-                self.publishCredential(error)
-            } catch {
-                self.credentialStateHandler(.failed)
-            }
-        }
+    /// 凭据优先执行完整同步，避免启动时重复安排凭据 bootstrap 和普通同步。
+    func bootstrapCredentialAndSync() {
+        syncNow()
     }
 
     /// 调整 `resetSyncData` 涉及的 iCloud Drive 同步系统集成状态，并保持迁移或恢复语义。
@@ -279,29 +258,31 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             }
 
             statusHandler(.syncing)
+            let credentialStatus: SyncStatus?
             do {
-                let results = try withCoordinatedWrite(at: rootURL) { coordinatedRoot in
-                    let driveResult = try cycleRunner.run(
+                let credentialResult = try withCoordinatedWrite(at: rootURL) { coordinatedRoot in
+                    try synchronizeCredential(at: coordinatedRoot)
+                }
+                credentialStatus = publishCredential(credentialResult)
+            } catch let error as DriveSyncStoreError {
+                credentialStatus = publishCredential(error)
+            } catch {
+                credentialStateHandler(.failed)
+                credentialStatus = .failed
+            }
+
+            do {
+                let driveResult = try withCoordinatedWrite(at: rootURL) { coordinatedRoot in
+                    try cycleRunner.run(
                         rootURL: coordinatedRoot,
                         configuration: snapshot.cycleConfiguration
                     )
-                    let credentialResult = Result {
-                        try synchronizeCredential(at: coordinatedRoot)
-                    }
-                    return (driveResult, credentialResult)
                 }
-                if let settings = results.0.remoteSettings {
+                if let settings = driveResult.remoteSettings {
                     remoteSettingsHandler(settings)
                 }
-                devicesHandler(results.0.devices)
-                switch results.1 {
-                case let .success(credentialResult):
-                    let credentialStatus = publishCredential(credentialResult)
-                    statusHandler(credentialStatus ?? results.0.status)
-                case .failure:
-                    credentialStateHandler(.failed)
-                    statusHandler(.failed)
-                }
+                devicesHandler(driveResult.devices)
+                statusHandler(credentialStatus ?? driveResult.status)
             } catch let error as DriveSyncStoreError {
                 if case let .itemNotDownloaded(url) = error {
                     try? Self.requestDownloadIfNeeded(url)
@@ -375,14 +356,18 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     }
 
     /// 发布或记录 `publishCredential` 对应的 iCloud Drive 同步系统集成状态。
-    private func publishCredential(_ error: DriveSyncStoreError) {
+    @discardableResult
+    private func publishCredential(_ error: DriveSyncStoreError) -> SyncStatus {
         if case let .itemNotDownloaded(url) = error {
             try? Self.requestDownloadIfNeeded(url)
             credentialStateHandler(.waitingForDownload)
+            return .waitingForDownload
         } else if case .missingProtocol = error {
             credentialStateHandler(.unavailable)
+            return .folderUnavailable
         } else {
             credentialStateHandler(.failed)
+            return .failed
         }
     }
 

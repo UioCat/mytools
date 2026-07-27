@@ -23,6 +23,7 @@ final class CredentialSyncEngineTests: XCTestCase {
 
         XCTAssertEqual(result.winner, local)
         XCTAssertTrue(result.failures.isEmpty)
+        XCTAssertTrue(result.didWriteReplica)
         XCTAssertEqual(
             try CredentialReplicaStore(rootURL: fixture.syncRoot)
                 .scan(excluding: []).replicas,
@@ -48,6 +49,7 @@ final class CredentialSyncEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(result.winner?.record.value, "remote-placeholder")
+        XCTAssertTrue(result.didWriteReplica)
         XCTAssertEqual(
             try fixture.localStore.readEnvelope(for: .bailianAPIKey),
             remote
@@ -85,6 +87,7 @@ final class CredentialSyncEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(result.winner?.record.value, "healthy-placeholder")
+        XCTAssertFalse(result.didWriteReplica)
         XCTAssertEqual(result.failures, [
             CredentialReplicaFailure(
                 deviceID: deviceB,
@@ -116,6 +119,7 @@ final class CredentialSyncEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(result.winner?.record.value, "repair-placeholder")
+        XCTAssertTrue(result.didWriteReplica)
         XCTAssertEqual(
             try fixture.localStore.readEnvelope(for: .bailianAPIKey),
             remote
@@ -133,6 +137,47 @@ final class CredentialSyncEngineTests: XCTestCase {
 
         XCTAssertNil(result.winner)
         XCTAssertTrue(result.failures.isEmpty)
+        XCTAssertFalse(result.didWriteReplica)
+    }
+
+    func testStableWinnerDoesNotRewriteCurrentDeviceReplica() throws {
+        let fixture = makeFixture()
+        let local = try fixture.localStore.update(
+            value: "stable-placeholder",
+            for: .bailianAPIKey,
+            deviceID: deviceA
+        )
+        let engine = CredentialSyncEngine(localStore: fixture.localStore)
+        let replicaURL = fixture.syncRoot.appendingPathComponent(
+            "credentials/replicas/\(deviceA).v1.json"
+        )
+
+        let first = try engine.synchronize(
+            rootURL: fixture.syncRoot,
+            currentDeviceID: deviceA,
+            removedDeviceIDs: []
+        )
+        let sentinelDate = Date(timeIntervalSince1970: 123)
+        try FileManager.default.setAttributes(
+            [.modificationDate: sentinelDate],
+            ofItemAtPath: replicaURL.path
+        )
+        let second = try engine.synchronize(
+            rootURL: fixture.syncRoot,
+            currentDeviceID: deviceA,
+            removedDeviceIDs: []
+        )
+
+        XCTAssertTrue(first.didWriteReplica)
+        XCTAssertFalse(second.didWriteReplica)
+        XCTAssertEqual(second.winner, local)
+        let attributes = try FileManager.default.attributesOfItem(atPath: replicaURL.path)
+        let modificationDate = try XCTUnwrap(attributes[.modificationDate] as? Date)
+        XCTAssertEqual(
+            modificationDate.timeIntervalSince1970,
+            sentinelDate.timeIntervalSince1970,
+            accuracy: 0.001
+        )
     }
 
     private func makeFixture() -> Fixture {

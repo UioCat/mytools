@@ -7,14 +7,17 @@ import Foundation
 public struct CredentialSyncResult: Equatable, Sendable {
     public var winner: CredentialReconciliationWinner?
     public var failures: [CredentialReplicaFailure]
+    public var didWriteReplica: Bool
 
     /// 创建 `CredentialSyncResult`，保存传入依赖并建立初始状态。
     public init(
         winner: CredentialReconciliationWinner?,
-        failures: [CredentialReplicaFailure]
+        failures: [CredentialReplicaFailure],
+        didWriteReplica: Bool = false
     ) {
         self.winner = winner
         self.failures = failures
+        self.didWriteReplica = didWriteReplica
     }
 
     public var downloadURLs: [URL] {
@@ -46,18 +49,36 @@ public struct CredentialSyncEngine: Sendable {
             replicas: scan.replicas,
             for: .bailianAPIKey
         )
+        var didWriteReplica = false
         if let winner {
             if try !localStore.isMigrationComplete() {
                 try localStore.markMigrationComplete()
             }
-            try replicaStore.write(
-                winner.envelope,
-                deviceID: currentDeviceID
-            )
+            let currentReplica = scan.replicas.first {
+                $0.deviceID == currentDeviceID
+            }
+            let currentFailureBlocksWrite = scan.failures.contains {
+                guard $0.deviceID == currentDeviceID else { return false }
+                switch $0.error {
+                case .itemNotDownloaded, .fileConflict:
+                    return true
+                case .invalidDeviceID, .unreadableReplica, .fileVerificationFailed:
+                    return false
+                }
+            }
+            if currentReplica?.envelope != winner.envelope,
+               !currentFailureBlocksWrite {
+                try replicaStore.write(
+                    winner.envelope,
+                    deviceID: currentDeviceID
+                )
+                didWriteReplica = true
+            }
         }
         return CredentialSyncResult(
             winner: winner,
-            failures: scan.failures
+            failures: scan.failures,
+            didWriteReplica: didWriteReplica
         )
     }
 }

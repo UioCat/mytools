@@ -55,7 +55,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
             source.range(of: "credentialAccess.loadLocal")
         )
         let cloudBootstrap = try XCTUnwrap(
-            source.range(of: "syncCoordinator.bootstrapCredential")
+            source.range(of: "syncCoordinator.bootstrapCredentialAndSync")
         )
         let legacyLoad = try XCTUnwrap(
             source.range(
@@ -66,6 +66,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
 
         XCTAssertLessThan(localLoad.lowerBound, cloudBootstrap.lowerBound)
         XCTAssertLessThan(cloudBootstrap.lowerBound, legacyLoad.lowerBound)
+        XCTAssertFalse(source.contains("syncCoordinator.bootstrapCredential()"))
         XCTAssertFalse(source.contains("waiting for Keychain"))
     }
 

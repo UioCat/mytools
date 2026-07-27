@@ -40,8 +40,7 @@ extension AppEnvironment {
                     "local credential unavailable: \(String(reflecting: type(of: error)))"
                 )
                 if shouldCheckCloud {
-                    syncCoordinator.bootstrapCredential()
-                    syncCoordinator.syncNow()
+                    syncCoordinator.bootstrapCredentialAndSync()
                     return
                 }
                 credentialLoadFinished = true
@@ -53,8 +52,7 @@ extension AppEnvironment {
 
             guard let self, generation == credentialLoadGeneration else { return }
             if shouldCheckCloud {
-                syncCoordinator.bootstrapCredential()
-                syncCoordinator.syncNow()
+                syncCoordinator.bootstrapCredentialAndSync()
                 return
             }
             beginLegacyCredentialLoadIfNeeded(
