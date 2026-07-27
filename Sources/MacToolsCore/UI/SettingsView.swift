@@ -6,6 +6,7 @@ import SwiftUI
 
 /// 封装 `SettingsView` 在 SwiftUI 展示层中的值语义和相关操作。
 public struct SettingsView: View {
+    @Binding private var selectedPane: SettingsPane
     public let settings: AppSettings
     public let syncStatus: SyncStatus
     public let syncFolderPath: String?
@@ -50,6 +51,7 @@ public struct SettingsView: View {
 
     /// 创建 `SettingsView`，保存传入依赖并建立初始状态。
     public init(
+        selectedPane: Binding<SettingsPane>,
         settings: AppSettings,
         syncStatus: SyncStatus = .off,
         syncFolderPath: String? = nil,
@@ -74,6 +76,7 @@ public struct SettingsView: View {
         defaultClipboardCacheDirectory: URL = ClipboardCacheStorageDisplay.defaultDirectory,
         presentation: ToolModulePresentation = .window
     ) {
+        self._selectedPane = selectedPane
         self.settings = settings
         self.syncStatus = syncStatus
         self.syncFolderPath = syncFolderPath
@@ -137,76 +140,48 @@ public struct SettingsView: View {
     }
 
     private var content: some View {
-        GeometryReader { geometry in
-            let innerWidth = max(0, geometry.size.width - 44)
+        VStack(alignment: .leading, spacing: 16) {
+            header
+            SettingsPaneToolbar(selection: $selectedPane)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-
-                    settingsColumns(availableWidth: innerWidth)
-                        .liquidGlassGroup(spacing: 14)
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(selectedPane.sections) { destination in
+                        settingsSection(destination)
+                    }
                 }
-                .padding(22)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.vertical, 2)
             }
+            .id(selectedPane)
         }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var header: some View {
         MainWorkspaceModuleHeader(module: .settings)
     }
 
-    /// 根据可用宽度在双列和单列设置布局之间切换。
     @ViewBuilder
-    private func settingsColumns(availableWidth: CGFloat) -> some View {
-        Group {
-            switch SettingsPageLayout.columnArrangement(for: availableWidth) {
-            case .twoColumns:
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: SettingsPageLayout.columnSpacing) {
-                        primarySettingsColumn
-                            .frame(
-                                minWidth: SettingsPageLayout.primaryColumnMinimumWidth,
-                                maxWidth: .infinity,
-                                alignment: .topLeading
-                            )
-                        secondarySettingsColumn
-                            .frame(
-                                minWidth: SettingsPageLayout.secondaryColumnMinimumWidth,
-                                maxWidth: .infinity,
-                                alignment: .topLeading
-                            )
-                    }
-
-                    windowLayoutSection
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-            case .stacked:
-                VStack(alignment: .leading, spacing: 14) {
-                    primarySettingsColumn
-                    secondarySettingsColumn
-                    windowLayoutSection
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
-    private var primarySettingsColumn: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            shortcutsSection
-            clipboardSection
-            superRightClickSection
-            permissionsSection
-        }
-    }
-
-    private var secondarySettingsColumn: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            translationSection
-            syncSection
+    private func settingsSection(_ destination: SettingsSectionDestination) -> some View {
+        switch destination {
+        case .system:
             systemSection
+        case .shortcuts:
+            shortcutsSection
+        case .clipboard:
+            clipboardSection
+        case .translation:
+            translationSection
+        case .superRightClick:
+            superRightClickSection
+        case .windowLayout:
+            windowLayoutSection
+        case .permissions:
+            permissionsSection
+        case .sync:
+            syncSection
         }
     }
 

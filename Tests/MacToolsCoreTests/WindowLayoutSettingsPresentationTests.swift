@@ -3,15 +3,6 @@ import XCTest
 @testable import MacToolsCore
 
 final class WindowLayoutSettingsPresentationTests: XCTestCase {
-    func testSettingsPageSelectsTwoColumnsOnlyWhenBothColumnsFit() {
-        XCTAssertEqual(SettingsPageLayout.primaryColumnMinimumWidth, 320)
-        XCTAssertEqual(SettingsPageLayout.secondaryColumnMinimumWidth, 360)
-        XCTAssertEqual(SettingsPageLayout.columnSpacing, 14)
-        XCTAssertEqual(SettingsPageLayout.minimumTwoColumnContentWidth, 694)
-        XCTAssertEqual(SettingsPageLayout.columnArrangement(for: 693), .stacked)
-        XCTAssertEqual(SettingsPageLayout.columnArrangement(for: 694), .twoColumns)
-    }
-
     func testPreviewGeometryFramesAndInsetsEveryTargetRegion() {
         let bounds = CGRect(x: 0, y: 0, width: 36, height: 24)
 

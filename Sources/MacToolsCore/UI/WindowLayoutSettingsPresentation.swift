@@ -3,25 +3,6 @@
 
 import CoreGraphics
 
-/// 描述 `SettingsPageColumnArrangement` 在 SwiftUI 展示层中可取的状态、选项或错误。
-enum SettingsPageColumnArrangement: Equatable {
-    case twoColumns
-    case stacked
-}
-
-/// 描述 `SettingsPageLayout` 在 SwiftUI 展示层中可取的状态、选项或错误。
-enum SettingsPageLayout {
-    static let primaryColumnMinimumWidth: CGFloat = 320
-    static let secondaryColumnMinimumWidth: CGFloat = 360
-    static let columnSpacing: CGFloat = 14
-    static let minimumTwoColumnContentWidth = primaryColumnMinimumWidth + secondaryColumnMinimumWidth + columnSpacing
-
-    /// 构建并返回 `columnArrangement` 对应的 SwiftUI 界面内容或展示状态。
-    static func columnArrangement(for availableWidth: CGFloat) -> SettingsPageColumnArrangement {
-        availableWidth >= minimumTwoColumnContentWidth ? .twoColumns : .stacked
-    }
-}
-
 /// 描述 `WindowLayoutPreviewGeometry` 在 SwiftUI 展示层中可取的状态、选项或错误。
 enum WindowLayoutPreviewGeometry {
     /// 构建并返回 `screenFrame` 对应的 SwiftUI 界面内容或展示状态。

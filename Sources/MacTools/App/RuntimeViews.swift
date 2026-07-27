@@ -86,6 +86,7 @@ struct RuntimeMainWorkspaceView: View {
     @State private var currentSettings: AppSettings
     @State private var translationCredentialUnavailable: Bool
     @State private var clipboardSearchFocusToken = 0
+    @State private var selectedSettingsPane: SettingsPane = .general
 
     /// 创建 `RuntimeMainWorkspaceView`，保存传入依赖并建立初始状态。
     init(
@@ -147,6 +148,7 @@ struct RuntimeMainWorkspaceView: View {
             brandIcon: Image(nsImage: MenuBarLogoImage.make())
         ) {
             RuntimeSettingsView(
+                selectedPane: $selectedSettingsPane,
                 settings: currentSettings,
                 syncModel: syncModel,
                 translationCredentialUnavailable: translationCredentialUnavailable,
@@ -275,6 +277,7 @@ struct RuntimeClipboardModuleView: View {
 
 /// 封装 `RuntimeSettingsView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
 struct RuntimeSettingsView: View {
+    @Binding var selectedPane: SettingsPane
     let settings: AppSettings
     @ObservedObject var syncModel: SyncViewModel
     let translationCredentialUnavailable: Bool
@@ -297,6 +300,7 @@ struct RuntimeSettingsView: View {
 
     /// 创建 `RuntimeSettingsView`，保存传入依赖并建立初始状态。
     init(
+        selectedPane: Binding<SettingsPane>,
         settings: AppSettings,
         syncModel: SyncViewModel,
         translationCredentialUnavailable: Bool,
@@ -316,6 +320,7 @@ struct RuntimeSettingsView: View {
         onRemoveSyncDevice: @escaping (String) -> Void,
         presentation: ToolModulePresentation = .window
     ) {
+        self._selectedPane = selectedPane
         self.settings = settings
         self.permissionService = permissionService
         self.syncModel = syncModel
@@ -339,6 +344,7 @@ struct RuntimeSettingsView: View {
 
     var body: some View {
         SettingsView(
+            selectedPane: $selectedPane,
             settings: settings,
             syncStatus: syncModel.status,
             syncFolderPath: syncModel.folderPath,
