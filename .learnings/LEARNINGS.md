@@ -30,6 +30,29 @@ replica，因此两者不能强制相等。
 
 ---
 
+## [LRN-20260727-001] correction
+
+**Logged**: 2026-07-27T11:57:26+08:00
+**Priority**: high
+**Status**: pending
+**Area**: frontend
+
+### Summary
+截图交接中“新窗口已可见再关闭旧窗口”不能保证视觉连续，透明窗口合成和应用激活仍可能产生单帧闪烁。
+
+### Details
+第一轮修复保留选区遮罩直到编辑器窗口置前，消除了抓图期间的裸桌面空档，但用户确认仍有一闪而过的感觉。新日志显示热路径总耗时已降至 50–81 ms，说明剩余问题并非等待时长。当前交接会短暂并存两个各含 42% 黑色遮罩的透明全屏窗口，并调用异步生效的应用激活；窗口“可见”不等于 WindowServer 已在同一帧完成无亮度差的替换。
+
+### Suggested Action
+截图选区和编辑状态应优先复用同一个非激活全屏面板或同一个不透明冻结帧表面，避免双透明遮罩叠加和主应用激活。验证必须包含逐帧亮度/窗口层级采样，不能只检查 `isVisible`、日志时长或是否出现裸桌面。
+
+### Metadata
+- Source: user_feedback
+- Related Files: Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift, Sources/MacTools/App/ScreenCapture/ScreenshotEditorPanelController.swift
+- Tags: screenshot, windowserver, compositing, flicker, app-activation
+
+---
+
 ## [LRN-20260724-002] knowledge_gap
 
 **Logged**: 2026-07-24T17:47:32+08:00
