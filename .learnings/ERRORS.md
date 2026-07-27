@@ -706,3 +706,260 @@ Limit the automated scan to added lines, retain the repository exclusions, and r
 - **Notes**: Replaced the blocking broad match with an added-line scan and contextual review.
 
 ---
+
+## [ERR-20260727-005] macOS app launch used a relative path
+
+**Logged**: 2026-07-27T15:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The UI verification launch command passed a relative app path to `open -a`, which was interpreted as an application name.
+
+### Error
+```
+Unable to find application named 'build/MacTools.app'
+```
+
+### Context
+- Attempted to relaunch the packaged app with the UI verification argument.
+- `open -a` resolves an application name, not a repository-relative bundle path.
+- The package build and signing step had already succeeded.
+
+### Suggested Fix
+Pass the absolute bundle path directly to `open -na`, without `-a`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: scripts/rebuild_and_run_app.sh
+
+### Resolution
+- **Resolved**: 2026-07-27T15:10:00+08:00
+- **Notes**: Corrected the verification launch command to use the absolute app bundle path.
+
+---
+
+## [ERR-20260727-006] System Events UI inspection lacked accessibility permission
+
+**Logged**: 2026-07-27T15:11:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+System Events could not inspect or drive the packaged MacTools window because the current `osascript` process lacks Accessibility permission.
+
+### Error
+```
+“osascript”不允许辅助访问。
+```
+
+### Context
+- Attempted to inspect the packaged app's UI hierarchy and click the reported controls.
+- The app launched successfully and its window was available through Core Graphics window metadata.
+
+### Suggested Fix
+Use deterministic SwiftUI regression tests and packaged-app screenshots in restricted environments; reserve System Events control for a terminal process with Accessibility permission.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/SettingsNavigation.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T15:11:00+08:00
+- **Notes**: Continued with source tracing, focused tests, and packaged-app visual verification.
+
+---
+
+## [ERR-20260727-007] Python Quartz bridge was unavailable
+
+**Logged**: 2026-07-27T15:12:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The default Python runtime does not include the PyObjC Quartz module needed for Core Graphics event inspection.
+
+### Error
+```
+ModuleNotFoundError: No module named 'Quartz'
+```
+
+### Context
+- Checked whether the existing Python runtime could inspect the pointer position without installing dependencies.
+
+### Suggested Fix
+Use the system Swift toolchain for read-only Core Graphics inspection instead of assuming PyObjC is installed.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Package.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T15:12:00+08:00
+- **Notes**: Replaced the Python probe with a Swift/CoreGraphics probe.
+
+---
+
+## [ERR-20260727-008] Liquid Glass regression assertion was broader than the invariant
+
+**Logged**: 2026-07-27T15:17:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The first green-phase regression assertion rejected every conditional surface decision instead of only rejecting replacement of the button hit target.
+
+### Error
+```
+XCTAssertFalse failed
+```
+
+### Context
+- Initially suspected that the button style replaced its hit target while pressed.
+- A real AppKit click test subsequently proved that the existing Liquid Glass button style still completes the action.
+- The actual runtime comparison isolated the explicit settings-navigation animation instead.
+
+### Suggested Fix
+Validate the suspected interaction with an AppKit click before changing a shared button style.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/LiquidGlassSurfaceTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T15:45:00+08:00
+- **Notes**: Removed the speculative Liquid Glass implementation and test changes; kept the shared style unchanged.
+
+---
+
+## [ERR-20260727-009] Core Graphics event probe used obsolete Swift signatures
+
+**Logged**: 2026-07-27T15:33:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A temporary Swift event probe used an outdated `CGEventPostToPid` signature and an invalid dictionary cast.
+
+### Error
+```
+cannot find 'CGEventPostToPid' in scope
+cannot convert value of type 'CFDictionary' to type '[String : Any]'
+```
+
+### Context
+- Attempted to send a process-targeted mouse click and inspect the MacTools window.
+- The current SDK exposes process posting through `CGEvent.postToPid(_:)`.
+
+### Suggested Fix
+Use the current SDK method and cast window metadata from the array returned by `CGWindowListCopyWindowInfo`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/SettingsNavigation.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T15:34:00+08:00
+- **Notes**: Replaced the obsolete probe and moved the decisive verification into the app process.
+
+---
+
+## [ERR-20260727-010] Window lookup probe terminated with fatalError
+
+**Logged**: 2026-07-27T15:36:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A temporary window-inspection probe used `fatalError` when the MacTools window was not present at that instant.
+
+### Error
+```
+Fatal error: MacTools window not found
+```
+
+### Context
+- The settings panel hides when the accessory app deactivates.
+- Window absence is expected during that transition and should not crash a diagnostic.
+
+### Suggested Fix
+Return a normal nonzero result or print an empty-state message for timing-sensitive window probes.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/App/MainPanelController.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T15:37:00+08:00
+- **Notes**: Subsequent probes handled missing windows without trapping.
+
+---
+
+## [ERR-20260727-011] Native control click test blocked in mouse tracking
+
+**Logged**: 2026-07-27T15:38:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A direct `mouseDown` call against the appearance picker blocked while the native control waited for `mouseUp`.
+
+### Error
+```
+Focused test did not complete until interrupted.
+```
+
+### Context
+- Native segmented controls run a tracking loop during `mouseDown`.
+- Sending `mouseUp` only after `mouseDown` returns cannot complete that loop.
+
+### Suggested Fix
+Queue the matching `mouseUp` on `NSApp` before delivering `mouseDown`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/SettingsNavigationTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T15:39:00+08:00
+- **Notes**: Used an event-queue-aware click during diagnosis and removed the exploratory picker test afterward.
+
+---
+
+## [ERR-20260727-012] Obsolete Core Graphics window capture API was unavailable
+
+**Logged**: 2026-07-27T16:02:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The current macOS SDK rejects `CGWindowListCreateImage`, which was obsoleted in macOS 15.
+
+### Error
+```
+'CGWindowListCreateImage' is unavailable in macOS: Please use ScreenCaptureKit instead.
+```
+
+### Context
+- Attempted to capture a temporarily hidden settings panel for an old/new behavior comparison.
+
+### Suggested Fix
+Use `screencapture -l` for an available window or ScreenCaptureKit for programmatic capture.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/App/ScreenCapture
+
+### Resolution
+- **Resolved**: 2026-07-27T16:06:00+08:00
+- **Notes**: Captured the target window by ID after ordering it for verification.
+
+---

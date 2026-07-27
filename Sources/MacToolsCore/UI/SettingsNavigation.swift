@@ -103,9 +103,7 @@ struct SettingsPaneToolbar: View {
         let minimumWidth: CGFloat = compact ? 48 : 80
 
         return Button {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                selection = pane
-            }
+            selection = pane
         } label: {
             VStack(spacing: compact ? 0 : 5) {
                 Image(systemName: pane.systemImage)
