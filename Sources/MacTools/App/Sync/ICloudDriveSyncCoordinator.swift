@@ -42,6 +42,19 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// 标识一次同步请求读取到的目录和生命周期代际。
+    private struct CycleLease {
+        var token: UInt64
+        var rootURL: URL
+    }
+
+    /// 描述一次周期结束后调度器应执行的动作。
+    private enum CycleCompletion {
+        case finish
+        case rerun
+        case schedule(UInt64)
+    }
+
     private let localRepository: SyncLocalRepository
     private let deviceOverrideRepository: DeviceOverrideRepository
     private let cycleRunner: DriveSyncCycleRunner
@@ -95,7 +108,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         )
     }
 
-    /// 更新同步开关并使既有周期令牌失效；已在执行的同步周期不会被强制取消。
+    /// 更新同步开关并使既有周期令牌失效；运行中周期会在下一个协作检查点退出。
     func setEnabled(_ enabled: Bool, syncImmediately: Bool = true) {
         let snapshot = lock.withLock { () -> Configuration in
             configuration.isEnabled = enabled
@@ -125,6 +138,10 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             configuration.historyLimit = historyLimit
             configuration.clipboardScope = clipboardScope
             configuration.storageLimit = storageLimit
+            configuration.scheduleToken &+= 1
+            if isSyncing {
+                needsAnotherCycle = true
+            }
         }
     }
 
@@ -170,18 +187,24 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     /// 调整 `resetSyncData` 涉及的 iCloud Drive 同步系统集成状态，并保持迁移或恢复语义。
     func resetSyncData() {
         let snapshot = lock.withLock { configuration }
-        guard snapshot.isEnabled, let rootURL = snapshot.rootURL else { return }
+        guard let lease = cycleLease(for: snapshot) else { return }
+        let cancellation = cancellation(for: lease)
         queue.async { [weak self] in
             guard let self else { return }
             do {
-                try self.withCoordinatedWrite(at: rootURL) { coordinatedRoot in
+                try self.withCoordinatedWrite(
+                    at: lease.rootURL,
+                    cancellation: cancellation
+                ) { coordinatedRoot in
                     let store = DriveSyncStore(rootURL: coordinatedRoot)
                     let descriptor = try store.readProtocol()
+                    try cancellation.check()
                     try self.localRepository.bindStore(descriptor.storeID)
                     let generation = try self.localRepository.advanceGeneration(
                         storeID: descriptor.storeID
                     )
                     let deviceID = try self.deviceOverrideRepository.deviceID().uuidString
+                    try cancellation.check()
                     try store.writeReset(
                         SyncResetMarker(
                             deviceID: deviceID,
@@ -192,9 +215,13 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                     try self.deviceOverrideRepository.setReplicaRevision(0)
                     try self.deviceOverrideRepository.setSeenRevisions([:])
                 }
-                self.syncNow()
+                if self.isCurrent(lease) {
+                    self.syncNow()
+                }
+            } catch is SyncCycleCancellationError {
+                return
             } catch {
-                self.publish(error)
+                self.publish(error, lease: lease)
             }
         }
     }
@@ -202,13 +229,18 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     /// 移除 `removeDevice` 指定的 iCloud Drive 同步系统集成数据，并维护关联状态。
     func removeDevice(_ removedDeviceID: String) {
         let snapshot = lock.withLock { configuration }
-        guard snapshot.isEnabled, let rootURL = snapshot.rootURL else { return }
+        guard let lease = cycleLease(for: snapshot) else { return }
+        let cancellation = cancellation(for: lease)
         queue.async { [weak self] in
             guard let self else { return }
             do {
-                try self.withCoordinatedWrite(at: rootURL) { coordinatedRoot in
+                try self.withCoordinatedWrite(
+                    at: lease.rootURL,
+                    cancellation: cancellation
+                ) { coordinatedRoot in
                     let store = DriveSyncStore(rootURL: coordinatedRoot)
                     let descriptor = try store.readProtocol()
+                    try cancellation.check()
                     try self.localRepository.bindStore(descriptor.storeID)
                     let generation = try self.localRepository.currentGeneration(
                         storeID: descriptor.storeID
@@ -218,15 +250,18 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                     let alreadyRemovedDeviceIDs = try store.removedDeviceIDs(
                         generation: generation
                     )
+                    try cancellation.check()
                     _ = try self.credentialSyncEngine.synchronize(
                         rootURL: coordinatedRoot,
                         currentDeviceID: removerDeviceID,
                         removedDeviceIDs: alreadyRemovedDeviceIDs
                     )
+                    try cancellation.check()
                     try self.localRepository.preserveTombstones(
                         fromRemovedDeviceID: removedDeviceID,
                         generation: generation
                     )
+                    try cancellation.check()
                     try store.writeRemovedDevice(
                         SyncRemovedDeviceMarker(
                             removedDeviceID: removedDeviceID,
@@ -236,9 +271,13 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                         )
                     )
                 }
-                self.syncNow()
+                if self.isCurrent(lease) {
+                    self.syncNow()
+                }
+            } catch is SyncCycleCancellationError {
+                return
             } catch {
-                self.publish(error)
+                self.publish(error, lease: lease)
             }
         }
     }
@@ -251,63 +290,94 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                 finishSyncing()
                 return
             }
-            guard let rootURL = snapshot.rootURL else {
+            guard let lease = cycleLease(for: snapshot) else {
                 statusHandler(.unconfigured)
                 finishSyncing()
                 return
             }
+            let cancellation = cancellation(for: lease)
 
-            statusHandler(.syncing)
-            let credentialStatus: SyncStatus?
             do {
-                let credentialResult = try withCoordinatedWrite(at: rootURL) { coordinatedRoot in
-                    try synchronizeCredential(at: coordinatedRoot)
+                try cancellation.check()
+                statusHandler(.syncing)
+
+                let credentialStatus: SyncStatus?
+                do {
+                    let credentialResult = try withCoordinatedWrite(
+                        at: lease.rootURL,
+                        cancellation: cancellation
+                    ) { coordinatedRoot in
+                        try synchronizeCredential(at: coordinatedRoot)
+                    }
+                    try cancellation.check()
+                    credentialStatus = publishCredential(credentialResult)
+                } catch is SyncCycleCancellationError {
+                    throw SyncCycleCancellationError.cancelled
+                } catch let error as DriveSyncStoreError {
+                    try cancellation.check()
+                    credentialStatus = publishCredential(error)
+                } catch {
+                    try cancellation.check()
+                    credentialStateHandler(.failed)
+                    credentialStatus = .failed
                 }
-                credentialStatus = publishCredential(credentialResult)
-            } catch let error as DriveSyncStoreError {
-                credentialStatus = publishCredential(error)
-            } catch {
-                credentialStateHandler(.failed)
-                credentialStatus = .failed
-            }
 
-            do {
-                let driveResult = try withCoordinatedWrite(at: rootURL) { coordinatedRoot in
+                let driveResult = try withCoordinatedWrite(
+                    at: lease.rootURL,
+                    cancellation: cancellation
+                ) { coordinatedRoot in
                     try cycleRunner.run(
                         rootURL: coordinatedRoot,
-                        configuration: snapshot.cycleConfiguration
+                        configuration: snapshot.cycleConfiguration,
+                        cancellation: cancellation
                     )
                 }
+                try cancellation.check()
                 if let settings = driveResult.remoteSettings {
                     remoteSettingsHandler(settings)
                 }
                 devicesHandler(driveResult.devices)
                 statusHandler(credentialStatus ?? driveResult.status)
+            } catch is SyncCycleCancellationError {
+                // 关闭、切换目录或配置变化属于正常淘汰，不发布失败状态。
             } catch let error as DriveSyncStoreError {
-                if case let .itemNotDownloaded(url) = error {
-                    try? Self.requestDownloadIfNeeded(url)
-                    statusHandler(.waitingForDownload)
-                } else if case .incompatibleProtocol = error {
-                    statusHandler(.protocolIncompatible)
-                } else if case .missingProtocol = error {
-                    statusHandler(.folderUnavailable)
-                } else {
-                    statusHandler(.failed)
+                if isCurrent(lease) {
+                    if case let .itemNotDownloaded(url) = error {
+                        try? Self.requestDownloadIfNeeded(url)
+                        statusHandler(.waitingForDownload)
+                    } else if case .incompatibleProtocol = error {
+                        statusHandler(.protocolIncompatible)
+                    } else if case .missingProtocol = error {
+                        statusHandler(.folderUnavailable)
+                    } else {
+                        statusHandler(.failed)
+                    }
                 }
             } catch {
-                publish(error)
+                publish(error, lease: lease)
             }
 
-            let rerun = lock.withLock { () -> Bool in
-                if needsAnotherCycle {
+            let completion = lock.withLock { () -> CycleCompletion in
+                guard configuration.isEnabled else {
+                    isSyncing = false
                     needsAnotherCycle = false
-                    return true
+                    return .finish
                 }
+                if needsAnotherCycle || configuration.scheduleToken != lease.token {
+                    needsAnotherCycle = false
+                    return .rerun
+                }
+                let token = configuration.scheduleToken
                 isSyncing = false
-                return false
+                return .schedule(token)
             }
-            if !rerun {
-                schedulePeriodicSync(token: snapshot.scheduleToken)
+            switch completion {
+            case .finish:
+                return
+            case .rerun:
+                continue
+            case let .schedule(token):
+                schedulePeriodicSync(token: token)
                 return
             }
         }
@@ -374,8 +444,10 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     /// 在文件协调写入范围内执行传入操作，并返回协调后的结果。
     private func withCoordinatedWrite<Value>(
         at rootURL: URL,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation(),
         operation: (URL) throws -> Value
     ) throws -> Value {
+        try cancellation.check()
         let didStartSecurityScope = rootURL.startAccessingSecurityScopedResource()
         defer {
             if didStartSecurityScope { rootURL.stopAccessingSecurityScopedResource() }
@@ -389,7 +461,10 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             options: .forMerging,
             error: &coordinationError
         ) { coordinatedURL in
-            result = Result { try operation(coordinatedURL) }
+            result = Result {
+                try cancellation.check()
+                return try operation(coordinatedURL)
+            }
         }
         if let coordinationError { throw coordinationError }
         guard let result else { throw CocoaError(.fileWriteUnknown) }
@@ -410,7 +485,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
-    /// 延迟三十秒触发下一周期；令牌变化只淘汰旧定时任务，不中断正在运行的周期。
+    /// 延迟三十秒触发下一周期；令牌变化同时淘汰旧定时任务和旧周期 lease。
     private func schedulePeriodicSync(token: UInt64) {
         queue.asyncAfter(deadline: .now() + 30) { [weak self] in
             guard let self else { return }
@@ -422,11 +497,40 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     }
 
     /// 发布或记录 `publish` 对应的 iCloud Drive 同步系统集成状态。
-    private func publish(_ error: Error) {
+    private func publish(_ error: Error, lease: CycleLease) {
+        guard isCurrent(lease) else { return }
         if (error as NSError).domain == NSCocoaErrorDomain {
             statusHandler(.folderUnavailable)
         } else {
             statusHandler(.failed)
+        }
+    }
+
+    /// 从启用且已配置的快照创建周期 lease。
+    private func cycleLease(for configuration: Configuration) -> CycleLease? {
+        guard configuration.isEnabled, let rootURL = configuration.rootURL else {
+            return nil
+        }
+        return CycleLease(
+            token: configuration.scheduleToken,
+            rootURL: rootURL.standardizedFileURL
+        )
+    }
+
+    /// 判断 lease 是否仍指向当前启用配置。
+    private func isCurrent(_ lease: CycleLease) -> Bool {
+        lock.withLock {
+            configuration.isEnabled
+                && configuration.scheduleToken == lease.token
+                && configuration.rootURL?.standardizedFileURL == lease.rootURL
+        }
+    }
+
+    /// 创建可传入 Core runner 和存储层的协作式取消检查。
+    private func cancellation(for lease: CycleLease) -> SyncCycleCancellation {
+        SyncCycleCancellation { [weak self] in
+            guard let self else { return true }
+            return !self.isCurrent(lease)
         }
     }
 }

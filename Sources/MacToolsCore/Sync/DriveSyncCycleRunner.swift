@@ -80,8 +80,10 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
     /// 执行一次完整同步：采纳代际、读取副本、应用墓碑、容量裁剪、写回并确认 receipt。
     public func run(
         rootURL: URL,
-        configuration: DriveSyncCycleConfiguration
+        configuration: DriveSyncCycleConfiguration,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
     ) throws -> DriveSyncCycleResult {
+        try cancellation.check()
         let now = currentDate()
         let currentDeviceName = deviceName()
         let store = makeStore(rootURL)
@@ -223,6 +225,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             }
         }
 
+        try cancellation.check()
         for replica in unappliedPeerReplicas {
             try localRepository.apply(tombstones: replica.tombstones)
         }
@@ -337,7 +340,9 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         )
 
         var remoteSettings: AppSettings?
+        try cancellation.check()
         for replica in unappliedPeerReplicas {
+            try cancellation.check()
             let filtered = SyncClipboardSnapshot(
                 deviceID: replica.clipboard.deviceID,
                 generation: replica.clipboard.generation,
@@ -406,6 +411,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
 
         var writtenBundle: SyncExportBundle?
         if needsWrite {
+            try cancellation.check()
             seenRevisions[deviceID] = nextRevision
             let finalBundle = draft.excludingContentIDs(
                 excludedContentIDs.union(blockedImageContentIDs)
@@ -415,9 +421,11 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 finalBundle,
                 seenRevisions: seenRevisions,
                 deviceName: currentDeviceName,
-                updatedAt: now
+                updatedAt: now,
+                cancellation: cancellation
             )
             if evictionSnapshotChanged {
+                try cancellation.check()
                 try store.writeEvictions(
                     SyncEvictionSnapshot(
                         deviceID: deviceID,
@@ -426,6 +434,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                     )
                 )
             }
+            try cancellation.check()
             try localRepository.acknowledgeSnapshot(
                 upTo: finalBundle.outboxCutoff,
                 excludingClipboardRecordNames: blockedClipboardRecordNames.union(
@@ -458,6 +467,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 referencedContentIDs: referencedContentIDs
             )
             for object in storedObjects where garbageIDs.contains(object.contentID) {
+                try cancellation.check()
                 try store.removeObject(object)
                 removedGarbageIDs.insert(object.contentID)
             }

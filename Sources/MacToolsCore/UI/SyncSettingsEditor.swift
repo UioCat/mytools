@@ -300,7 +300,7 @@ struct SyncSettingsEditor: View {
         switch status {
         case .synced:
             return .green
-        case .waitingForDownload, .syncing:
+        case .waitingForDownload, .preparingFolder, .syncing:
             return .orange
         case .capacityFull, .folderUnavailable, .protocolIncompatible, .failed:
             return .red

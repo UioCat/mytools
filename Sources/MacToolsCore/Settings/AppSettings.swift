@@ -551,6 +551,7 @@ public struct SyncStorageUsage: Equatable, Sendable {
 public enum SyncStatus: Equatable, Sendable {
     case unconfigured
     case off
+    case preparingFolder
     case syncing
     case waitingForDownload
     case synced(lastSyncAt: Date?, usage: SyncStorageUsage)
@@ -563,6 +564,7 @@ public enum SyncStatus: Equatable, Sendable {
         switch self {
         case .unconfigured: return "未选择同步文件夹"
         case .off: return "已关闭"
+        case .preparingFolder: return "正在准备同步文件夹"
         case .syncing: return "正在同步"
         case .synced: return "已同步"
         case .waitingForDownload: return "等待 iCloud 下载"

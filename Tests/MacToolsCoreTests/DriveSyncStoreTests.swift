@@ -3,6 +3,28 @@ import XCTest
 @testable import MacToolsCore
 
 final class DriveSyncStoreTests: XCTestCase {
+    func testCancelledWriteDoesNotPublishReplicaManifest() throws {
+        try withStore { store, _ in
+            _ = try store.prepare()
+            let bundle = try makeBundle(deviceID: "device-a", revision: 1, text: "cancelled")
+
+            XCTAssertThrowsError(
+                try store.write(
+                    bundle,
+                    seenRevisions: [:],
+                    updatedAt: Date(),
+                    cancellation: SyncCycleCancellation(isCancelled: { true })
+                )
+            ) { error in
+                XCTAssertEqual(
+                    error as? SyncCycleCancellationError,
+                    .cancelled
+                )
+            }
+            XCTAssertTrue(try store.replicas(generation: 1).isEmpty)
+        }
+    }
+
     func testPrepareCreatesExpectedRootAndStableProtocol() throws {
         try withStore { store, root in
             let now = Date(timeIntervalSince1970: 1_000)

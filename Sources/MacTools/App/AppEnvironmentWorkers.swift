@@ -5,6 +5,90 @@ import AppKit
 import Foundation
 import MacToolsCore
 
+/// 同步目录准备完成后交回 MainActor 的不可变结果。
+struct PreparedSyncFolder: Sendable {
+    var rootURL: URL
+    var bookmark: Data
+    var descriptor: SyncProtocolDescriptor
+    var isUbiquitous: Bool
+}
+
+/// 在独立 utility 串行队列执行 iCloud 目录创建、协议准备和 bookmark I/O。
+final class SyncFolderPreparationWorker: @unchecked Sendable {
+    private let deviceOverrideRepository: DeviceOverrideRepository
+    private let fileManager: FileManager
+    private let queue = DispatchQueue(
+        label: "com.mactools.sync-folder-preparation",
+        qos: .utility
+    )
+
+    init(
+        deviceOverrideRepository: DeviceOverrideRepository,
+        fileManager: FileManager = .default
+    ) {
+        self.deviceOverrideRepository = deviceOverrideRepository
+        self.fileManager = fileManager
+    }
+
+    func prepare(
+        rootURL: URL,
+        securityScopedURL: URL,
+        initialCapacity: SyncStorageLimit
+    ) async throws -> PreparedSyncFolder {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                let didStartSecurityScope = securityScopedURL
+                    .startAccessingSecurityScopedResource()
+                defer {
+                    if didStartSecurityScope {
+                        securityScopedURL.stopAccessingSecurityScopedResource()
+                    }
+                }
+                do {
+                    let standardizedRootURL = rootURL.standardizedFileURL
+                    let descriptor = try DriveSyncStore(
+                        rootURL: standardizedRootURL,
+                        fileManager: self.fileManager
+                    ).prepare(initialCapacity: initialCapacity)
+                    let bookmark = try standardizedRootURL.bookmarkData(
+                        options: .withSecurityScope,
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                    continuation.resume(
+                        returning: PreparedSyncFolder(
+                            rootURL: standardizedRootURL,
+                            bookmark: bookmark,
+                            descriptor: descriptor,
+                            isUbiquitous: self.fileManager.isUbiquitousItem(
+                                at: standardizedRootURL
+                            )
+                        )
+                    )
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func persist(_ folder: PreparedSyncFolder) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    try self.deviceOverrideRepository.setSyncFolder(
+                        bookmark: folder.bookmark,
+                        displayPath: folder.rootURL.path
+                    )
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 /// 串行管理 `ClipboardPollingWorker` 在应用运行时与 AppKit 集成中的可变状态和异步操作。
 actor ClipboardPollingWorker {
     private let service: ClipboardService

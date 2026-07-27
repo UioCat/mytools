@@ -70,6 +70,22 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("waiting for Keychain"))
     }
 
+    func testSyncFolderPreparationRunsThroughBackgroundWorker() throws {
+        let environmentSource = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
+        let workersSource = try sourceFile("Sources/MacTools/App/AppEnvironmentWorkers.swift")
+
+        XCTAssertTrue(environmentSource.contains("await worker.prepare("))
+        XCTAssertTrue(environmentSource.contains("await worker.persist(prepared)"))
+        XCTAssertTrue(environmentSource.contains("syncFolderSelectionGeneration"))
+        XCTAssertFalse(
+            environmentSource.contains(
+                "_ = try DriveSyncStore(rootURL: rootURL).prepare("
+            )
+        )
+        XCTAssertTrue(workersSource.contains("final class SyncFolderPreparationWorker"))
+        XCTAssertTrue(workersSource.contains("qos: .utility"))
+    }
+
     func testRemoteSettingsRestartSuperRightClickMonitorOnlyWhenItsDependenciesChange() throws {
         let source = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
         let applyStart = try XCTUnwrap(

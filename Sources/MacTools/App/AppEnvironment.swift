@@ -24,6 +24,7 @@ final class AppEnvironment {
     private let repository: ClipboardRepository
     private let clipboardPollingWorker: ClipboardPollingWorker
     private let maintenanceWorker: AppMaintenanceWorker
+    private let syncFolderPreparationWorker: SyncFolderPreparationWorker
     private let payloadStore: PayloadStore
     private let syncLocalRepository: SyncLocalRepository
     var syncFolderURL: URL?
@@ -87,6 +88,7 @@ final class AppEnvironment {
     var credentialLoadFinished = false
     var credentialLegacyLoadStarted = false
     var legacySettingsURL: URL?
+    private var syncFolderSelectionGeneration = 0
 
     private lazy var clipboardModel = ClipboardPanelModel(
         repository: repository,
@@ -249,6 +251,9 @@ final class AppEnvironment {
         }
         self.preferenceRepository = preferenceRepository
         self.deviceOverrideRepository = deviceOverrideRepository
+        self.syncFolderPreparationWorker = SyncFolderPreparationWorker(
+            deviceOverrideRepository: deviceOverrideRepository
+        )
         self.encryptedCredentialStore = encryptedCredentialStore
         self.credentialAccess = CredentialAccessCoordinator(
             store: encryptedCredentialStore,
@@ -857,38 +862,60 @@ final class AppEnvironment {
             )
         }
 
-        do {
-            _ = try DriveSyncStore(rootURL: rootURL).prepare(
-                initialCapacity: settings.sync.storageLimit
-            )
-            let bookmark = try rootURL.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            try deviceOverrideRepository.setSyncFolder(
-                bookmark: bookmark,
-                displayPath: rootURL.path
-            )
-            syncFolderURL = rootURL
-            syncModel.folderPath = rootURL.path
-            syncModel.folderIsUbiquitous = FileManager.default.isUbiquitousItem(at: rootURL)
-            syncCoordinator.setRootURL(rootURL)
-            if settings.sync.isEnabled {
-                syncCoordinator.syncNow()
-            } else {
-                syncModel.status = .off
+        syncFolderSelectionGeneration += 1
+        let selectionGeneration = syncFolderSelectionGeneration
+        let previousStatus = syncModel.status
+        let initialCapacity = settings.sync.storageLimit
+        let worker = syncFolderPreparationWorker
+        syncModel.status = .preparingFolder
+
+        Task { @MainActor [weak self] in
+            do {
+                let prepared = try await worker.prepare(
+                    rootURL: rootURL,
+                    securityScopedURL: selectedURL,
+                    initialCapacity: initialCapacity
+                )
+                guard let self,
+                      selectionGeneration == syncFolderSelectionGeneration else {
+                    return
+                }
+                try await worker.persist(prepared)
+                guard selectionGeneration == syncFolderSelectionGeneration else {
+                    return
+                }
+                syncFolderURL = prepared.rootURL
+                syncModel.folderPath = prepared.rootURL.path
+                syncModel.folderIsUbiquitous = prepared.isUbiquitous
+                syncCoordinator.setRootURL(prepared.rootURL)
+                if settings.sync.isEnabled {
+                    syncCoordinator.syncNow()
+                } else {
+                    syncModel.status = .off
+                }
+            } catch let error as DriveSyncStoreError {
+                guard let self,
+                      selectionGeneration == syncFolderSelectionGeneration else {
+                    return
+                }
+                if case .incompatibleProtocol = error {
+                    syncModel.status = .protocolIncompatible
+                } else {
+                    syncModel.status = previousStatus
+                }
+                logger.error(
+                    "sync folder selection failed: \(String(reflecting: type(of: error)))"
+                )
+            } catch {
+                guard let self,
+                      selectionGeneration == syncFolderSelectionGeneration else {
+                    return
+                }
+                syncModel.status = previousStatus
+                logger.error(
+                    "sync folder selection failed: \(String(reflecting: type(of: error)))"
+                )
             }
-        } catch let error as DriveSyncStoreError {
-            if case .incompatibleProtocol = error {
-                syncModel.status = .protocolIncompatible
-            } else {
-                syncModel.status = .failed
-            }
-            logger.error("sync folder selection failed: \(String(reflecting: type(of: error)))")
-        } catch {
-            syncModel.status = .folderUnavailable
-            logger.error("sync folder selection failed: \(String(reflecting: type(of: error)))")
         }
     }
 

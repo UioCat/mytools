@@ -92,6 +92,7 @@
 - Build with `MACOS_FORCE_ADHOC_SIGNING=1 scripts/package_app.sh`; confirm no CloudKit/iCloud Container/APNs entitlement or Provisioning Profile is required and the packaged app can choose a sync folder.
 - In clipboard settings, click the folder icon next to `由 MacTools 管理` and confirm Finder opens the displayed unified storage directory. With no sync folder selected, click `打开文件夹` and confirm only the `需要先选择文件夹` prompt appears; the folder picker must not open.
 - On first launch, confirm sync is off and the switch cannot be enabled before a folder is selected. Select an empty iCloud Drive parent folder and confirm MacTools creates exactly one `MacTools Sync` directory; selecting an existing protocol root must not create a nested directory.
+- While a slow or placeholder-backed iCloud folder is being prepared, confirm the status shows `正在准备同步文件夹`, the settings window remains responsive, and selecting another folder prevents the older result from replacing the newer choice.
 - Enable sync and confirm the status progresses from `正在同步` to `已同步`, showing logical use against the default `512 MB` limit and ordinary history against `500` without blocking local clipboard use.
 - Switch clipboard sync between `仅收藏与置顶` and `全部历史`; confirm the first mode excludes ordinary entries and the second mode synchronizes ordinary text, URL, and original clipboard images. Confirm file, folder, and image-file path entries never arrive on another Mac.
 - Point two Macs at the same directory, concurrently create the same text and image, and change different ordinary configuration fields while offline. Reconnect and confirm one logical clipboard item and one shared content object remain and both Macs converge on field-level configuration values.
@@ -114,7 +115,7 @@
 - Point a second compatible MacTools installation at the same iCloud directory with no local credential, then enable sync. Confirm it downloads and decrypts the winning credential without Keychain authorization or separate entry.
 - Clear the API Key on one Mac while another is offline, reconnect the old Mac, and confirm the encrypted deletion marker wins and the old value does not reappear.
 - Deny the first legacy Keychain authorization and confirm the menu bar and settings still appear, the credential reports `翻译凭据暂时不可用`, and no migration marker is written so a later packaged launch can retry.
-- Place the settings panel over contrasting light and dark windows and check `未选择同步文件夹`, off, syncing, synced, waiting-download, capacity-full, folder-unavailable, protocol-incompatible, and failed states. Resize to the narrow layout and confirm controls remain visible, keyboard reachable, and free of clipping or unintended backing layers.
+- Place the settings panel over contrasting light and dark windows and check `未选择同步文件夹`, preparing-folder, off, syncing, synced, waiting-download, capacity-full, folder-unavailable, protocol-incompatible, and failed states. Resize to the narrow layout and confirm controls remain visible, keyboard reachable, and free of clipping or unintended backing layers.
 - Build app bundle with `scripts/package_app.sh`.
 - Launch `build/MacTools.app`.
 - Search for `MacTools.app` in Finder and Spotlight, then confirm both show the custom blue-purple app icon instead of the generic application placeholder, including after rebuilding over an existing bundle.

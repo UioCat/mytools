@@ -55,6 +55,18 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("store.storageInventory()"))
     }
 
+    func testCoordinatorGuardsRunningCyclesAndPublishedResultsWithLease() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+        )
+
+        XCTAssertTrue(source.contains("private struct CycleLease"))
+        XCTAssertTrue(source.contains("SyncCycleCancellation"))
+        XCTAssertTrue(source.contains("try cancellation.check()"))
+        XCTAssertTrue(source.contains("guard isCurrent(lease) else { return }"))
+        XCTAssertTrue(source.contains("configuration.scheduleToken != lease.token"))
+    }
+
     func testCoordinatorReconcilesCredentialInsideCoordinatedSyncAndBeforeDeviceRemoval() throws {
         let source = try sourceFile(
             "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"

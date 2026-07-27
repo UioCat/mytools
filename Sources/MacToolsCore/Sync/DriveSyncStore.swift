@@ -234,12 +234,16 @@ public final class DriveSyncStore: @unchecked Sendable {
         _ bundle: SyncExportBundle,
         seenRevisions: [String: Int64],
         deviceName: String? = nil,
-        updatedAt: Date
+        updatedAt: Date,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
     ) throws -> SyncReplicaManifest {
+        try cancellation.check()
         for content in bundle.contents {
+            try cancellation.check()
             try writeContentIfNeeded(content)
         }
 
+        try cancellation.check()
         let deviceDirectory = replicasURL.appendingPathComponent(
             bundle.clipboard.deviceID,
             isDirectory: true
@@ -284,6 +288,8 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
         let previousManifest = currentManifest(at: deviceDirectory)
         let manifestData = try SyncSnapshotCodec.encode(manifest)
+        // manifest 是 revision 的唯一发布点，发布前必须重新确认周期仍有效。
+        try cancellation.check()
         try verifiedWrite(
             manifestData,
             to: deviceDirectory.appendingPathComponent("manifest.json")
