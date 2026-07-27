@@ -15,6 +15,7 @@ final class ScreenSelectionOverlayController {
     private var onCancel: (() -> Void)?
     private var escapeEventMonitor: Any?
     private var globalEscapeEventMonitor: Any?
+    private var isSelectionCommitted = false
 
     /// 在每块屏幕上创建不激活应用的全屏选区面板，并安装本地及全局 Escape 监听。
     func present(
@@ -23,6 +24,7 @@ final class ScreenSelectionOverlayController {
     ) {
         dismiss()
         selectedMode = .default
+        isSelectionCommitted = false
         self.onSelection = onSelection
         self.onCancel = onCancel
 
@@ -39,11 +41,14 @@ final class ScreenSelectionOverlayController {
                 self.prepareForNewSelection(from: selectionView)
             }
             selectionView.onDragFinished = { [weak self] selection, _ in
-                guard let self, let handler = self.onSelection else {
+                guard let self,
+                      !self.isSelectionCommitted,
+                      let handler = self.onSelection else {
                     return
                 }
+                self.isSelectionCommitted = true
                 let mode = self.selectedMode
-                self.dismiss()
+                self.lockSelectionInteraction()
                 handler(selection, mode)
             }
 
@@ -57,6 +62,7 @@ final class ScreenSelectionOverlayController {
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = false
+            panel.animationBehavior = .none
             panel.level = .screenSaver
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.contentView = selectionView
@@ -108,10 +114,14 @@ final class ScreenSelectionOverlayController {
         globalEscapeEventMonitor = nil
         onSelection = nil
         onCancel = nil
+        isSelectionCommitted = false
     }
 
     /// 将新的拖动屏幕设为唯一活动选区，并清除其他屏幕上的旧选择。
     private func prepareForNewSelection(from sourceView: ScreenSelectionView) {
+        guard !isSelectionCommitted else {
+            return
+        }
         removeModeToolbar()
         showModeToolbar(in: sourceView)
         for panel in panels where panel.contentView !== sourceView {
@@ -173,7 +183,18 @@ final class ScreenSelectionOverlayController {
 
     /// 更新 `changeMode` 对应的交互状态，并保持当前选择或展示约束。
     @objc private func changeMode(_ sender: NSSegmentedControl) {
+        guard !isSelectionCommitted else {
+            sender.selectedSegment = selectedMode == .screenshot ? 0 : 1
+            return
+        }
         selectedMode = sender.selectedSegment == 1 ? .recording : .screenshot
+    }
+
+    /// 锁定已提交选区，保留当前视觉状态直到新表面已经置前。
+    private func lockSelectionInteraction() {
+        for panel in panels {
+            (panel.contentView as? ScreenSelectionView)?.isInteractionLocked = true
+        }
     }
 
     /// 判断 `cancel` 所描述的屏幕捕获系统集成条件是否成立。
@@ -202,6 +223,7 @@ private final class ScreenSelectionView: NSView {
     let displayFrame: CGRect
     var onDragBegan: (() -> Void)?
     var onDragFinished: ((ScreenCaptureSelection, CGRect) -> Void)?
+    var isInteractionLocked = false
 
     private var dragStart: CGPoint?
     private var currentPoint: CGPoint?
@@ -223,6 +245,9 @@ private final class ScreenSelectionView: NSView {
 
     /// 响应 `mouseDown` 对应的系统或界面回调，并同步当前交互状态。
     override func mouseDown(with event: NSEvent) {
+        guard !isInteractionLocked else {
+            return
+        }
         dragStart = convert(event.locationInWindow, from: nil)
         currentPoint = dragStart
         completedSelectionFrame = nil
@@ -232,12 +257,18 @@ private final class ScreenSelectionView: NSView {
 
     /// 响应 `mouseDragged` 对应的系统或界面回调，并同步当前交互状态。
     override func mouseDragged(with event: NSEvent) {
+        guard !isInteractionLocked else {
+            return
+        }
         currentPoint = convert(event.locationInWindow, from: nil)
         needsDisplay = true
     }
 
     /// 将面板局部选区换算为全局屏幕坐标，过滤过小区域后提交选择。
     override func mouseUp(with event: NSEvent) {
+        guard !isInteractionLocked else {
+            return
+        }
         currentPoint = convert(event.locationInWindow, from: nil)
         defer {
             dragStart = nil
@@ -259,9 +290,9 @@ private final class ScreenSelectionView: NSView {
             return
         }
 
-        completedSelectionFrame = rawFrame.standardized
+        completedSelectionFrame = selection.displayRelativeFrame
         needsDisplay = true
-        onDragFinished?(selection, selection.frame.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY))
+        onDragFinished?(selection, selection.displayRelativeFrame)
     }
 
     /// 移除 `clearSelection` 指定的屏幕捕获系统集成数据，并维护关联状态。
@@ -318,6 +349,9 @@ private final class ScreenSelectionView: NSView {
     }
 
     private var visibleSelectionFrame: CGRect? {
-        selectionFrame ?? completedSelectionFrame
+        guard let frame = selectionFrame ?? completedSelectionFrame else {
+            return nil
+        }
+        return frame.standardized.intersection(bounds).integral
     }
 }

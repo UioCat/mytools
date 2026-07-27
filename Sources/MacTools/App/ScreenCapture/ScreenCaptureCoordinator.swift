@@ -20,6 +20,7 @@ final class ScreenCaptureCoordinator {
     private let recordingControl = RecordingControlPanelController()
     private let pasteboard: WritablePasteboard
     private var state: ScreenCaptureSessionState = .idle
+    private var sessionGeneration = 0
 
     /// 创建 `ScreenCaptureCoordinator`，保存传入依赖并建立初始状态。
     init(
@@ -32,7 +33,7 @@ final class ScreenCaptureCoordinator {
         settingsProvider: @escaping () -> ScreenCaptureSettings = { .defaults },
         onSettingsChange: @escaping (ScreenCaptureSettings) -> Bool = { _ in true }
     ) {
-        let captureService = captureService ?? SystemScreenCaptureService()
+        let captureService = captureService ?? SystemScreenCaptureService(logger: logger)
         self.permissionService = permissionService
         self.logger = logger
         self.stillCapture = stillCapture ?? captureService
@@ -54,17 +55,19 @@ final class ScreenCaptureCoordinator {
             return
         }
 
+        sessionGeneration += 1
+        let sessionGeneration = sessionGeneration
         state.beginSelection()
-        stillCapture.invalidatePreparation()
         Task { [weak self] in
             guard let self else {
                 return
             }
-            let startedAt = Date()
+            let startedAt = DispatchTime.now().uptimeNanoseconds
             do {
                 try await stillCapture.prepare()
-                let milliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
-                logger.info("screen capture source prepared in \(milliseconds) ms")
+                logger.info(
+                    "screen capture source prepared in \(elapsedMilliseconds(since: startedAt)) ms"
+                )
             } catch is CancellationError {
                 return
             } catch {
@@ -73,11 +76,15 @@ final class ScreenCaptureCoordinator {
         }
         overlay.present(
             onSelection: { [weak self] selection, mode in
-                self?.beginCapture(selection: selection, mode: mode)
+                self?.beginCapture(
+                    selection: selection,
+                    mode: mode,
+                    submittedAt: DispatchTime.now().uptimeNanoseconds,
+                    sessionGeneration: sessionGeneration
+                )
             },
             onCancel: { [weak self] in
-                self?.state.cancel()
-                self?.stillCapture.invalidatePreparation()
+                self?.cancelSession(sessionGeneration: sessionGeneration)
             }
         )
     }
@@ -91,22 +98,45 @@ final class ScreenCaptureCoordinator {
         }
     }
 
+    private var isCancelled: Bool {
+        if case .cancelled = state {
+            return true
+        }
+        return false
+    }
+
     /// 仅接受状态机认可的有效选择，再分派到截图或录屏流程。
-    private func beginCapture(selection: ScreenCaptureSelection, mode: ScreenCaptureMode) {
+    private func beginCapture(
+        selection: ScreenCaptureSelection,
+        mode: ScreenCaptureMode,
+        submittedAt: UInt64,
+        sessionGeneration: Int
+    ) {
+        guard self.sessionGeneration == sessionGeneration else {
+            return
+        }
         guard state.acceptSelection(selection) else {
             return
         }
 
         switch mode {
         case .screenshot:
-            beginScreenshot(selection)
+            beginScreenshot(
+                selection,
+                submittedAt: submittedAt,
+                sessionGeneration: sessionGeneration
+            )
         case .recording:
-            beginRecording(selection)
+            beginRecording(selection, sessionGeneration: sessionGeneration)
         }
     }
 
     /// 启动 `beginScreenshot` 对应的屏幕捕获系统集成流程，并建立所需资源。
-    private func beginScreenshot(_ selection: ScreenCaptureSelection) {
+    private func beginScreenshot(
+        _ selection: ScreenCaptureSelection,
+        submittedAt: UInt64,
+        sessionGeneration: Int
+    ) {
         guard state.beginScreenshot() else {
             return
         }
@@ -116,14 +146,21 @@ final class ScreenCaptureCoordinator {
                 return
             }
             do {
-                let startedAt = Date()
+                let startedAt = DispatchTime.now().uptimeNanoseconds
                 let image = try await stillCapture.captureStill(for: selection)
-                let milliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
-                logger.info("screen capture still image ready in \(milliseconds) ms")
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else {
+                    return
+                }
+                logger.info(
+                    "screen capture still image ready in \(elapsedMilliseconds(since: startedAt)) ms; "
+                        + "total \(elapsedMilliseconds(since: submittedAt)) ms"
+                )
                 guard state.beginEditingScreenshot() else {
                     return
                 }
-                guard editor.present(
+
+                let editorPreparationStartedAt = DispatchTime.now().uptimeNanoseconds
+                editor.prepare(
                     image: image,
                     selection: selection,
                     settings: settingsProvider(),
@@ -132,25 +169,39 @@ final class ScreenCaptureCoordinator {
                         self?.completeScreenshot(with: data)
                     },
                     onCancel: { [weak self] in
-                        self?.state.cancel()
-                        self?.stillCapture.invalidatePreparation()
+                        self?.cancelCurrentSession()
                     }
-                ) else {
+                )
+                logger.info(
+                    "screen capture editor prepared in "
+                        + "\(elapsedMilliseconds(since: editorPreparationStartedAt)) ms"
+                )
+
+                let handoffStartedAt = DispatchTime.now().uptimeNanoseconds
+                guard editor.presentPrepared(replaceVisibleSurface: { [weak self] in
+                    self?.overlay.dismiss()
+                }) else {
                     throw ScreenCaptureError.editorPresentationFailed
                 }
-                logger.info("screen capture editor presented")
+                logger.info(
+                    "screen capture editor presented in "
+                        + "\(elapsedMilliseconds(since: handoffStartedAt)) ms; "
+                        + "total \(elapsedMilliseconds(since: submittedAt)) ms"
+                )
             } catch {
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else {
+                    return
+                }
                 fail(message: "截图失败，请检查屏幕录制权限后重试", error: error)
             }
         }
     }
 
-    /// 把编辑后的 PNG 写入剪贴板，并结束截图会话和预热缓存。
+    /// 把编辑后的 PNG 写入剪贴板并结束截图会话，保留短期预热缓存。
     private func completeScreenshot(with data: Data) {
         do {
             try pasteboard.writeImageData(data)
             state.finish()
-            stillCapture.invalidatePreparation()
             logger.info("annotated screenshot copied to pasteboard")
         } catch {
             fail(message: "截图复制失败，请重试", error: error)
@@ -158,7 +209,7 @@ final class ScreenCaptureCoordinator {
     }
 
     /// 启动 `beginRecording` 对应的屏幕捕获系统集成流程，并建立所需资源。
-    private func beginRecording(_ selection: ScreenCaptureSelection) {
+    private func beginRecording(_ selection: ScreenCaptureSelection, sessionGeneration: Int) {
         guard state.beginRecording() else {
             return
         }
@@ -170,12 +221,20 @@ final class ScreenCaptureCoordinator {
             do {
                 let destination = try recordingDestination()
                 try await recorder.start(selection: selection, destination: destination)
-                stillCapture.invalidatePreparation()
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else {
+                    _ = try? await recorder.stop()
+                    try? FileManager.default.removeItem(at: destination)
+                    return
+                }
+                overlay.dismiss()
                 recordingControl.show(selection: selection, onStop: { [weak self] in
                     self?.stopRecording()
                 })
                 logger.info("screen recording started: \(destination.lastPathComponent)")
             } catch {
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else {
+                    return
+                }
                 fail(message: "录屏启动失败，请检查屏幕录制权限后重试", error: error)
             }
         }
@@ -191,7 +250,6 @@ final class ScreenCaptureCoordinator {
             do {
                 let destination = try await recorder.stop()
                 state.finish()
-                stillCapture.invalidatePreparation()
                 NSWorkspace.shared.activateFileViewerSelecting([destination])
                 logger.info("screen recording saved: \(destination.path)")
             } catch {
@@ -217,6 +275,7 @@ final class ScreenCaptureCoordinator {
         editor.dismiss()
         recordingControl.hide()
         state.fail()
+        sessionGeneration += 1
         stillCapture.invalidatePreparation()
         logger.error("screen capture failed: \(error)")
         let alert = NSAlert()
@@ -225,6 +284,26 @@ final class ScreenCaptureCoordinator {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "好")
         alert.runModal()
+    }
+
+    /// 取消匹配的选区会话，并使该会话尚未返回的异步结果永久失效。
+    private func cancelSession(sessionGeneration: Int) {
+        guard self.sessionGeneration == sessionGeneration else {
+            return
+        }
+        cancelCurrentSession()
+    }
+
+    /// 取消当前会话但保留短期共享内容缓存，便于快速重新截图。
+    private func cancelCurrentSession() {
+        state.cancel()
+        sessionGeneration += 1
+    }
+
+    /// 使用单调时钟计算阶段耗时，避免系统时间调整影响性能日志。
+    private func elapsedMilliseconds(since startedAt: UInt64) -> Int {
+        let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - startedAt
+        return Int(elapsedNanoseconds / 1_000_000)
     }
 
     /// 展示 `showScreenRecordingPermissionAlert` 对应的屏幕捕获系统集成界面或系统位置。

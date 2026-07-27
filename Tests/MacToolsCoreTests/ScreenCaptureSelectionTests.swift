@@ -49,4 +49,21 @@ final class ScreenCaptureSelectionTests: XCTestCase {
             CGRect(x: 100, y: 560, width: 500, height: 240)
         )
     }
+
+    func testFractionalDragUsesOneIntegralRectangleForOverlayEditorAndCapture() {
+        let selection = ScreenCaptureSelection(
+            displayID: 9,
+            displayFrame: CGRect(x: 100, y: 200, width: 800, height: 900),
+            rawSelectionFrame: CGRect(x: 120.4, y: 230.2, width: 399.2, height: 241.1)
+        )
+
+        XCTAssertEqual(
+            selection.displayRelativeFrame,
+            CGRect(x: 20, y: 30, width: 400, height: 242)
+        )
+        XCTAssertEqual(
+            selection.screenCaptureKitSourceFrame,
+            CGRect(x: 20, y: 628, width: 400, height: 242)
+        )
+    }
 }

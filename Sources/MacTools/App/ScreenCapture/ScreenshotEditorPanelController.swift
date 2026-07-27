@@ -11,22 +11,19 @@ import SwiftUI
 final class ScreenshotEditorPanelController {
     private var panel: NSPanel?
 
-    /// 展示 `present` 对应的屏幕捕获系统集成界面或系统位置。
-    func present(
+    /// 在不改变窗口层级和应用焦点的前提下构造编辑器并完成首次布局。
+    func prepare(
         image: CGImage,
         selection: ScreenCaptureSelection,
         settings: ScreenCaptureSettings,
         onSettingsChange: @escaping (ScreenCaptureSettings) -> Bool,
         onCopy: @escaping (Data) -> Void,
         onCancel: @escaping () -> Void
-    ) -> Bool {
+    ) {
         dismiss()
 
         let displayBounds = CGRect(origin: .zero, size: selection.displayFrame.size)
-        let selectionFrame = selection.frame.offsetBy(
-            dx: -selection.displayFrame.minX,
-            dy: -selection.displayFrame.minY
-        )
+        let selectionFrame = selection.displayRelativeFrame
         let toolbarFrame = ScreenCaptureOverlayLayout.editorToolbarFrame(
             selectionFrame: selectionFrame,
             displayBounds: displayBounds
@@ -57,14 +54,30 @@ final class ScreenshotEditorPanelController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.animationBehavior = .none
         panel.level = .screenSaver
         panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: rootView)
         panel.setFrame(selection.displayFrame, display: true)
         self.panel = panel
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.contentView?.displayIfNeeded()
+        panel.displayIfNeeded()
+    }
+
+    /// 将准备好的编辑器置前，再同步替换仍可见的选区层并获取键盘焦点。
+    func presentPrepared(replaceVisibleSurface: () -> Void) -> Bool {
+        guard let panel else {
+            return false
+        }
+
         NSApp.activate(ignoringOtherApps: true)
         panel.orderFrontRegardless()
+        guard panel.isVisible else {
+            return false
+        }
+        replaceVisibleSurface()
         panel.makeKey()
         return panel.isVisible
     }

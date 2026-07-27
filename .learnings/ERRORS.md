@@ -576,3 +576,35 @@ Keep the Finder and Spotlight check in the manual verification checklist. For au
 - **Notes**: Verified the packaged and DMG-contained app with `NSWorkspace`, and added the direct Finder/Spotlight check to the manual checklist.
 
 ---
+
+## [ERR-20260727-001] Swift method signature mismatch after API split
+
+**Logged**: 2026-07-27T11:39:14+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Splitting editor presentation into prepare and present phases left the old `Bool` return type on the new preparation method.
+
+### Error
+```
+missing return in instance method expected to return 'Bool'
+```
+
+### Context
+- Ran the focused screen-capture test suite after splitting `present` into `prepare` and `presentPrepared`.
+- The method body had been converted to a side-effect-only preparation phase, but its declaration still returned `Bool`.
+
+### Suggested Fix
+When splitting a method, review its declaration, all call sites, and the compiler warning for unused results together before rerunning tests.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/App/ScreenCapture/ScreenshotEditorPanelController.swift
+
+### Resolution
+- **Resolved**: 2026-07-27T11:39:14+08:00
+- **Notes**: Removed the stale return type and reran the focused suite successfully.
+
+---
