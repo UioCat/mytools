@@ -963,3 +963,36 @@ Use `screencapture -l` for an available window or ScreenCaptureKit for programma
 - **Notes**: Captured the target window by ID after ordering it for verification.
 
 ---
+
+## [ERR-20260727-013] 敏感信息附加正则的 shell 引号不匹配
+
+**Logged**: 2026-07-27T21:53:30+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+将含单双引号的高置信凭据正则内嵌到一条 zsh 命令时产生未闭合引号。
+
+### Error
+```
+zsh:1: unmatched "
+```
+
+### Context
+- 基础格式检查、签名检查和进程检查已独立执行成功。
+- 失败发生在附加敏感信息扫描的命令解析阶段，没有读取运行时数据或修改项目状态。
+
+### Suggested Fix
+将复杂正则拆成不包含嵌套引号的多个 `rg -e` 参数，或使用工具参数传递而不是拼接 shell 字符串。
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+- See Also: ERR-20260715-003
+
+### Resolution
+- **Resolved**: 2026-07-27T21:53:30+08:00
+- **Notes**: 改用不含嵌套引号的分项正则重新执行扫描。
+
+---
