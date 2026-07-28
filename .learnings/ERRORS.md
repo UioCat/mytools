@@ -1125,3 +1125,69 @@ Keep launch, window lookup, interaction, and capture in one foreground-safe prob
 - See Also: ERR-20260727-006, ERR-20260727-009, ERR-20260727-010
 
 ---
+
+## [ERR-20260728-005] SwiftUI style scan regex
+
+**Logged**: 2026-07-28T17:36:31+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+A combined ripgrep expression for SwiftUI style usage contained an unbalanced nested group.
+
+### Error
+```
+rg: regex parse error:
+error: unopened group
+```
+
+### Context
+- Attempted to scan several SwiftUI styling calls and frame labels in one large regular expression.
+- The nested `frame` alternative introduced an extra closing parenthesis.
+
+### Suggested Fix
+Use multiple simple `-e` expressions for independent SwiftUI style patterns instead of one deeply nested expression.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI, Sources/MacTools/App/RuntimeViews.swift
+- See Also: ERR-20260727-010
+
+### Resolution
+- **Resolved**: 2026-07-28T17:36:31+08:00
+- **Notes**: Replaced the combined expression with separate fixed-string and simple regular-expression searches.
+
+---
+
+## [ERR-20260728-006] visual companion startup permission
+
+**Logged**: 2026-07-28T17:39:07+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The bundled visual companion startup script is readable but not executable.
+
+### Error
+```
+zsh: permission denied: .../brainstorming/scripts/start-server.sh
+```
+
+### Context
+- Invoked the bundled `start-server.sh` directly after the user enabled the visual companion.
+- The cached plugin file mode is `-rw-r--r--`.
+
+### Suggested Fix
+Invoke the readable script explicitly with `bash` instead of changing permissions in the plugin cache.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-07-28T17:39:07+08:00
+- **Notes**: Switched the launch command to `bash start-server.sh`.
+
+---
