@@ -59,6 +59,26 @@ public enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum SettingsPaneNavigationDirection {
+    case previous
+    case next
+}
+
+enum SettingsPaneNavigator {
+    static func pane(
+        adjacentTo currentPane: SettingsPane,
+        direction: SettingsPaneNavigationDirection
+    ) -> SettingsPane {
+        let panes = SettingsPane.allCases
+        guard let currentIndex = panes.firstIndex(of: currentPane), !panes.isEmpty else {
+            return currentPane
+        }
+
+        let offset = direction == .previous ? panes.count - 1 : 1
+        return panes[(currentIndex + offset) % panes.count]
+    }
+}
+
 /// 描述每个设置分类中展示的内容区块。
 enum SettingsSectionDestination: String, Identifiable, Sendable {
     case system
@@ -75,7 +95,13 @@ enum SettingsSectionDestination: String, Identifiable, Sendable {
 
 /// 设置页顶部分类工具栏。
 struct SettingsPaneToolbar: View {
+    private struct FocusTarget: Hashable {
+        let pane: SettingsPane
+        let compact: Bool
+    }
+
     @Binding var selection: SettingsPane
+    @FocusState private var focusTarget: FocusTarget?
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -101,9 +127,11 @@ struct SettingsPaneToolbar: View {
     private func navigationButton(for pane: SettingsPane, compact: Bool) -> some View {
         let isSelected = selection == pane
         let minimumWidth: CGFloat = compact ? 48 : 80
+        let buttonFocusTarget = FocusTarget(pane: pane, compact: compact)
 
         return Button {
             selection = pane
+            focusTarget = buttonFocusTarget
         } label: {
             VStack(spacing: compact ? 0 : 5) {
                 Image(systemName: pane.systemImage)
@@ -129,5 +157,25 @@ struct SettingsPaneToolbar: View {
         .accessibilityLabel(Text(pane.title))
         .accessibilityValue(Text(isSelected ? "已选择" : ""))
         .help(pane.title)
+        .focusable()
+        .focused($focusTarget, equals: buttonFocusTarget)
+        .onKeyPress(.leftArrow) {
+            moveSelection(from: pane, compact: compact, direction: .previous)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            moveSelection(from: pane, compact: compact, direction: .next)
+            return .handled
+        }
+    }
+
+    private func moveSelection(
+        from pane: SettingsPane,
+        compact: Bool,
+        direction: SettingsPaneNavigationDirection
+    ) {
+        let destination = SettingsPaneNavigator.pane(adjacentTo: pane, direction: direction)
+        selection = destination
+        focusTarget = FocusTarget(pane: destination, compact: compact)
     }
 }

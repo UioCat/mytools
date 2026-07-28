@@ -52,6 +52,39 @@ final class SettingsNavigationTests: XCTestCase {
         )
     }
 
+    func testNavigatorMovesBetweenAdjacentPanes() {
+        XCTAssertEqual(
+            SettingsPaneNavigator.pane(adjacentTo: .clipboard, direction: .previous),
+            .general
+        )
+        XCTAssertEqual(
+            SettingsPaneNavigator.pane(adjacentTo: .clipboard, direction: .next),
+            .translation
+        )
+    }
+
+    func testNavigatorWrapsAtBothToolbarEdges() {
+        XCTAssertEqual(
+            SettingsPaneNavigator.pane(adjacentTo: .general, direction: .previous),
+            .sync
+        )
+        XCTAssertEqual(
+            SettingsPaneNavigator.pane(adjacentTo: .sync, direction: .next),
+            .general
+        )
+    }
+
+    func testToolbarScopesArrowKeysToFocusablePaneButtons() throws {
+        let source = try sourceFile("Sources/MacToolsCore/UI/SettingsNavigation.swift")
+
+        XCTAssertTrue(source.contains("@FocusState private var focusTarget"))
+        XCTAssertTrue(source.contains(".focusable()"))
+        XCTAssertTrue(source.contains(".focused($focusTarget"))
+        XCTAssertTrue(source.contains(".onKeyPress(.leftArrow)"))
+        XCTAssertTrue(source.contains(".onKeyPress(.rightArrow)"))
+        XCTAssertFalse(source.contains("KeyboardEventMonitorView"))
+    }
+
     func testEachPaneOwnsOnlyItsRelatedSections() {
         XCTAssertEqual(SettingsPane.general.sections, [.system, .shortcuts])
         XCTAssertEqual(SettingsPane.clipboard.sections, [.clipboard])
