@@ -32,6 +32,39 @@ possible credential literal detected
 
 ---
 
+## [ERR-20260728-018] release verification cleanup rejected by command safety policy
+
+**Logged**: 2026-07-28T20:34:30+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The combined GitHub Release verification command was rejected because its exit trap recursively removed a temporary directory.
+
+### Error
+```
+Rejected: rm -f style commands are not permitted. Use a safer approach
+```
+
+### Context
+- Attempted to download the published DMG and checksum into a `mktemp -d` directory.
+- The command included a scoped `rm -rf` cleanup trap even though the target was the newly created temporary directory.
+- The rejection happened before the command started, so no Release asset or local file was changed.
+
+### Suggested Fix
+For bounded release verification, create a system temporary directory and leave it for operating-system cleanup instead of including recursive deletion in the command.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .github/workflows/release.yml
+
+### Resolution
+- **Resolved**: 2026-07-28T20:34:30+08:00
+- **Notes**: Retried the verification without any deletion command.
+
+---
+
 ## [ERR-20260725-004] XCTest 自动闭包不支持 await
 
 **Logged**: 2026-07-25T16:15:22+08:00
