@@ -3,12 +3,19 @@
 
 import AppKit
 import MacToolsCore
+import SwiftUI
+
+/// 承载录屏控制条的可观察计时状态，由 AppKit 生命周期控制器更新。
+@MainActor
+private final class RecordingControlState: ObservableObject {
+    @Published var elapsedText = "00:00"
+}
 
 /// 管理 `RecordingControlPanelController` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 @MainActor
 final class RecordingControlPanelController {
     private var panel: NSPanel?
-    private var elapsedLabel: NSTextField?
+    private var controlState: RecordingControlState?
     private var startedAt: Date?
     private var timer: Timer?
     private var onStop: (() -> Void)?
@@ -19,42 +26,17 @@ final class RecordingControlPanelController {
         self.onStop = onStop
         startedAt = .now
 
-        let effectView = NSVisualEffectView()
-        effectView.material = .hudWindow
-        effectView.blendingMode = .withinWindow
-        effectView.state = .active
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 16
-        effectView.layer?.masksToBounds = true
-
-        let title = NSTextField(labelWithString: "正在录制")
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
-        title.textColor = .labelColor
-
-        let elapsedLabel = NSTextField(labelWithString: "00:00")
-        elapsedLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        elapsedLabel.textColor = .secondaryLabelColor
-        self.elapsedLabel = elapsedLabel
-
-        let stopButton = NSButton(title: "停止", target: self, action: #selector(stopRecording))
-        stopButton.bezelStyle = .texturedRounded
-        stopButton.contentTintColor = .systemRed
-        stopButton.font = .systemFont(ofSize: 13, weight: .semibold)
-        stopButton.setAccessibilityLabel("停止录屏")
-
-        let stack = NSStackView(views: [title, elapsedLabel, stopButton])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 10)
-        effectView.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: effectView.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
-        ])
+        let controlState = RecordingControlState()
+        self.controlState = controlState
+        let hostingView = NSHostingView(
+            rootView: RecordingControlView(state: controlState) { [weak self] in
+                self?.stopRecording()
+            }
+        )
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.cornerRadius = LiquidGlassCornerGeometry.recordingControlRadius
+        hostingView.layer?.masksToBounds = true
 
         let visibleFrame = NSScreen.screens.first(where: { screen in
             let key = NSDeviceDescriptionKey("NSScreenNumber")
@@ -72,7 +54,7 @@ final class RecordingControlPanelController {
         panel.hasShadow = false
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = effectView
+        panel.contentView = hostingView
         panel.orderFrontRegardless()
         self.panel = panel
 
@@ -90,7 +72,7 @@ final class RecordingControlPanelController {
         timer = nil
         panel?.orderOut(nil)
         panel = nil
-        elapsedLabel = nil
+        controlState = nil
         startedAt = nil
         onStop = nil
     }
@@ -101,14 +83,64 @@ final class RecordingControlPanelController {
             return
         }
         let elapsedSeconds = Int(Date.now.timeIntervalSince(startedAt))
-        elapsedLabel?.stringValue = String(format: "%02d:%02d", elapsedSeconds / 60, elapsedSeconds % 60)
+        controlState?.elapsedText = String(
+            format: "%02d:%02d",
+            elapsedSeconds / 60,
+            elapsedSeconds % 60
+        )
     }
 
     /// 结束 `stopRecording` 对应的屏幕捕获系统集成流程，并释放或重置相关资源。
-    @objc private func stopRecording() {
+    private func stopRecording() {
         let handler = onStop
         onStop = nil
         handler?()
+    }
+}
+
+/// 使用共享 Liquid Glass 视觉语言展示录制状态、计时和停止操作。
+private struct RecordingControlView: View {
+    @ObservedObject var state: RecordingControlState
+    let onStop: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(MacToolsGlassTheme.recording)
+                .frame(width: 8, height: 8)
+                .shadow(color: MacToolsGlassTheme.recording.opacity(0.45), radius: 4)
+
+            Text("正在录制")
+                .font(.system(size: 13, weight: .semibold))
+
+            Text(state.elapsedText)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                .monospacedDigit()
+
+            Button(action: onStop) {
+                Text("停止")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 44, height: 32)
+            }
+            .foregroundStyle(MacToolsGlassTheme.recording)
+            .liquidGlassButtonStyle(
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
+                minimumSize: CGSize(width: 44, height: 32)
+            )
+            .accessibilityLabel("停止录屏")
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
+        .frame(
+            width: ScreenCaptureOverlayLayout.recordingControlSize.width,
+            height: ScreenCaptureOverlayLayout.recordingControlSize.height
+        )
+        .liquidGlassPanel(cornerRadius: LiquidGlassCornerGeometry.recordingControlRadius)
+        .liquidGlassGroup(spacing: 6)
+        .foregroundStyle(MacToolsGlassTheme.textPrimary)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("正在录制")
     }
 }
 

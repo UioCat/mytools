@@ -1191,3 +1191,231 @@ Invoke the readable script explicitly with `bash` instead of changing permission
 - **Notes**: Switched the launch command to `bash start-server.sh`.
 
 ---
+
+## [ERR-20260728-007] CodeGraph unavailable for UI implementation
+
+**Logged**: 2026-07-28T19:37:36+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The repository-local CodeGraph index is not initialized for the unified UI implementation.
+
+### Error
+```
+CodeGraph not initialized in /Users/bytedance/code/mytools
+```
+
+### Context
+- Attempted to survey the confirmed UI symbols before editing.
+- A previous review generated and then removed the repository-local index, so the connected query cannot operate.
+
+### Suggested Fix
+Use the already inspected Swift sources and focused `rg` queries for this bounded change; initialize CodeGraph only when a future task requires a fresh broad dependency index.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI, Sources/MacTools/App/ScreenCapture
+- See Also: ERR-20260727-003
+
+### Resolution
+- **Resolved**: 2026-07-28T19:37:36+08:00
+- **Notes**: Continued with the previously audited source set and focused local checks without generating a new repository index.
+
+---
+
+## [ERR-20260728-008] translation workspace combined patch
+
+**Logged**: 2026-07-28T19:40:04+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+A combined translation workspace patch did not match the complete current source context.
+
+### Error
+```
+apply_patch verification failed: Failed to find expected lines in
+Sources/MacTools/App/RuntimeViews.swift
+```
+
+### Context
+- Attempted to flatten the translation page and update its source-contract test in one patch.
+- One multi-line modifier hunk was rejected atomically even though the surrounding view remained unchanged.
+
+### Suggested Fix
+Read the exact translation view range and apply smaller body, input, output, and test hunks independently.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/App/RuntimeViews.swift, Tests/MacToolsCoreTests/TranslationModuleSourceTests.swift
+- See Also: ERR-20260728-003
+
+### Resolution
+- **Resolved**: 2026-07-28T19:40:04+08:00
+- **Notes**: Re-read the exact source and split the edit into focused patches.
+
+---
+
+## [ERR-20260728-009] unavailable SwiftUI button style eraser
+
+**Logged**: 2026-07-28T19:42:32+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+A conditional SwiftUI button-style implementation referenced a nonexistent `AnyButtonStyle` type.
+
+### Error
+```
+cannot find type 'AnyButtonStyle' in scope
+```
+
+### Context
+- Attempted to return either the primary or secondary translation button style from one computed property.
+- SwiftUI does not provide the assumed public button-style type eraser in this toolchain.
+
+### Suggested Fix
+Branch at the view-builder level and apply each concrete `ButtonStyle` to the shared button view.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/ContextActionView.swift
+
+### Resolution
+- **Resolved**: 2026-07-28T19:42:32+08:00
+- **Notes**: Replaced style type erasure with an `@ViewBuilder` branch over a shared action button.
+
+---
+
+## [ERR-20260728-010] compact editor toolbar changes narrow-screen placement
+
+**Logged**: 2026-07-28T19:44:24+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: testing
+
+### Summary
+The narrow-display layout expectation still assumed the former two-row editor toolbar height.
+
+### Error
+```
+XCTAssertEqual failed: ("(12.0, 20.0, 476.0, 68.0)") is not equal to ("(12.0, 352.0, 476.0, 68.0)")
+```
+
+### Context
+- The toolbar height changed from 92 to 68 points.
+- At the smaller height the toolbar now fits below the sample selection, so the layout correctly follows its below-selection preference.
+
+### Suggested Fix
+Update the test expectation to the new below-selection frame while keeping the existing placement policy unchanged.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/ScreenCapture/ScreenCaptureOverlayLayout.swift, Tests/MacToolsCoreTests/ScreenCaptureOverlayLayoutTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-28T19:44:24+08:00
+- **Notes**: Corrected the expected narrow-display frame to `(12, 20, 476, 68)`.
+
+---
+
+## [ERR-20260728-011] AppleScript key injection denied during UI verification
+
+**Logged**: 2026-07-28T20:02:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+AppleScript could not send the configured keyboard shortcut while verifying the packaged app.
+
+### Error
+```
+System Events got an error: “osascript” is not allowed to send keystrokes. (1002)
+```
+
+### Context
+- Attempted to open the packaged app's panels through their global keyboard shortcuts.
+- The shell process does not have Accessibility permission for synthetic key events.
+
+### Suggested Fix
+Use the existing packaged-app UI verification launch argument and activate the app by bundle path instead of requesting broader system permission.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/App/AppDelegate.swift, scripts/rebuild_and_run_app.sh
+
+### Resolution
+- **Resolved**: 2026-07-28T20:02:00+08:00
+- **Notes**: Switched to the app's UI verification launch path and did not change TCC permissions.
+
+---
+
+## [ERR-20260728-012] on-screen-only window lookup missed an ordered-out panel
+
+**Logged**: 2026-07-28T20:08:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A diagnostic Swift helper failed to find the verification panel after the panel lost key-window status.
+
+### Error
+```
+Fatal error: MacTools window not found
+```
+
+### Context
+- The helper queried only on-screen windows after launching the packaged app.
+- The panel had already been ordered out, but its rounded AppKit window remained available in the complete Core Graphics window list.
+
+### Suggested Fix
+Resolve the window by the packaged app process ID with the complete window list, then capture the known panel window directly.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/Panels/MainPanelController.swift
+
+### Resolution
+- **Resolved**: 2026-07-28T20:08:00+08:00
+- **Notes**: Located the layer-zero panel in the complete window list and completed the visual inspection.
+
+---
+
+## [ERR-20260728-013] full test process crashed while capture verification session was active
+
+**Logged**: 2026-07-28T20:06:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: testing
+
+### Summary
+The full XCTest process exited with signal 11 while the packaged app still owned an active screen-capture overlay.
+
+### Error
+```
+Process 'xctest …/MacToolsPackageTests.xctest' exited with unexpected signal code 11
+```
+
+### Context
+- The packaged MacTools app was intentionally left in screenshot-editing verification state.
+- All reported assertions had passed before the test process terminated near the translation suites.
+- The translation suite passed in isolation after the packaged app was stopped.
+
+### Suggested Fix
+End packaged UI verification sessions before running the in-process XCTest suite so AppKit and capture resources are not shared concurrently.
+
+### Metadata
+- Reproducible: no
+- Related Files: Sources/MacTools/App/ScreenCapture, Tests/MacToolsCoreTests
+
+### Resolution
+- **Resolved**: 2026-07-28T20:06:06+08:00
+- **Notes**: Stopped the packaged capture session; the isolated translation suite passed 7 tests and the full suite then passed 445 tests.
+
+---

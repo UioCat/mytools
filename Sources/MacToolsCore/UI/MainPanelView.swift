@@ -268,7 +268,7 @@ public struct MainPanelView: View {
             clipboardList(renderState: renderState)
                 .padding(.top, 6)
         }
-        .padding(presentation == .window ? 18 : 0)
+        .padding(presentation == .window ? MacToolsControlMetrics.pagePadding : 0)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
         .onAppear {
             focusSearchField()
@@ -325,7 +325,10 @@ public struct MainPanelView: View {
                 prompt: Text("搜索剪贴板").foregroundColor(MacToolsGlassTheme.textTertiary)
             )
                 .textFieldStyle(.plain)
-                .font(.system(size: 26, weight: .medium))
+                .font(.system(
+                    size: MacToolsControlMetrics.pageTitleFontSize,
+                    weight: .medium
+                ))
                 .foregroundStyle(MacToolsGlassTheme.textPrimary)
                 .focused($isSearchFocused)
                 .onSubmit {
@@ -372,8 +375,8 @@ public struct MainPanelView: View {
             .help("清空未收藏的记录")
             .accessibilityLabel("清空未收藏的记录")
         }
+        .frame(minHeight: MacToolsControlMetrics.pageHeaderMinimumHeight)
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
         .liquidGlassGroup(spacing: 12)
     }
 

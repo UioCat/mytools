@@ -140,12 +140,12 @@ public struct SettingsView: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: MacToolsControlMetrics.pageSectionSpacing) {
             header
             SettingsPaneToolbar(selection: $selectedPane)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: MacToolsControlMetrics.pageSectionSpacing) {
                     ForEach(selectedPane.sections) { destination in
                         settingsSection(destination)
                     }
@@ -155,7 +155,6 @@ public struct SettingsView: View {
             }
             .id(selectedPane)
         }
-        .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

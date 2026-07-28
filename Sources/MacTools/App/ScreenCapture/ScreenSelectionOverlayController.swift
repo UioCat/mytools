@@ -3,13 +3,13 @@
 
 import AppKit
 import MacToolsCore
+import SwiftUI
 
 /// 管理 `ScreenSelectionOverlayController` 在屏幕捕获系统集成中的生命周期、依赖和可变状态。
 @MainActor
 final class ScreenSelectionOverlayController {
     private var panels: [ScreenSelectionPanel] = []
     private weak var modeToolbar: NSView?
-    private weak var modeControl: NSSegmentedControl?
     private var selectedMode: ScreenCaptureMode = .default
     private var onSelection: ((ScreenCaptureSelection, ScreenCaptureMode) -> Void)?
     private var onCancel: (() -> Void)?
@@ -161,61 +161,27 @@ final class ScreenSelectionOverlayController {
     private func showModeToolbar(in selectionView: ScreenSelectionView) {
         removeModeToolbar()
 
-        let effectView = NSVisualEffectView()
-        effectView.material = .hudWindow
-        effectView.blendingMode = .withinWindow
-        effectView.state = .active
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 14
-        effectView.layer?.masksToBounds = true
-
-        let modeControl = NSSegmentedControl(
-            labels: ["截图", "录屏"],
-            trackingMode: .selectOne,
-            target: self,
-            action: #selector(changeMode(_:))
+        let hostingView = NSHostingView(
+            rootView: CaptureModeToolbarView(selectedMode: selectedMode) { [weak self] mode in
+                guard let self, !self.isSelectionCommitted else {
+                    return
+                }
+                self.selectedMode = mode
+            }
         )
-        modeControl.selectedSegment = selectedMode == .screenshot ? 0 : 1
-        modeControl.setImage(
-            NSImage(systemSymbolName: "camera", accessibilityDescription: "截图"),
-            forSegment: 0
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.frame = ScreenCaptureOverlayLayout.modeToolbarFrame(
+            displayBounds: selectionView.bounds
         )
-        modeControl.setImage(
-            NSImage(systemSymbolName: "record.circle", accessibilityDescription: "录屏"),
-            forSegment: 1
-        )
-        modeControl.setWidth(88, forSegment: 0)
-        modeControl.setWidth(88, forSegment: 1)
-        modeControl.setAccessibilityLabel("截图或录屏")
-        effectView.addSubview(modeControl)
-        modeControl.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            modeControl.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 10),
-            modeControl.trailingAnchor.constraint(equalTo: effectView.trailingAnchor, constant: -10),
-            modeControl.topAnchor.constraint(equalTo: effectView.topAnchor, constant: 7),
-            modeControl.bottomAnchor.constraint(equalTo: effectView.bottomAnchor, constant: -7)
-        ])
-
-        effectView.frame = ScreenCaptureOverlayLayout.modeToolbarFrame(displayBounds: selectionView.bounds)
-        selectionView.addSubview(effectView)
-        modeToolbar = effectView
-        self.modeControl = modeControl
+        selectionView.addSubview(hostingView)
+        modeToolbar = hostingView
     }
 
     /// 移除 `removeModeToolbar` 指定的屏幕捕获系统集成数据，并维护关联状态。
     private func removeModeToolbar() {
         modeToolbar?.removeFromSuperview()
         modeToolbar = nil
-        modeControl = nil
-    }
-
-    /// 更新 `changeMode` 对应的交互状态，并保持当前选择或展示约束。
-    @objc private func changeMode(_ sender: NSSegmentedControl) {
-        guard !isSelectionCommitted else {
-            sender.selectedSegment = selectedMode == .screenshot ? 0 : 1
-            return
-        }
-        selectedMode = sender.selectedSegment == 1 ? .recording : .screenshot
     }
 
     /// 锁定已提交选区，保留当前视觉状态直到新表面已经置前。
@@ -236,6 +202,65 @@ final class ScreenSelectionOverlayController {
     private static func displayID(for screen: NSScreen) -> UInt32? {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         return (screen.deviceDescription[key] as? NSNumber)?.uint32Value
+    }
+}
+
+/// 使用与主界面相同的 Liquid Glass 交互语义展示截图与录屏模式。
+private struct CaptureModeToolbarView: View {
+    @State private var selectedMode: ScreenCaptureMode
+    let onSelect: (ScreenCaptureMode) -> Void
+
+    init(
+        selectedMode: ScreenCaptureMode,
+        onSelect: @escaping (ScreenCaptureMode) -> Void
+    ) {
+        _selectedMode = State(initialValue: selectedMode)
+        self.onSelect = onSelect
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            modeButton(.screenshot, title: "截图", systemImage: "camera")
+            modeButton(.recording, title: "录屏", systemImage: "record.circle")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(4)
+        .liquidGlassPanel(cornerRadius: LiquidGlassCornerGeometry.screenshotModeRadius)
+        .liquidGlassGroup(spacing: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("截图或录屏")
+    }
+
+    private func modeButton(
+        _ mode: ScreenCaptureMode,
+        title: String,
+        systemImage: String
+    ) -> some View {
+        let isSelected = selectedMode == mode
+
+        return Button {
+            selectedMode = mode
+            onSelect(mode)
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .overlay(alignment: .bottom) {
+                    if isSelected {
+                        Capsule()
+                            .fill(MacToolsGlassTheme.activeBlue)
+                            .frame(width: 18, height: 3)
+                            .offset(y: -2)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? MacToolsGlassTheme.activeBlue : MacToolsGlassTheme.textSecondary)
+        .liquidGlassInteractionSurface(
+            state: isSelected ? .selected : .idle,
+            cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+        )
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
     }
 }
 

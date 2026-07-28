@@ -67,15 +67,17 @@ public struct MainWorkspaceModuleHeader: View {
 
     public var body: some View {
         HStack(spacing: 12) {
-            if let workspaceSidebarChrome {
-                sidebarToggleButton(workspaceSidebarChrome)
-            }
-
-            GlassIconBadge(systemName: module.iconName, size: 40, iconSize: 17)
+            Image(systemName: module.iconName)
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(module.title)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(
+                        size: MacToolsControlMetrics.pageTitleFontSize,
+                        weight: .medium
+                    ))
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
                 Text(subtitle)
                     .font(.system(size: 12, weight: .medium))
@@ -84,9 +86,13 @@ public struct MainWorkspaceModuleHeader: View {
             }
 
             Spacer()
+
+            if let workspaceSidebarChrome {
+                sidebarToggleButton(workspaceSidebarChrome)
+            }
         }
-        .padding(14)
-        .liquidGlassModule(cornerRadius: 24)
+        .frame(minHeight: MacToolsControlMetrics.pageHeaderMinimumHeight)
+        .padding(.horizontal, 16)
         .liquidGlassGroup(spacing: 12)
     }
 
@@ -164,7 +170,7 @@ public struct MainWorkspaceView<SettingsContent: View, ClipboardContent: View, T
                 )
         }
         .liquidGlassGroup(spacing: 18)
-        .padding(18)
+        .padding(MacToolsControlMetrics.pagePadding)
         .liquidGlassWindowPanel(frame: .mainWorkspace)
         .animation(.easeInOut(duration: MainWorkspaceLayout.animationDuration), value: isSidebarVisible)
     }

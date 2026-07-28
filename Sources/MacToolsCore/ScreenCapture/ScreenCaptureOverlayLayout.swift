@@ -6,7 +6,7 @@ import CoreGraphics
 /// 描述 `ScreenCaptureOverlayLayout` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenCaptureOverlayLayout {
     public static let modeToolbarSize = CGSize(width: 196, height: 44)
-    public static let editorToolbarSize = CGSize(width: 720, height: 92)
+    public static let editorToolbarSize = CGSize(width: 720, height: 68)
     public static let recordingControlSize = CGSize(width: 176, height: 48)
 
     private static let edgeInset: CGFloat = 12

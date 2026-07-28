@@ -96,11 +96,12 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(SettingsPane.sync.sections, [.sync])
     }
 
-    func testSettingsSectionsUseQuietContentSurfaceInsteadOfLiquidGlass() throws {
+    func testSettingsSectionsUseFlatGroupedContentInsteadOfCards() throws {
         let source = try sourceFile("Sources/MacToolsCore/UI/SettingsComponents.swift")
 
-        XCTAssertTrue(source.contains(".settingsContentSurface(cornerRadius: 20)"))
-        XCTAssertFalse(source.contains(".liquidGlassModule(cornerRadius: 22)"))
+        XCTAssertTrue(source.contains(".liquidGlassGroup(spacing: 8)"))
+        XCTAssertFalse(source.contains("SettingsContentSurfaceModifier"))
+        XCTAssertFalse(source.contains("controlBackgroundColor"))
     }
 
     func testRuntimeRetainsSelectionForCurrentAppSessionAndDefaultsToGeneral() throws {

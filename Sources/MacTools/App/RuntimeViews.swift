@@ -416,7 +416,7 @@ struct RuntimeTranslationModuleView: View {
     private let workspaceLayout = TranslationWorkspaceLayout.standard
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: MacToolsControlMetrics.pageSectionSpacing) {
             MainWorkspaceModuleHeader(
                 module: .translation,
                 subtitle: content.headerSubtitle
@@ -426,17 +426,20 @@ struct RuntimeTranslationModuleView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(MacToolsGlassTheme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(18)
-                .liquidGlassModule(cornerRadius: 22)
+                .padding(.horizontal, 16)
 
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: 0) {
                 translationInputSection
+
+                Divider()
+                    .overlay(MacToolsGlassTheme.divider)
+                    .padding(.vertical, 8)
+
                 translationOutputSection
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .liquidGlassGroup(spacing: 12)
-        .padding(18)
         .onChange(of: inputText) { _, _ in
             speechController.stop(ifSource: .translationWorkspace)
         }
@@ -483,7 +486,14 @@ struct RuntimeTranslationModuleView: View {
                 maxHeight: .infinity
             )
             .padding(10)
-            .liquidGlassModule(cornerRadius: 16)
+            .background(
+                MacToolsGlassTheme.fieldFill,
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(MacToolsGlassTheme.border.opacity(0.7), lineWidth: 1)
+            }
 
             if isSpeakingOriginal, let originalSpeechRequest {
                 speechStatus(for: originalSpeechRequest)
@@ -509,9 +519,8 @@ struct RuntimeTranslationModuleView: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .liquidGlassModule(cornerRadius: 22)
     }
 
     private var translationOutputSection: some View {
@@ -548,15 +557,13 @@ struct RuntimeTranslationModuleView: View {
                 maxHeight: .infinity
             )
             .padding(14)
-            .liquidGlassModule(cornerRadius: 16)
 
             if isSpeakingTranslation, let translatedSpeechRequest {
                 speechStatus(for: translatedSpeechRequest)
             }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .liquidGlassModule(cornerRadius: 22)
         .animation(.easeInOut(duration: 0.16), value: isSpeakingTranslation)
     }
 

@@ -18,6 +18,15 @@ final class TranslationModuleSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("textView.textColor = NSColor.white"))
     }
 
+    func testTranslationWorkspaceUsesFlatColumnsInsteadOfNestedGlassCards() throws {
+        let source = try runtimeViewsSource()
+
+        XCTAssertTrue(source.contains("MacToolsGlassTheme.fieldFill"))
+        XCTAssertTrue(source.contains("Divider()"))
+        XCTAssertFalse(source.contains(".liquidGlassModule(cornerRadius: 22)"))
+        XCTAssertFalse(source.contains(".liquidGlassModule(cornerRadius: 16)"))
+    }
+
     func testCredentialUnavailableStatusDoesNotClaimKeychainIsRuntimeStorage() throws {
         let source = try sourceFile(
             "Sources/MacToolsCore/UI/TranslationSettingsEditor.swift"

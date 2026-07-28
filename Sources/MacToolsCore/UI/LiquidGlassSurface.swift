@@ -47,7 +47,21 @@ enum LiquidGlassCornerShape: Equatable {
 /// 描述 `LiquidGlassCornerGeometry` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum LiquidGlassCornerGeometry {
     public static let windowRadius: CGFloat = 40
+    public static let compactPanelRadius: CGFloat = 22
+    public static let screenshotModeRadius: CGFloat = 16
+    public static let screenshotToolbarRadius: CGFloat = 24
+    public static let recordingControlRadius: CGFloat = 16
     public static let selectedRowMinimumRadius: CGFloat = 18
+    public static let controlRadius: CGFloat = 14
+    public static let smallControlRadius: CGFloat = 10
+}
+
+/// 描述统一工具界面中默认、悬停、选中和聚焦表面的展示状态。
+public enum LiquidGlassInteractionState: Equatable, Sendable {
+    case idle
+    case hovered
+    case selected
+    case focused
 }
 
 /// 封装 `LiquidGlassSurfaceStyle` 在 SwiftUI 展示层中的值语义和相关操作。
@@ -116,6 +130,15 @@ struct LiquidGlassSurfaceStyle {
             cornerShape: .fixed(cornerRadius),
             isInteractive: true,
             tint: .selection(0.12)
+        )
+    }
+
+    /// 构建中性悬停表面，避免把未选中的可点击内容误显示为蓝色焦点。
+    static func hover(cornerRadius: CGFloat) -> LiquidGlassSurfaceStyle {
+        LiquidGlassSurfaceStyle(
+            cornerShape: .fixed(cornerRadius),
+            isInteractive: true,
+            tint: .adaptiveGray(0.075)
         )
     }
 
@@ -340,6 +363,45 @@ struct LiquidGlassFloatingSelectionModifier: ViewModifier {
     }
 }
 
+/// 将统一交互状态映射到稳定的 Liquid Glass 节点和语义表面。
+private struct LiquidGlassInteractionSurfaceModifier: ViewModifier {
+    let state: LiquidGlassInteractionState
+    let cornerRadius: CGFloat
+
+    private var style: LiquidGlassSurfaceStyle {
+        switch state {
+        case .idle:
+            return .identity(cornerRadius: cornerRadius)
+        case .hovered:
+            return .hover(cornerRadius: cornerRadius)
+        case .selected, .focused:
+            return .floatingSelection(cornerRadius: cornerRadius)
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .nativeLiquidGlassSurface(style: style)
+            .overlay {
+                if state == .selected || state == .focused {
+                    let shape = RoundedRectangle(
+                        cornerRadius: cornerRadius,
+                        style: .continuous
+                    )
+                    shape
+                        .stroke(Color.white.opacity(0.28), lineWidth: 1)
+                    shape
+                        .stroke(
+                            state == .focused
+                                ? MacToolsGlassTheme.focusBorder
+                                : MacToolsGlassTheme.selectionBorder,
+                            lineWidth: state == .focused ? 1.25 : 0.75
+                        )
+                }
+        }
+    }
+}
+
 /// 封装 `LiquidGlassChipModifier` 在 SwiftUI 展示层中的值语义和相关操作。
 struct LiquidGlassChipModifier: ViewModifier {
     let cornerRadius: CGFloat
@@ -383,6 +445,7 @@ private extension View {
             )
         }
     }
+
 }
 
 /// 封装 `LiquidGlassButtonStyle` 在 SwiftUI 展示层中的值语义和相关操作。
@@ -434,10 +497,12 @@ private struct NativeLiquidGlassButtonSurfaceModifier: ViewModifier {
     /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
     func body(content: Content) -> some View {
         let style: LiquidGlassSurfaceStyle
-        if showsIdleSurface || isSelected || isPressed {
+        if isSelected || isPressed {
+            style = .floatingSelection(cornerRadius: cornerRadius)
+        } else if showsIdleSurface {
             style = .interactiveModule(
                 cornerRadius: cornerRadius,
-                isSelected: isSelected || isPressed
+                isSelected: false
             )
         } else {
             style = .identity(cornerRadius: cornerRadius)
@@ -494,6 +559,19 @@ public extension View {
     /// 构建并返回 `liquidGlassFloatingSelection` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassFloatingSelection(cornerRadius: CGFloat = 12) -> some View {
         modifier(LiquidGlassFloatingSelectionModifier(cornerRadius: cornerRadius))
+    }
+
+    /// 应用统一的默认、悬停、选中或聚焦表面，同时保持玻璃节点层级稳定。
+    func liquidGlassInteractionSurface(
+        state: LiquidGlassInteractionState,
+        cornerRadius: CGFloat = LiquidGlassCornerGeometry.controlRadius
+    ) -> some View {
+        modifier(
+            LiquidGlassInteractionSurfaceModifier(
+                state: state,
+                cornerRadius: cornerRadius
+            )
+        )
     }
 
     /// 构建并返回 `liquidGlassInteractiveModule` 对应的 SwiftUI 界面内容或展示状态。

@@ -5,6 +5,12 @@ import CoreGraphics
 import MacToolsCore
 import SwiftUI
 
+/// 标识截图编辑工具栏当前展示的唯一参数弹层。
+private enum ScreenshotEditorParameterPopover {
+    case color
+    case lineWidth
+}
+
 /// 扩展 `ScreenshotAnnotationTool`，补充本文件所需的屏幕捕获系统集成能力。
 private extension ScreenshotAnnotationTool {
     var title: String {
@@ -59,6 +65,9 @@ struct ScreenshotEditorView: View {
     @State private var mosaicPreviewImage: CGImage?
     @State private var pendingSettings: ScreenCaptureSettings?
     @State private var settingsSaveTask: Task<Void, Never>?
+    @State private var presentedParameter: ScreenshotEditorParameterPopover?
+    @State private var hoveredTool: ScreenshotAnnotationTool?
+    @State private var isHoveringUndo = false
 
     /// 创建 `ScreenshotEditorView`，保存传入依赖并建立初始状态。
     init(
@@ -99,7 +108,7 @@ struct ScreenshotEditorView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red)
                     .padding(10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .liquidGlassModule(cornerRadius: LiquidGlassCornerGeometry.smallControlRadius)
                     .position(x: toolbarFrame.midX, y: max(24, toolbarFrame.minY - 24))
             }
         }
@@ -118,94 +127,216 @@ struct ScreenshotEditorView: View {
     }
 
     private var editorToolbar: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 6) {
-                ForEach(ScreenshotAnnotationTool.allCases, id: \.self) { candidate in
-                    Button {
-                        selectTool(candidate)
-                    } label: {
-                        toolbarLabel(candidate.title, systemImage: candidate.imageName)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(tool == candidate ? .accentColor : .secondary)
-                    .accessibilityValue(tool == candidate ? "已选择" : "未选择")
-                }
-
-                Button {
-                    _ = annotationStore.undo()
-                } label: {
-                    toolbarLabel("撤销", systemImage: "arrow.uturn.backward")
-                }
-                .buttonStyle(.bordered)
-                .disabled(annotationStore.annotations.isEmpty)
-                .keyboardShortcut("z", modifiers: .command)
-
-                Spacer(minLength: 2)
-
-                Button("取消", action: onCancel)
-                    .buttonStyle(.bordered)
-                    .disabled(isExporting)
-                    .keyboardShortcut(.cancelAction)
-
-                Button {
-                    copyScreenshot()
-                } label: {
-                    toolbarLabel(isExporting ? "处理中" : "完成", systemImage: "doc.on.clipboard")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isExporting)
-                .keyboardShortcut(.return, modifiers: .command)
+        HStack(spacing: 6) {
+            ForEach(ScreenshotAnnotationTool.allCases, id: \.self) { candidate in
+                toolButton(candidate)
             }
 
-            HStack(spacing: 8) {
-                Text("颜色")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                ForEach(ScreenshotAnnotationColor.presets, id: \.self) { color in
-                    colorButton(color)
-                }
-
-                Divider()
-                    .frame(height: 20)
-
-                Text("粗细")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                ForEach(ScreenshotAnnotationLineWidth.allCases, id: \.rawValue) { lineWidth in
-                    lineWidthButton(lineWidth)
-                }
-
-                Spacer(minLength: 4)
-
-                if toolbarFrame.width >= 680 {
-                    Text(tool == .mosaic ? "拖拽区域进行像素化" : "拖拽截图区域进行标注")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
+            Button {
+                _ = annotationStore.undo()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 40, height: 40)
             }
-            .disabled(tool == .mosaic)
-            .opacity(tool == .mosaic ? 0.45 : 1)
+            .buttonStyle(.plain)
+            .foregroundStyle(MacToolsGlassTheme.textSecondary)
+            .liquidGlassInteractionSurface(
+                state: isHoveringUndo ? .hovered : .idle,
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+            )
+            .disabled(annotationStore.annotations.isEmpty)
+            .opacity(annotationStore.annotations.isEmpty ? 0.35 : 1)
+            .keyboardShortcut("z", modifiers: .command)
+            .accessibilityLabel("撤销")
+            .help("撤销")
+            .onHover { isHoveringUndo = $0 }
+
+            Divider()
+                .frame(height: 22)
+                .padding(.horizontal, 2)
+
+            colorParameterButton
+            lineWidthParameterButton
+
+            Spacer(minLength: 6)
+
+            Button(action: onCancel) {
+                Text("取消")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: MacToolsControlMetrics.textActionHeight)
+            }
+            .liquidGlassButtonStyle(
+                cornerRadius: LiquidGlassCornerGeometry.controlRadius,
+                minimumSize: CGSize(width: 58, height: MacToolsControlMetrics.textActionHeight)
+            )
+            .disabled(isExporting)
+            .keyboardShortcut(.cancelAction)
+
+            Button {
+                copyScreenshot()
+            } label: {
+                Label(isExporting ? "处理中" : "完成", systemImage: "checkmark")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .buttonStyle(
+                GlassPrimaryButtonStyle(
+                    cornerRadius: LiquidGlassCornerGeometry.controlRadius
+                )
+            )
+            .disabled(isExporting)
+            .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding(8)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(10)
+        .liquidGlassPanel(cornerRadius: LiquidGlassCornerGeometry.screenshotToolbarRadius)
+        .liquidGlassGroup(spacing: 6)
         .foregroundStyle(MacToolsGlassTheme.textPrimary)
     }
 
-    /// 构建并返回 `toolbarLabel` 对应的 SwiftUI 界面内容或展示状态。
-    @ViewBuilder
-    private func toolbarLabel(_ title: String, systemImage: String) -> some View {
-        if toolbarFrame.width < 680 {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .help(title)
-                .accessibilityLabel(title)
-        } else {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 13, weight: .semibold))
+    /// 构建一个默认透明、选中时蓝色浮起的标注工具按钮。
+    private func toolButton(_ candidate: ScreenshotAnnotationTool) -> some View {
+        let isSelected = tool == candidate
+        let isHovering = hoveredTool == candidate
+
+        return Button {
+            selectTool(candidate)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: candidate.imageName)
+                    .font(.system(size: 14, weight: .semibold))
+
+                if isSelected, toolbarFrame.width >= 560 {
+                    Text(candidate.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, isSelected && toolbarFrame.width >= 560 ? 10 : 0)
+            .frame(minWidth: 40, minHeight: 40)
+            .overlay(alignment: .bottom) {
+                if isSelected {
+                    Capsule()
+                        .fill(MacToolsGlassTheme.activeBlue)
+                        .frame(width: 20, height: 3)
+                        .offset(y: -2)
+                }
+            }
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? MacToolsGlassTheme.activeBlue : MacToolsGlassTheme.textSecondary)
+        .liquidGlassInteractionSurface(
+            state: isSelected ? .selected : (isHovering ? .hovered : .idle),
+            cornerRadius: LiquidGlassCornerGeometry.controlRadius
+        )
+        .accessibilityLabel(candidate.title)
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .help(candidate.title)
+        .onHover { hovering in
+            hoveredTool = hovering ? candidate : nil
+        }
+    }
+
+    private var colorParameterButton: some View {
+        Button {
+            presentedParameter = presentedParameter == .color ? nil : .color
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(swiftUIColor(annotationColor))
+                    .frame(width: 15, height: 15)
+                    .overlay {
+                        Circle()
+                            .stroke(Color.primary.opacity(0.28), lineWidth: 1)
+                    }
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .frame(width: 42, height: 40)
+        }
+        .liquidGlassButtonStyle(
+            cornerRadius: LiquidGlassCornerGeometry.controlRadius,
+            minimumSize: CGSize(width: 42, height: 40)
+        )
+        .disabled(tool == .mosaic)
+        .opacity(tool == .mosaic ? 0.35 : 1)
+        .accessibilityLabel("标注颜色")
+        .help("标注颜色")
+        .popover(
+            isPresented: parameterPopoverBinding(.color),
+            arrowEdge: .top
+        ) {
+            colorParameterPopover
+        }
+    }
+
+    private var lineWidthParameterButton: some View {
+        Button {
+            presentedParameter = presentedParameter == .lineWidth ? nil : .lineWidth
+        } label: {
+            HStack(spacing: 5) {
+                ScreenshotLineWidthPreview()
+                    .stroke(
+                        MacToolsGlassTheme.textPrimary,
+                        style: StrokeStyle(
+                            lineWidth: annotationLineWidth.points,
+                            lineCap: .round
+                        )
+                    )
+                    .frame(width: 20, height: 12)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .frame(width: 42, height: 40)
+        }
+        .liquidGlassButtonStyle(
+            cornerRadius: LiquidGlassCornerGeometry.controlRadius,
+            minimumSize: CGSize(width: 42, height: 40)
+        )
+        .disabled(tool == .mosaic)
+        .opacity(tool == .mosaic ? 0.35 : 1)
+        .accessibilityLabel("标注粗细")
+        .help("标注粗细")
+        .popover(
+            isPresented: parameterPopoverBinding(.lineWidth),
+            arrowEdge: .top
+        ) {
+            lineWidthParameterPopover
+        }
+    }
+
+    private var colorParameterPopover: some View {
+        HStack(spacing: 8) {
+            ForEach(ScreenshotAnnotationColor.presets, id: \.self) { color in
+                colorButton(color)
+            }
+        }
+        .padding(12)
+        .liquidGlassGroup(spacing: 6)
+    }
+
+    private var lineWidthParameterPopover: some View {
+        HStack(spacing: 8) {
+            ForEach(ScreenshotAnnotationLineWidth.allCases, id: \.rawValue) { lineWidth in
+                lineWidthButton(lineWidth)
+            }
+        }
+        .padding(12)
+        .liquidGlassGroup(spacing: 6)
+    }
+
+    /// 由单一枚举状态派生参数弹层 Binding，避免颜色与粗细同时出现。
+    private func parameterPopoverBinding(
+        _ parameter: ScreenshotEditorParameterPopover
+    ) -> Binding<Bool> {
+        Binding(
+            get: { presentedParameter == parameter },
+            set: { isPresented in
+                presentedParameter = isPresented ? parameter : nil
+            }
+        )
     }
 
     /// 构建并返回 `colorButton` 对应的 SwiftUI 界面内容或展示状态。
@@ -221,6 +352,10 @@ struct ScreenshotEditorView: View {
                         .stroke(.primary.opacity(0.35), lineWidth: 1)
                 }
                 .padding(3)
+                .liquidGlassInteractionSurface(
+                    state: annotationColor == color ? .selected : .idle,
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+                )
                 .overlay {
                     if annotationColor == color {
                         Circle()
@@ -247,23 +382,10 @@ struct ScreenshotEditorView: View {
                 )
                 .frame(width: 22, height: 12)
                 .frame(width: 30, height: 22)
-                .background {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(
-                            annotationLineWidth == lineWidth
-                                ? Color.accentColor.opacity(0.16)
-                                : Color.primary.opacity(0.04)
-                        )
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(
-                            annotationLineWidth == lineWidth
-                                ? Color.accentColor.opacity(0.8)
-                                : Color.primary.opacity(0.12),
-                            lineWidth: annotationLineWidth == lineWidth ? 1.5 : 0.5
-                        )
-                }
+                .liquidGlassInteractionSurface(
+                    state: annotationLineWidth == lineWidth ? .selected : .idle,
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+                )
         }
         .buttonStyle(.plain)
         .help(lineWidthName(lineWidth))
@@ -280,6 +402,9 @@ struct ScreenshotEditorView: View {
     /// 解析并返回 `selectTool` 对应的屏幕捕获系统集成结果。
     private func selectTool(_ tool: ScreenshotAnnotationTool) {
         self.tool = tool
+        if tool == .mosaic {
+            presentedParameter = nil
+        }
         persistSettings(tool: tool, color: annotationColor, lineWidth: annotationLineWidth)
     }
 

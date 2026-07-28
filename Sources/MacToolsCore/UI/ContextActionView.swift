@@ -26,23 +26,18 @@ public struct ContextActionView: View {
     public var body: some View {
         let panelSize = SuperPanelLayout.panelSize(for: content)
 
-        GlassEffectContainer(spacing: 16) {
-            VStack(spacing: 0) {
-                header
+        VStack(spacing: 0) {
+            header
 
-                Divider()
-                    .overlay(MacToolsGlassTheme.divider)
-                    .opacity(0.9)
+            Divider()
+                .overlay(MacToolsGlassTheme.divider)
+                .opacity(0.9)
 
-                scrollableBody
-            }
-            .frame(width: panelSize.width, height: panelSize.height)
-            .glassEffect(.regular, in: panelShape)
+            scrollableBody
         }
-    }
-
-    private var panelShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
+        .frame(width: panelSize.width, height: panelSize.height)
+        .liquidGlassPanel(cornerRadius: LiquidGlassCornerGeometry.compactPanelRadius)
+        .liquidGlassGroup(spacing: 12)
     }
 
     private var header: some View {
@@ -53,10 +48,6 @@ public struct ContextActionView: View {
                 .frame(
                     width: SuperPanelLayout.headerIconSize,
                     height: SuperPanelLayout.headerIconSize
-                )
-                .glassEffect(
-                    .regular.tint(iconColor.opacity(0.18)),
-                    in: .rect(cornerRadius: 9)
                 )
 
             VStack(alignment: .leading, spacing: SuperPanelLayout.headerTextSpacing) {
@@ -95,7 +86,6 @@ public struct ContextActionView: View {
             }
         }
         .padding(.vertical, usesTextLayout ? 8 : 6)
-        .background(MacToolsGlassTheme.fieldFill.opacity(usesTextLayout ? 1 : 0))
     }
 
     private var scrollableBody: some View {
@@ -253,14 +243,7 @@ public struct ContextActionView: View {
     }
 
     private var iconColor: Color {
-        switch content.kind {
-        case .text:
-            return MacToolsGlassTheme.activeBlue
-        case .textTransit:
-            return Color.purple.opacity(0.92)
-        case .fileSystem, .windowLayout:
-            return MacToolsGlassTheme.activeBlue
-        }
+        MacToolsGlassTheme.activeBlue
     }
 
     private var usesTextLayout: Bool {
@@ -306,7 +289,26 @@ private struct TranslationActionButton: View {
 
     @State private var isHovering = false
 
+    @ViewBuilder
     var body: some View {
+        if isPrimary {
+            actionButton
+                .buttonStyle(
+                    GlassPrimaryButtonStyle(
+                        cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+                    )
+                )
+                .onHover { isHovering = $0 }
+        } else {
+            actionButton
+                .buttonStyle(
+                    TranslationSecondaryActionButtonStyle(isHovering: isHovering)
+                )
+                .onHover { isHovering = $0 }
+        }
+    }
+
+    private var actionButton: some View {
         Button {
             performAction(action.id)
         } label: {
@@ -317,28 +319,38 @@ private struct TranslationActionButton: View {
                 ))
                 .foregroundStyle(isPrimary ? Color.white : MacToolsGlassTheme.textPrimary)
                 .lineLimit(1)
-                .padding(.horizontal, SuperPanelLayout.translationActionButtonHorizontalPadding)
-                .frame(height: SuperPanelLayout.translationActionButtonHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(buttonBackground)
+                .contentShape(
+                    RoundedRectangle(
+                        cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
+                        style: .continuous
+                    )
                 )
-                .frame(height: SuperPanelLayout.translationActionSectionHeight)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
     }
 
     private var isPrimary: Bool {
         action.id == .copyTranslatedText
     }
+}
 
-    private var buttonBackground: Color {
-        if isPrimary {
-            return MacToolsGlassTheme.activeBlue.opacity(isHovering ? 0.84 : 1)
-        }
-        return isHovering ? MacToolsGlassTheme.rowHover : MacToolsGlassTheme.fieldFill
+/// 让次要翻译操作与普通行一致，仅在悬停时浮起中性表面。
+private struct TranslationSecondaryActionButtonStyle: ButtonStyle {
+    let isHovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, SuperPanelLayout.translationActionButtonHorizontalPadding)
+            .frame(height: SuperPanelLayout.translationActionButtonHeight)
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
+                    style: .continuous
+                )
+            )
+            .liquidGlassInteractionSurface(
+                state: isHovering || configuration.isPressed ? .hovered : .idle,
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+            )
     }
 }
 
@@ -354,14 +366,9 @@ private struct SuperPanelActionRow: View {
             performAction(action.id)
         } label: {
             HStack(spacing: rowSpacing) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(iconBackground)
-
-                    Image(systemName: action.systemImage)
-                        .font(.system(size: iconFontSize, weight: .semibold))
-                        .foregroundStyle(iconForeground)
-                }
+                Image(systemName: action.systemImage)
+                    .font(.system(size: iconFontSize, weight: .semibold))
+                    .foregroundStyle(MacToolsGlassTheme.activeBlue)
                 .frame(width: iconSize, height: iconSize)
 
                 Text(action.title)
@@ -376,10 +383,11 @@ private struct SuperPanelActionRow: View {
             .padding(.vertical, verticalPadding)
             .frame(minHeight: rowHeight)
             .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 0)
-                    .fill(isHovering ? MacToolsGlassTheme.rowHover : Color.clear)
+            .liquidGlassInteractionSurface(
+                state: isHovering ? .hovered : .idle,
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
             )
+            .padding(.horizontal, 8)
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -394,11 +402,11 @@ private struct SuperPanelActionRow: View {
     }
 
     private var iconFontSize: CGFloat {
-        18
+        17
     }
 
     private var titleFontSize: CGFloat {
-        18
+        15
     }
 
     private var rowSpacing: CGFloat {
@@ -406,38 +414,13 @@ private struct SuperPanelActionRow: View {
     }
 
     private var horizontalPadding: CGFloat {
-        22
+        14
     }
 
     private var verticalPadding: CGFloat {
         11
     }
 
-    private var iconBackground: Color {
-        switch action.id {
-        case .copyTranslatedText, .copyTransitText, .copyPath, .createNewFile:
-            return MacToolsGlassTheme.activeBlue
-        case .textTransit:
-            return Color.purple
-        case .openTerminal:
-            return Color.white.opacity(0.14)
-        case .revealInFinder:
-            return Color.indigo
-        case .openClaudeCode, .openClaudeCodeSkipConfirmation:
-            return Color.orange.opacity(0.76)
-        case .windowLayoutButton:
-            return MacToolsGlassTheme.success.opacity(0.78)
-        }
-    }
-
-    private var iconForeground: Color {
-        switch action.id {
-        case .openTerminal:
-            return MacToolsGlassTheme.textPrimary
-        default:
-            return .white
-        }
-    }
 }
 
 /// 封装 `WindowLayoutActionButton` 在 SwiftUI 展示层中的值语义和相关操作。
@@ -466,15 +449,16 @@ private struct WindowLayoutActionButton: View {
             .foregroundStyle(MacToolsGlassTheme.textPrimary)
             .padding(.horizontal, 10)
             .frame(height: MacToolsControlMetrics.windowLayoutButtonHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovering ? MacToolsGlassTheme.activeBlue.opacity(0.16) : Color.white.opacity(0.055))
+            .liquidGlassInteractionSurface(
+                state: isHovering ? .hovered : .idle,
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(isHovering ? MacToolsGlassTheme.activeBlue.opacity(0.45) : MacToolsGlassTheme.border, lineWidth: 1)
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
+                    style: .continuous
+                )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }

@@ -21,7 +21,7 @@ final class ScreenCaptureOverlayLayoutTests: XCTestCase {
             displayBounds: CGRect(x: 0, y: 0, width: 1440, height: 900)
         )
 
-        XCTAssertEqual(frame, CGRect(x: 100, y: 136, width: 720, height: 92))
+        XCTAssertEqual(frame, CGRect(x: 100, y: 160, width: 720, height: 68))
     }
 
     func testEditorToolbarMovesAboveLowSelectionAndClampsHorizontally() {
@@ -30,7 +30,7 @@ final class ScreenCaptureOverlayLayoutTests: XCTestCase {
             displayBounds: CGRect(x: 0, y: 0, width: 1440, height: 900)
         )
 
-        XCTAssertEqual(frame, CGRect(x: 708, y: 140, width: 720, height: 92))
+        XCTAssertEqual(frame, CGRect(x: 708, y: 140, width: 720, height: 68))
     }
 
     func testEditorToolbarShrinksToStayInsideANarrowDisplay() {
@@ -39,7 +39,7 @@ final class ScreenCaptureOverlayLayoutTests: XCTestCase {
             displayBounds: CGRect(x: 0, y: 0, width: 500, height: 700)
         )
 
-        XCTAssertEqual(frame, CGRect(x: 12, y: 352, width: 476, height: 92))
+        XCTAssertEqual(frame, CGRect(x: 12, y: 20, width: 476, height: 68))
     }
 
     func testRecordingControlIsPinnedToTopCenterOfSelectedDisplay() {

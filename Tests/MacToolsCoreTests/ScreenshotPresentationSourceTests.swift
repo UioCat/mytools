@@ -91,6 +91,35 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         XCTAssertLessThan(locking.lowerBound, handling.lowerBound)
     }
 
+    func testCaptureModeToolbarUsesSharedSwiftUILiquidGlassSurface() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift"
+        )
+
+        XCTAssertTrue(source.contains("NSHostingView("))
+        XCTAssertTrue(source.contains("CaptureModeToolbarView"))
+        XCTAssertTrue(source.contains(".liquidGlassPanel("))
+        XCTAssertTrue(source.contains(".liquidGlassInteractionSurface("))
+        XCTAssertFalse(source.contains("NSSegmentedControl"))
+        XCTAssertFalse(source.contains("NSVisualEffectView"))
+    }
+
+    func testScreenshotEditorUsesSingleRowToolbarAndExclusiveParameterPopovers() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/ScreenCapture/ScreenshotEditorView.swift"
+        )
+
+        XCTAssertTrue(source.contains("private var editorToolbar: some View {\n        HStack"))
+        XCTAssertTrue(source.contains("ScreenshotEditorParameterPopover"))
+        XCTAssertTrue(source.contains("parameterPopoverBinding(.color)"))
+        XCTAssertTrue(source.contains("parameterPopoverBinding(.lineWidth)"))
+        XCTAssertTrue(source.contains(".liquidGlassPanel("))
+        XCTAssertFalse(source.contains(".buttonStyle(.bordered)"))
+        XCTAssertFalse(source.contains(".buttonStyle(.borderedProminent)"))
+        XCTAssertFalse(source.contains(".ultraThinMaterial"))
+        XCTAssertFalse(source.contains(".thinMaterial"))
+    }
+
     func testScreenTopologyChangeInvalidatesCacheAndMissingDisplayRetriesOnce() throws {
         let source = try sourceFile(
             "Sources/MacTools/App/ScreenCapture/SystemScreenCaptureService.swift"

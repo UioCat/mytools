@@ -67,45 +67,27 @@ struct SettingsSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: iconName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
 
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                    .font(.system(
+                        size: MacToolsControlMetrics.sectionTitleFontSize,
+                        weight: .semibold
+                    ))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
             }
+            .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
                 content
             }
-            .settingsContentSurface(cornerRadius: 20)
+            .liquidGlassGroup(spacing: 8)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-}
-
-/// 设置内容使用稳定的系统表面，与窗口和导航层的 Liquid Glass 区分层级。
-private struct SettingsContentSurfaceModifier: ViewModifier {
-    let cornerRadius: CGFloat
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        content
-            .background(Color(nsColor: .controlBackgroundColor), in: shape)
-            .overlay {
-                shape.stroke(MacToolsGlassTheme.border, lineWidth: 1)
-            }
-            .clipShape(shape)
-    }
-}
-
-private extension View {
-    func settingsContentSurface(cornerRadius: CGFloat) -> some View {
-        modifier(SettingsContentSurfaceModifier(cornerRadius: cornerRadius))
     }
 }
 

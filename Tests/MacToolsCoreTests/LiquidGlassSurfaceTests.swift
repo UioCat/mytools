@@ -3,15 +3,34 @@ import XCTest
 
 final class LiquidGlassSurfaceTests: XCTestCase {
     func testControlMetricsDefineTheApprovedSemanticButtonSizes() {
+        XCTAssertEqual(MacToolsControlMetrics.pagePadding, 20)
+        XCTAssertEqual(MacToolsControlMetrics.pageHeaderMinimumHeight, 68)
+        XCTAssertEqual(MacToolsControlMetrics.pageSectionSpacing, 16)
+        XCTAssertEqual(MacToolsControlMetrics.pageTitleFontSize, 26)
+        XCTAssertEqual(MacToolsControlMetrics.sectionTitleFontSize, 15)
+        XCTAssertEqual(MacToolsControlMetrics.bodyFontSize, 13)
+        XCTAssertEqual(MacToolsControlMetrics.metadataFontSize, 11)
         XCTAssertEqual(MacToolsControlMetrics.textActionHeight, 40)
         XCTAssertEqual(MacToolsControlMetrics.inlineIconSize, CGSize(width: 32, height: 32))
         XCTAssertEqual(MacToolsControlMetrics.toolbarIconSize, CGSize(width: 40, height: 40))
         XCTAssertEqual(MacToolsControlMetrics.sidebarNavigationHeight, 44)
         XCTAssertEqual(MacToolsControlMetrics.clipboardCategoryHeight, 36)
+        XCTAssertEqual(MacToolsControlMetrics.settingsCategoryHeight, 36)
         XCTAssertEqual(MacToolsControlMetrics.clipboardCategoryMinimumWidth, 96)
         XCTAssertEqual(MacToolsControlMetrics.superPanelActionRowHeight, 56)
         XCTAssertEqual(MacToolsControlMetrics.windowLayoutButtonHeight, 40)
         XCTAssertEqual(MacToolsControlMetrics.settingsRowButtonMinimumHeight, 44)
+    }
+
+    func testCornerGeometryDefinesWindowCompactPanelAndControlHierarchy() {
+        XCTAssertEqual(LiquidGlassCornerGeometry.windowRadius, 40)
+        XCTAssertEqual(LiquidGlassCornerGeometry.compactPanelRadius, 22)
+        XCTAssertEqual(LiquidGlassCornerGeometry.screenshotModeRadius, 16)
+        XCTAssertEqual(LiquidGlassCornerGeometry.screenshotToolbarRadius, 24)
+        XCTAssertEqual(LiquidGlassCornerGeometry.recordingControlRadius, 16)
+        XCTAssertEqual(LiquidGlassCornerGeometry.selectedRowMinimumRadius, 18)
+        XCTAssertEqual(LiquidGlassCornerGeometry.controlRadius, 14)
+        XCTAssertEqual(LiquidGlassCornerGeometry.smallControlRadius, 10)
     }
 
     func testPanelStyleUsesUntintedSystemGlassLikeSpotlight() {
@@ -41,6 +60,14 @@ final class LiquidGlassSurfaceTests: XCTestCase {
         XCTAssertEqual(selection.cornerShape, .fixed(12))
         XCTAssertEqual(selection.tint, .selection(0.12))
         XCTAssertTrue(selection.isInteractive)
+    }
+
+    func testHoverSurfaceUsesNeutralTintWithoutSelectionColor() {
+        let hover = LiquidGlassSurfaceStyle.hover(cornerRadius: 14)
+
+        XCTAssertEqual(hover.cornerShape, .fixed(14))
+        XCTAssertEqual(hover.tint, .adaptiveGray(0.075))
+        XCTAssertTrue(hover.isInteractive)
     }
 
     func testMainWorkspaceOpensAtTwoThirdsOfPreviousSize() {

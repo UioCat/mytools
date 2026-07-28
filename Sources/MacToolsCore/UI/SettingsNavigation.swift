@@ -108,8 +108,6 @@ struct SettingsPaneToolbar: View {
             toolbar(compact: false)
             toolbar(compact: true)
         }
-        .padding(8)
-        .liquidGlassModule(cornerRadius: 20)
         .liquidGlassGroup(spacing: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("设置分类"))
@@ -133,9 +131,9 @@ struct SettingsPaneToolbar: View {
             selection = pane
             focusTarget = buttonFocusTarget
         } label: {
-            VStack(spacing: compact ? 0 : 5) {
+            HStack(spacing: compact ? 0 : 6) {
                 Image(systemName: pane.systemImage)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
 
                 if !compact {
                     Text(pane.title)
@@ -144,14 +142,26 @@ struct SettingsPaneToolbar: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 48)
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(height: MacToolsControlMetrics.settingsCategoryHeight)
+            .contentShape(RoundedRectangle(
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
+                style: .continuous
+            ))
+            .overlay(alignment: .bottom) {
+                Capsule()
+                    .fill(isSelected ? MacToolsGlassTheme.selectionBlue : Color.clear)
+                    .frame(width: 18, height: 3)
+                    .padding(.bottom, 2)
+            }
         }
         .foregroundStyle(isSelected ? MacToolsGlassTheme.selectionBlue : MacToolsGlassTheme.textSecondary)
         .liquidGlassButtonStyle(
-            cornerRadius: 14,
+            cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
             isSelected: isSelected,
-            minimumSize: CGSize(width: minimumWidth, height: 48),
+            minimumSize: CGSize(
+                width: minimumWidth,
+                height: MacToolsControlMetrics.settingsCategoryHeight
+            ),
             showsIdleSurface: false
         )
         .accessibilityLabel(Text(pane.title))

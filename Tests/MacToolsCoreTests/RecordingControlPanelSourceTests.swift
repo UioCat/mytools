@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 
 final class RecordingControlPanelSourceTests: XCTestCase {
-    func testRecordingControlDoesNotRenderLeadingRedIndicator() throws {
+    func testRecordingControlUsesSwiftUILiquidGlassAndRecordingIndicator() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -12,8 +12,12 @@ final class RecordingControlPanelSourceTests: XCTestCase {
         )
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
-        XCTAssertFalse(source.contains("let indicator = NSView"))
-        XCTAssertFalse(source.contains("indicator.layer?.backgroundColor"))
-        XCTAssertTrue(source.contains("NSStackView(views: [title, elapsedLabel, stopButton])"))
+        XCTAssertTrue(source.contains("NSHostingView("))
+        XCTAssertTrue(source.contains("RecordingControlView"))
+        XCTAssertTrue(source.contains(".fill(MacToolsGlassTheme.recording)"))
+        XCTAssertTrue(source.contains(".monospacedDigit()"))
+        XCTAssertTrue(source.contains(".liquidGlassPanel("))
+        XCTAssertFalse(source.contains("NSVisualEffectView"))
+        XCTAssertFalse(source.contains("NSStackView"))
     }
 }

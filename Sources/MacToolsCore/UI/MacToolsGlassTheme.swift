@@ -11,6 +11,7 @@ public enum MacToolsGlassTheme {
     public static let success = Color.green
     public static let warning = Color.orange
     public static let destructive = Color.red
+    public static let recording = Color(nsColor: .systemRed)
 
     public static let textPrimary = Color.primary.opacity(0.96)
     public static let textSecondary = Color.secondary.opacity(0.82)
@@ -19,7 +20,9 @@ public enum MacToolsGlassTheme {
     public static let divider = Color.primary.opacity(0.10)
     public static let border = Color.primary.opacity(0.14)
     public static let strongBorder = Color.primary.opacity(0.24)
-    public static let rowHover = Color.accentColor.opacity(0.075)
+    public static let rowHover = Color.primary.opacity(0.055)
+    public static let selectionBorder = selectionBlue.opacity(0.28)
+    public static let focusBorder = selectionBlue.opacity(0.44)
     public static let fieldFill = Color.primary.opacity(0.055)
 
     /// 构建并返回 `statusColor` 对应的 SwiftUI 界面内容或展示状态。
@@ -30,6 +33,14 @@ public enum MacToolsGlassTheme {
 
 /// 描述 `MacToolsControlMetrics` 在 SwiftUI 展示层中可取的状态、选项或错误。
 public enum MacToolsControlMetrics {
+    public static let pagePadding: CGFloat = 20
+    public static let pageHeaderMinimumHeight: CGFloat = 68
+    public static let pageSectionSpacing: CGFloat = 16
+    public static let pageTitleFontSize: CGFloat = 26
+    public static let sectionTitleFontSize: CGFloat = 15
+    public static let bodyFontSize: CGFloat = 13
+    public static let metadataFontSize: CGFloat = 11
+
     public static let textActionHeight: CGFloat = 40
     public static let textActionFontSize: CGFloat = 14
     public static let textActionHorizontalPadding: CGFloat = 16
@@ -39,6 +50,7 @@ public enum MacToolsControlMetrics {
 
     public static let sidebarNavigationHeight: CGFloat = 44
     public static let clipboardCategoryHeight: CGFloat = 36
+    public static let settingsCategoryHeight = clipboardCategoryHeight
     public static let clipboardCategoryMinimumWidth: CGFloat = 96
     public static let superPanelActionRowHeight: CGFloat = 56
     public static let windowLayoutButtonHeight: CGFloat = 40
@@ -101,25 +113,6 @@ public struct GlassPrimaryButtonStyle: ButtonStyle {
                     .tint(color)
                     .interactive(),
                 in: .rect(cornerRadius: cornerRadius)
-            )
-    }
-}
-
-/// 封装 `GlassIconBadge` 在 SwiftUI 展示层中的值语义和相关操作。
-struct GlassIconBadge: View {
-    let systemName: String
-    var color: Color = MacToolsGlassTheme.activeBlue
-    var size: CGFloat = 48
-    var iconSize: CGFloat = 20
-
-    var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: iconSize, weight: .semibold))
-            .foregroundStyle(color)
-            .frame(width: size, height: size)
-            .glassEffect(
-                .regular.tint(color.opacity(0.16)),
-                in: .rect(cornerRadius: size * 0.28)
             )
     }
 }
