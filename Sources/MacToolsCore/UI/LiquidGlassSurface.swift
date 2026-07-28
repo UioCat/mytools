@@ -55,6 +55,19 @@ struct LiquidGlassSurfaceStyle {
     let cornerShape: LiquidGlassCornerShape
     let isInteractive: Bool
     let tint: LiquidGlassTint
+    let usesIdentityEffect: Bool
+
+    private init(
+        cornerShape: LiquidGlassCornerShape,
+        isInteractive: Bool,
+        tint: LiquidGlassTint,
+        usesIdentityEffect: Bool = false
+    ) {
+        self.cornerShape = cornerShape
+        self.isInteractive = isInteractive
+        self.tint = tint
+        self.usesIdentityEffect = usesIdentityEffect
+    }
 
     var cornerRadius: CGFloat {
         cornerShape.minimumRadius
@@ -66,6 +79,16 @@ struct LiquidGlassSurfaceStyle {
             cornerShape: .fixed(cornerRadius),
             isInteractive: false,
             tint: .none
+        )
+    }
+
+    /// 构建不绘制表面的占位效果，保持交互期间的玻璃视图层级稳定。
+    static func identity(cornerRadius: CGFloat) -> LiquidGlassSurfaceStyle {
+        LiquidGlassSurfaceStyle(
+            cornerShape: .fixed(cornerRadius),
+            isInteractive: false,
+            tint: .none,
+            usesIdentityEffect: true
         )
     }
 
@@ -115,6 +138,10 @@ struct LiquidGlassSurfaceStyle {
     }
 
     var effect: Glass {
+        if usesIdentityEffect {
+            return .identity
+        }
+
         let glass = tint.color.map { Glass.regular.tint($0) } ?? .regular
         return glass.interactive(isInteractive)
     }
@@ -405,18 +432,18 @@ private struct NativeLiquidGlassButtonSurfaceModifier: ViewModifier {
     let showsIdleSurface: Bool
 
     /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
-    @ViewBuilder
     func body(content: Content) -> some View {
+        let style: LiquidGlassSurfaceStyle
         if showsIdleSurface || isSelected || isPressed {
-            content.nativeLiquidGlassSurface(
-                style: .interactiveModule(
-                    cornerRadius: cornerRadius,
-                    isSelected: isSelected || isPressed
-                )
+            style = .interactiveModule(
+                cornerRadius: cornerRadius,
+                isSelected: isSelected || isPressed
             )
         } else {
-            content
+            style = .identity(cornerRadius: cornerRadius)
         }
+
+        return content.nativeLiquidGlassSurface(style: style)
     }
 }
 

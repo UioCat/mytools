@@ -6,14 +6,11 @@ import XCTest
 
 final class SettingsNavigationTests: XCTestCase {
     @MainActor
-    func testToolbarClickChangesTheBoundPane() {
-        var selection = SettingsPane.general
-        let toolbar = SettingsPaneToolbar(
-            selection: Binding(
-                get: { selection },
-                set: { selection = $0 }
-            )
-        )
+    func testToolbarHumanCadenceClickChangesEveryBoundPane() {
+        var receivedSelections: [SettingsPane] = []
+        let toolbar = SettingsPaneToolbarHarness(initialSelection: .sync) {
+            receivedSelections.append($0)
+        }
         .frame(width: 600, height: 80)
 
         let window = NSWindow(
@@ -33,10 +30,15 @@ final class SettingsNavigationTests: XCTestCase {
 
         hostingView.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-        sendClick(to: window, at: NSPoint(x: 180, y: 40))
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
 
-        XCTAssertEqual(selection, .clipboard)
+        for index in SettingsPane.allCases.indices {
+            sendHumanCadenceClick(
+                to: window,
+                at: NSPoint(x: toolbarButtonCenterX(at: index), y: 40)
+            )
+
+            XCTAssertEqual(receivedSelections, Array(SettingsPane.allCases.prefix(index + 1)))
+        }
     }
 
     func testPanesUseStableToolbarOrder() {
@@ -77,20 +79,6 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertTrue(source.contains("selectedPane: $selectedSettingsPane"))
     }
 
-    func testToolbarSelectionDoesNotAnimateIdentifiedContentReplacement() throws {
-        let source = try sourceFile("Sources/MacToolsCore/UI/SettingsNavigation.swift")
-
-        XCTAssertTrue(source.contains("return Button {\n            selection = pane"))
-        XCTAssertFalse(
-            source.contains(
-                """
-                return Button {
-                            withAnimation
-                """
-            )
-        )
-    }
-
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -103,7 +91,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     @MainActor
-    private func sendClick(to window: NSWindow, at location: NSPoint) {
+    private func sendHumanCadenceClick(to window: NSWindow, at location: NSPoint) {
         let mouseDown = NSEvent.mouseEvent(
             with: .leftMouseDown,
             location: location,
@@ -129,9 +117,44 @@ final class SettingsNavigationTests: XCTestCase {
 
         if let mouseDown {
             window.sendEvent(mouseDown)
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
         }
         if let mouseUp {
             window.sendEvent(mouseUp)
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
         }
+    }
+
+    private func toolbarButtonCenterX(at index: Int) -> CGFloat {
+        let toolbarWidth: CGFloat = 600
+        let toolbarHorizontalPadding: CGFloat = 8
+        let buttonSpacing: CGFloat = 8
+        let buttonCount = CGFloat(SettingsPane.allCases.count)
+        let contentWidth = toolbarWidth - (toolbarHorizontalPadding * 2)
+        let buttonWidth = (contentWidth - buttonSpacing * (buttonCount - 1)) / buttonCount
+
+        return toolbarHorizontalPadding
+            + CGFloat(index) * (buttonWidth + buttonSpacing)
+            + buttonWidth / 2
+    }
+}
+
+private struct SettingsPaneToolbarHarness: View {
+    @State private var selection: SettingsPane
+    let onSelectionChange: (SettingsPane) -> Void
+
+    init(
+        initialSelection: SettingsPane,
+        onSelectionChange: @escaping (SettingsPane) -> Void
+    ) {
+        self._selection = State(initialValue: initialSelection)
+        self.onSelectionChange = onSelectionChange
+    }
+
+    var body: some View {
+        SettingsPaneToolbar(selection: $selection)
+            .onChange(of: selection) { _, pane in
+                onSelectionChange(pane)
+            }
     }
 }

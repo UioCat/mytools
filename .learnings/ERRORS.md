@@ -996,3 +996,132 @@ zsh:1: unmatched "
 - **Notes**: 改用不含嵌套引号的分项正则重新执行扫描。
 
 ---
+## [ERR-20260728-004] imprecise learning status patch
+
+**Logged**: 2026-07-28T13:04:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A generic status replacement updated an unrelated historical learning entry.
+
+### Error
+```
+ERR-20260714-003 changed from pending to resolved
+```
+
+### Context
+- Attempted to resolve the newly added SwiftUI interface lookup entry using a hunk that matched the first `Status: pending` line in the file.
+- Diff review caught the unrelated change before staging or committing.
+
+### Suggested Fix
+Always anchor learning-status updates with the exact entry heading and logged timestamp.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-07-28T13:04:00+08:00
+- **Notes**: Restored the historical entry to pending and updated only ERR-20260728-002.
+
+---
+
+## [ERR-20260728-003] multi-file interaction fix patch
+
+**Logged**: 2026-07-28T12:58:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A combined source-and-test patch did not match the exact button modifier context.
+
+### Error
+```
+apply_patch verification failed: Failed to find expected lines in
+Sources/MacToolsCore/UI/LiquidGlassSurface.swift
+```
+
+### Context
+- Attempted to add the identity glass style, update the button modifier, and adjust two test files in one patch.
+- The modifier replacement hunk contained mismatched closing-line context, so the patch was rejected atomically.
+
+### Suggested Fix
+Inspect the exact line-numbered source and apply smaller independently verifiable hunks.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/LiquidGlassSurface.swift, Tests/MacToolsCoreTests/SettingsNavigationTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-28T12:59:00+08:00
+- **Notes**: Re-read the exact source context and split the change into focused patches.
+
+---
+
+## [ERR-20260728-002] SwiftUI glass API interface lookup
+
+**Logged**: 2026-07-28T11:46:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The local SwiftUI API lookup passed an empty interface path to ripgrep.
+
+### Error
+```
+rg: : IO error for operation on : No such file or directory (os error 2)
+```
+
+### Context
+- Queried the active macOS SDK for an `*apple-macos.swiftinterface` path under `SwiftUI.framework`.
+- The selected SDK does not expose the module interface at that globbed location, so `find` returned no result.
+
+### Suggested Fix
+Locate the active toolchain module interface first, validate that the path is non-empty, and only then search it.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/LiquidGlassSurface.swift
+
+### Resolution
+- **Resolved**: 2026-07-28T12:50:00+08:00
+- **Notes**: Located the interface under `SwiftUI.framework/Versions/A/Modules` and confirmed that `Glass.identity` is available on macOS 26.
+
+---
+
+## [ERR-20260728-001] packaged settings navigation probe
+
+**Logged**: 2026-07-28T11:42:00+08:00
+**Priority**: low
+**Status**: pending
+**Area**: tests
+
+### Summary
+The packaged-app navigation probe could not capture the settings panel and its temporary Swift event sender did not compile.
+
+### Error
+```
+window_id=
+could not create image from window
+conditional downcast to CoreFoundation type 'CFDictionary' will always succeed
+```
+
+### Context
+- Relaunched the packaged app with `--ui-verification-open-settings`, then queried only on-screen Core Graphics windows from a later shell process.
+- The transient settings panel was already no longer on screen when the query ran.
+- The event sender conditionally cast the window-bounds dictionary to `CFDictionary`, which Swift 6 diagnoses as an error.
+- A second capture immediately after the post-fix packaged launch still found only the hidden panel, so external screenshot automation cannot validate this transient window in the current session.
+
+### Suggested Fix
+Keep launch, window lookup, interaction, and capture in one foreground-safe probe, and bridge the bounds dictionary directly with `as CFDictionary`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/Panels/MainPanelController.swift, Tests/MacToolsCoreTests/SettingsNavigationTests.swift
+- See Also: ERR-20260727-006, ERR-20260727-009, ERR-20260727-010
+
+---

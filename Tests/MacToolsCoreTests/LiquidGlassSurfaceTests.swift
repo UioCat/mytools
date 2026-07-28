@@ -77,6 +77,15 @@ final class LiquidGlassSurfaceTests: XCTestCase {
         XCTAssertEqual(selected.tint, .accent(0.30))
     }
 
+    func testIdentityStylePreservesGlassNodeWithoutDrawingASurface() {
+        let identity = LiquidGlassSurfaceStyle.identity(cornerRadius: 14)
+
+        XCTAssertEqual(identity.cornerShape, .fixed(14))
+        XCTAssertFalse(identity.isInteractive)
+        XCTAssertTrue(identity.usesIdentityEffect)
+        XCTAssertEqual(identity.effect, .identity)
+    }
+
     func testChipStyleStaysLightweightAndStatic() {
         let chip = LiquidGlassSurfaceStyle.chip(cornerRadius: 10)
 
