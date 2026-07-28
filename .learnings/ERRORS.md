@@ -1419,3 +1419,133 @@ End packaged UI verification sessions before running the in-process XCTest suite
 - **Notes**: Stopped the packaged capture session; the isolated translation suite passed 7 tests and the full suite then passed 445 tests.
 
 ---
+
+## [ERR-20260728-014] CodeGraph unavailable for button hit-area investigation
+
+**Logged**: 2026-07-28T20:24:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The repository-local CodeGraph index is still unavailable while investigating SwiftUI button hit testing.
+
+### Error
+```
+CodeGraph not initialized in /Users/bytedance/code/mytools
+```
+
+### Context
+- Attempted to trace `ScreenshotEditorView`, shared Liquid Glass button styles, and related callers before editing.
+- The repository does not currently contain an initialized `.codegraph` index.
+
+### Suggested Fix
+Use focused source and test searches for this bounded regression; initialize CodeGraph separately only when a future broad dependency investigation justifies modifying repository tooling state.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/LiquidGlassSurface.swift, Sources/MacTools/App/ScreenCapture/ScreenshotEditorView.swift
+- See Also: ERR-20260728-007
+
+### Resolution
+- **Resolved**: 2026-07-28T20:24:00+08:00
+- **Notes**: Continued with exact source ranges, recent diff inspection, and focused tests without creating a new repository index.
+
+---
+
+## [ERR-20260728-015] hit-area source test expected member-call punctuation
+
+**Logged**: 2026-07-28T20:17:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The new source-contract test expected `.contentShape` even though the helper uses an implicit `self` call spelled `contentShape`.
+
+### Error
+```
+XCTAssertTrue failed at ScreenshotPresentationSourceTests.swift:138
+```
+
+### Context
+- The implementation compiled successfully and all other new source assertions passed.
+- Inspecting the exact helper body showed the test's leading punctuation was the only mismatch.
+
+### Suggested Fix
+Match the stable method call and interaction shape arguments without depending on optional member-call punctuation.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/ScreenshotPresentationSourceTests.swift, Sources/MacToolsCore/UI/LiquidGlassSurface.swift
+
+### Resolution
+- **Resolved**: 2026-07-28T20:17:00+08:00
+- **Notes**: Corrected the source assertion to match `contentShape(` while retaining the `.interaction` contract.
+
+---
+
+## [ERR-20260728-016] consecutive AppKit click tests crashed in window animation cleanup
+
+**Logged**: 2026-07-28T20:20:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Running the new hit-target window test immediately before the existing settings-toolbar click test crashed AppKit while releasing a window transform animation.
+
+### Error
+```
+EXC_BAD_ACCESS in -[_NSWindowTransformAnimation dealloc]
+```
+
+### Context
+- Both tests passed independently.
+- The two-test sequence consistently crashed when the second test advanced the main run loop.
+- The crash report placed the fault in AppKit animation cleanup, not application code or a test assertion.
+
+### Suggested Fix
+Keep the real edge click on the repository's existing settings control instead of introducing another SwiftUI button or NSWindow into the same XCTest lifecycle.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/LiquidGlassSurfaceTests.swift, Tests/MacToolsCoreTests/SettingsNavigationTests.swift
+
+### Resolution
+- **Resolved**: 2026-07-28T20:20:00+08:00
+- **Notes**: Removed the extra SwiftUI button and second NSWindow test, then added the edge click to the existing stable settings-category control; plain glass callers remain covered by the failing-then-passing source contract.
+
+---
+
+## [ERR-20260728-017] multi-file patch omitted the second file marker
+
+**Logged**: 2026-07-28T20:23:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A combined cleanup patch tried to match the learning-entry context in the test file because the second update-file marker was omitted.
+
+### Error
+```
+apply_patch verification failed: Failed to find expected lines in SettingsNavigationTests.swift
+```
+
+### Context
+- The intended patch updated both the AppKit test harness and its error record.
+- The patch was rejected atomically, so no partial source change occurred.
+
+### Suggested Fix
+Declare each file explicitly in a multi-file patch and keep unrelated hunks under their own update marker.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/SettingsNavigationTests.swift, .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-07-28T20:23:00+08:00
+- **Notes**: Reapplied the two updates with explicit file markers.
+
+---

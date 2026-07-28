@@ -138,6 +138,9 @@ struct ScreenshotEditorView: View {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 40, height: 40)
+                    .liquidGlassButtonHitTarget(
+                        cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+                    )
             }
             .buttonStyle(.plain)
             .foregroundStyle(MacToolsGlassTheme.textSecondary)
@@ -222,6 +225,9 @@ struct ScreenshotEditorView: View {
                         .offset(y: -2)
                 }
             }
+            .liquidGlassButtonHitTarget(
+                cornerRadius: LiquidGlassCornerGeometry.controlRadius
+            )
         }
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? MacToolsGlassTheme.activeBlue : MacToolsGlassTheme.textSecondary)
@@ -362,6 +368,9 @@ struct ScreenshotEditorView: View {
                             .stroke(Color.accentColor, lineWidth: 2)
                     }
                 }
+                .liquidGlassButtonHitTarget(
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+                )
         }
         .buttonStyle(.plain)
         .help("选择\(colorName(color))")
@@ -384,6 +393,9 @@ struct ScreenshotEditorView: View {
                 .frame(width: 30, height: 22)
                 .liquidGlassInteractionSurface(
                     state: annotationLineWidth == lineWidth ? .selected : .idle,
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+                )
+                .liquidGlassButtonHitTarget(
                     cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
                 )
         }

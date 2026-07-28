@@ -253,6 +253,9 @@ private struct CaptureModeToolbarView: View {
                             .offset(y: -2)
                     }
                 }
+                .liquidGlassButtonHitTarget(
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
+                )
         }
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? MacToolsGlassTheme.activeBlue : MacToolsGlassTheme.textSecondary)

@@ -120,6 +120,46 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         XCTAssertFalse(source.contains(".thinMaterial"))
     }
 
+    func testPlainLiquidGlassButtonsUseTheSharedFullSurfaceHitTarget() throws {
+        let surfaceSource = try sourceFile(
+            "Sources/MacToolsCore/UI/LiquidGlassSurface.swift"
+        )
+        let overlaySource = try sourceFile(
+            "Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift"
+        )
+        let editorSource = try sourceFile(
+            "Sources/MacTools/App/ScreenCapture/ScreenshotEditorView.swift"
+        )
+        let runtimeSource = try sourceFile(
+            "Sources/MacTools/App/RuntimeViews.swift"
+        )
+        let themeSource = try sourceFile(
+            "Sources/MacToolsCore/UI/MacToolsGlassTheme.swift"
+        )
+        let mainPanelSource = try sourceFile(
+            "Sources/MacToolsCore/UI/MainPanelView.swift"
+        )
+        let contextPanelSource = try sourceFile(
+            "Sources/MacToolsCore/UI/ContextActionView.swift"
+        )
+
+        XCTAssertTrue(surfaceSource.contains("func liquidGlassButtonHitTarget("))
+        XCTAssertTrue(surfaceSource.contains("contentShape(\n            .interaction,"))
+        XCTAssertGreaterThanOrEqual(
+            surfaceSource.components(separatedBy: ".liquidGlassButtonHitTarget(").count - 1,
+            1
+        )
+        XCTAssertTrue(themeSource.contains(".liquidGlassButtonHitTarget("))
+        XCTAssertTrue(mainPanelSource.contains(".liquidGlassButtonHitTarget("))
+        XCTAssertTrue(contextPanelSource.contains(".liquidGlassButtonHitTarget("))
+        XCTAssertTrue(overlaySource.contains(".liquidGlassButtonHitTarget("))
+        XCTAssertGreaterThanOrEqual(
+            editorSource.components(separatedBy: ".liquidGlassButtonHitTarget(").count - 1,
+            4
+        )
+        XCTAssertTrue(runtimeSource.contains(".liquidGlassButtonHitTarget("))
+    }
+
     func testScreenTopologyChangeInvalidatesCacheAndMissingDisplayRetriesOnce() throws {
         let source = try sourceFile(
             "Sources/MacTools/App/ScreenCapture/SystemScreenCaptureService.swift"

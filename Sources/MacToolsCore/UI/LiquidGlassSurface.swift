@@ -475,7 +475,7 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
                 minWidth: minimumSize?.width,
                 minHeight: minimumSize?.height
             )
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .liquidGlassButtonHitTarget(cornerRadius: cornerRadius)
             .modifier(
                 NativeLiquidGlassButtonSurfaceModifier(
                     cornerRadius: cornerRadius,
@@ -571,6 +571,16 @@ public extension View {
                 state: state,
                 cornerRadius: cornerRadius
             )
+        )
+    }
+
+    /// 让按钮的完整可见圆角表面参与交互命中，而不仅是图标或文字的不透明像素。
+    func liquidGlassButtonHitTarget(
+        cornerRadius: CGFloat = LiquidGlassCornerGeometry.controlRadius
+    ) -> some View {
+        contentShape(
+            .interaction,
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
     }
 

@@ -341,11 +341,8 @@ private struct TranslationSecondaryActionButtonStyle: ButtonStyle {
         configuration.label
             .padding(.horizontal, SuperPanelLayout.translationActionButtonHorizontalPadding)
             .frame(height: SuperPanelLayout.translationActionButtonHeight)
-            .contentShape(
-                RoundedRectangle(
-                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
-                    style: .continuous
-                )
+            .liquidGlassButtonHitTarget(
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius
             )
             .liquidGlassInteractionSurface(
                 state: isHovering || configuration.isPressed ? .hovered : .idle,

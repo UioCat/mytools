@@ -619,6 +619,7 @@ private struct ClipboardCategoryButtonStyle: ButtonStyle {
                 minWidth: MacToolsControlMetrics.clipboardCategoryMinimumWidth,
                 minHeight: MacToolsControlMetrics.clipboardCategoryHeight
             )
+            .liquidGlassButtonHitTarget(cornerRadius: 12)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .modifier(
                 ClipboardCategoryButtonSurfaceModifier(

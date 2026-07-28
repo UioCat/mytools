@@ -539,11 +539,11 @@ struct RuntimeTranslationModuleView: View {
                 } label: {
                     Label(content.outputCopyButtonTitle, systemImage: "doc.on.doc")
                         .font(.system(size: MacToolsControlMetrics.textActionFontSize, weight: .semibold))
+                        .padding(.horizontal, MacToolsControlMetrics.textActionHorizontalPadding)
+                        .frame(height: MacToolsControlMetrics.textActionHeight)
+                        .liquidGlassButtonHitTarget(cornerRadius: 14)
                 }
-                .buttonStyle(.plain)
                 .foregroundStyle(content.copyableOutputText == nil ? MacToolsGlassTheme.textDisabled : MacToolsGlassTheme.textSecondary)
-                .padding(.horizontal, MacToolsControlMetrics.textActionHorizontalPadding)
-                .frame(height: MacToolsControlMetrics.textActionHeight)
                 .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: content.copyableOutputText != nil)
                 .disabled(content.copyableOutputText == nil)
             }

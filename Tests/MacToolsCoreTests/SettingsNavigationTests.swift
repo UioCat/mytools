@@ -39,6 +39,10 @@ final class SettingsNavigationTests: XCTestCase {
 
             XCTAssertEqual(receivedSelections, Array(SettingsPane.allCases.prefix(index + 1)))
         }
+
+        receivedSelections.removeAll()
+        sendHumanCadenceClick(to: window, at: NSPoint(x: 12, y: 40))
+        XCTAssertEqual(receivedSelections, [.general])
     }
 
     func testPanesUseStableToolbarOrder() {

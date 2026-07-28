@@ -107,7 +107,7 @@ public struct GlassPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Color.white)
             .padding(.horizontal, MacToolsControlMetrics.textActionHorizontalPadding)
             .frame(minHeight: MacToolsControlMetrics.textActionHeight)
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .liquidGlassButtonHitTarget(cornerRadius: cornerRadius)
             .glassEffect(
                 .regular
                     .tint(color)
