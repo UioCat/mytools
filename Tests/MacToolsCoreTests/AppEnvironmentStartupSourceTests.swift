@@ -123,6 +123,52 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
         )
     }
 
+    func testCredentialApplyRefreshesRuntimeOnlyWhenLoadedValueChanges() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/App/AppEnvironment+Credentials.swift"
+        )
+        let applyStart = try XCTUnwrap(
+            source.range(of: "    func applyCredentialLoadResult(")
+        )
+        let redactionStart = try XCTUnwrap(
+            source.range(
+                of: "    func redactLegacyCredential(at url: URL) {",
+                range: applyStart.upperBound..<source.endIndex
+            )
+        )
+        let applyBody = source[applyStart.lowerBound..<redactionStart.lowerBound]
+
+        let decision = try XCTUnwrap(
+            applyBody.range(of: "CredentialRuntimeUpdatePolicy.decision(")
+        )
+        let settingsAssignment = try XCTUnwrap(
+            applyBody.range(of: "settings.translation.apiKey = result.value")
+        )
+        let publishedValueGuard = try XCTUnwrap(
+            applyBody.range(of: "if decision.shouldUpdatePublishedValue {")
+        )
+        let unavailableGuard = try XCTUnwrap(
+            applyBody.range(of: "if decision.shouldClearUnavailableState {")
+        )
+        let serviceRefreshGuard = try XCTUnwrap(
+            applyBody.range(
+                of: "guard decision.shouldRefreshDependentServices else { return }"
+            )
+        )
+        let settingsNotification = try XCTUnwrap(
+            applyBody.range(of: "onSettingsChanged(settings)")
+        )
+        let monitorRestart = try XCTUnwrap(
+            applyBody.range(of: "startSuperRightClickMonitor()")
+        )
+
+        XCTAssertLessThan(decision.lowerBound, settingsAssignment.lowerBound)
+        XCTAssertLessThan(publishedValueGuard.lowerBound, serviceRefreshGuard.lowerBound)
+        XCTAssertLessThan(unavailableGuard.lowerBound, serviceRefreshGuard.lowerBound)
+        XCTAssertLessThan(serviceRefreshGuard.lowerBound, settingsNotification.lowerBound)
+        XCTAssertLessThan(serviceRefreshGuard.lowerBound, monitorRestart.lowerBound)
+    }
+
     func testLegacyKeychainReaderIsReadOnly() throws {
         let source = try sourceFile(
             "Sources/MacTools/App/Sync/KeychainCredentialStore.swift"

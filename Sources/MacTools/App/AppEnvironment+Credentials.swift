@@ -161,20 +161,33 @@ extension AppEnvironment {
         }
     }
 
-    /// 仅应用当前代际的凭据结果，并在迁移成功后擦除旧设置中的明文副本。
+    /// 仅应用当前代际且发生变化的凭据结果，并在迁移成功后擦除旧设置中的明文副本。
     func applyCredentialLoadResult(
         _ result: CredentialAccessCoordinator.LoadResult,
         generation: Int,
         legacySettingsURL: URL?
     ) {
         guard generation == credentialLoadGeneration else { return }
+        let decision = CredentialRuntimeUpdatePolicy.decision(
+            settingsValue: settings.translation.apiKey,
+            publishedValue: translationCredentialModel.apiKey,
+            isUnavailable: translationCredentialModel.isUnavailable,
+            loadedValue: result.value
+        )
         credentialLoadFinished = true
-        settings.translation.apiKey = result.value
-        translationCredentialModel.apiKey = result.value
-        translationCredentialModel.isUnavailable = false
+        if decision.shouldRefreshDependentServices {
+            settings.translation.apiKey = result.value
+        }
+        if decision.shouldUpdatePublishedValue {
+            translationCredentialModel.apiKey = result.value
+        }
+        if decision.shouldClearUnavailableState {
+            translationCredentialModel.isUnavailable = false
+        }
         if result.shouldRedactLegacy, let legacySettingsURL {
             redactLegacyCredential(at: legacySettingsURL)
         }
+        guard decision.shouldRefreshDependentServices else { return }
         onSettingsChanged(settings)
         startSuperRightClickMonitor()
     }

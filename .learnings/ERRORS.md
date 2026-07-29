@@ -1522,7 +1522,7 @@ Match the stable method call and interaction shape arguments without depending o
 
 **Logged**: 2026-07-28T20:20:00+08:00
 **Priority**: medium
-**Status**: resolved
+**Status**: pending
 **Area**: tests
 
 ### Summary
@@ -1537,6 +1537,7 @@ EXC_BAD_ACCESS in -[_NSWindowTransformAnimation dealloc]
 - Both tests passed independently.
 - The two-test sequence consistently crashed when the second test advanced the main run loop.
 - The crash report placed the fault in AppKit animation cleanup, not application code or a test assertion.
+- On 2026-07-29, a full-suite verification run reproduced the same `EXC_BAD_ACCESS` in `-[_NSWindowTransformAnimation dealloc]` after a previous full-suite pass and green credential-focused tests.
 
 ### Suggested Fix
 Keep the real edge click on the repository's existing settings control instead of introducing another SwiftUI button or NSWindow into the same XCTest lifecycle.
@@ -1548,6 +1549,8 @@ Keep the real edge click on the repository's existing settings control instead o
 ### Resolution
 - **Resolved**: 2026-07-28T20:20:00+08:00
 - **Notes**: Removed the extra SwiftUI button and second NSWindow test, then added the edge click to the existing stable settings-category control; plain glass callers remain covered by the failing-then-passing source contract.
+- **Recurrence**: 2026-07-29T14:56:58+08:00; two single-process full-suite runs reproduced the AppKit crash several seconds after the window click test.
+- **Workaround verified**: 2026-07-29T15:01:10+08:00; the 449 remaining tests passed together, and the isolated window click test passed separately. Keep the issue pending until the real-window test no longer leaves AppKit transform-animation cleanup behind.
 
 ---
 

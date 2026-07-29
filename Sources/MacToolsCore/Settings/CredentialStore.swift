@@ -19,6 +19,30 @@ public enum CredentialAccessError: Error, Equatable, Sendable {
     case migrationVerificationFailed
 }
 
+/// 描述凭据加载结果对运行时发布状态和依赖服务的最小更新范围。
+public struct CredentialRuntimeUpdateDecision: Equatable, Sendable {
+    public let shouldUpdatePublishedValue: Bool
+    public let shouldClearUnavailableState: Bool
+    public let shouldRefreshDependentServices: Bool
+}
+
+/// 根据内存中的凭据状态决定是否需要发布界面状态或重建依赖服务。
+public enum CredentialRuntimeUpdatePolicy {
+    /// 相同凭据只恢复可用状态；仅凭据值变化时刷新翻译和全局右键依赖。
+    public static func decision(
+        settingsValue: String,
+        publishedValue: String,
+        isUnavailable: Bool,
+        loadedValue: String
+    ) -> CredentialRuntimeUpdateDecision {
+        CredentialRuntimeUpdateDecision(
+            shouldUpdatePublishedValue: publishedValue != loadedValue,
+            shouldClearUnavailableState: isUnavailable,
+            shouldRefreshDependentServices: settingsValue != loadedValue
+        )
+    }
+}
+
 /// 串行管理 `CredentialAccessCoordinator` 在设置与凭据领域中的可变状态和异步操作。
 public actor CredentialAccessCoordinator {
     /// 封装 `LoadResult` 在设置与凭据领域中的值语义和相关操作。
