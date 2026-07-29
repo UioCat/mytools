@@ -317,7 +317,7 @@ Rejected: rm -f style commands are not permitted. Use a safer approach
 
 ### Resolution
 - **Resolved**: 2026-07-24T17:12:00+08:00
-- **Notes**: 改用不创建临时文件的证书用途、有效期和身份策略检查。
+- **Notes**: 改用不创建临时文件的证书用途、有效期和身份策略检查。2026-07-29 敏感扫描再次因同类临时文件清理命令被拒绝，随后改为直接流式扫描。
 
 ---
 
@@ -1580,5 +1580,39 @@ Declare each file explicitly in a multi-file patch and keep unrelated hunks unde
 ### Resolution
 - **Resolved**: 2026-07-28T20:23:00+08:00
 - **Notes**: Reapplied the two updates with explicit file markers.
+
+---
+
+## [ERR-20260729-001] Swift window probe escaped dictionary keys inside interpolation
+
+**Logged**: 2026-07-29T14:39:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+A temporary `swift -e` window-inspection probe failed because escaped dictionary-key literals were embedded directly inside string interpolation.
+
+### Error
+```
+error: cannot find ')' to match opening '(' in string interpolation
+error: unterminated string literal
+```
+
+### Context
+- The probe only read CoreGraphics window metadata and did not modify the application or repository.
+- Shell quoting added unnecessary escapes around `bounds["Width"]` and `bounds["Height"]` inside the Swift interpolation.
+
+### Suggested Fix
+Assign dictionary values to local variables before interpolating them into diagnostic output.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+- See Also: ERR-20260725-004
+
+### Resolution
+- **Resolved**: 2026-07-29T14:39:00+08:00
+- **Notes**: Moved the width and height lookups into local variables; the corrected probe reported zero on-screen MacTools windows.
 
 ---
