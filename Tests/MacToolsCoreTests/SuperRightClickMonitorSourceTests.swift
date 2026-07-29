@@ -3,7 +3,7 @@ import XCTest
 
 final class SuperRightClickMonitorSourceTests: XCTestCase {
     func testShortRightClickReplayContinuesAfterCurrentEventTap() throws {
-        let source = try sourceFile("Sources/MacTools/App/SuperRightClickMonitor.swift")
+        let source = try sourceFile("Sources/MacTools/Features/SuperRightClick/SuperRightClickMonitor.swift")
 
         XCTAssertTrue(
             source.contains("replaySystemRightClick(mouseUpEvent: event, proxy: proxy)")

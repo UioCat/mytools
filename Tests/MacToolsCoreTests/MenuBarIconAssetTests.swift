@@ -39,7 +39,7 @@ final class MenuBarIconAssetTests: XCTestCase {
 
     func testRuntimeMenuBarImageLoadsBundledColorAssetWithoutTemplateTinting() throws {
         let sourceURL = repositoryRoot.appendingPathComponent(
-            "Sources/MacTools/App/MenuBarLogoImage.swift"
+            "Sources/MacTools/Application/MenuBarLogoImage.swift"
         )
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
@@ -87,13 +87,13 @@ final class MenuBarIconAssetTests: XCTestCase {
     func testSidebarUsesCurrentMenuBarAssetWithoutLegacyBranding() throws {
         let workspaceSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
-                "Sources/MacToolsCore/UI/MainWorkspaceView.swift"
+                "Sources/MacToolsCore/UI/Workspace/MainWorkspaceView.swift"
             ),
             encoding: .utf8
         )
         let runtimeSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
-                "Sources/MacTools/App/RuntimeViews.swift"
+                "Sources/MacTools/Application/RuntimeViews.swift"
             ),
             encoding: .utf8
         )

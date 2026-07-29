@@ -8,7 +8,7 @@ final class RecordingControlPanelSourceTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let sourceURL = repositoryRoot.appendingPathComponent(
-            "Sources/MacTools/App/ScreenCapture/RecordingControlPanelController.swift"
+            "Sources/MacTools/Platform/ScreenCapture/RecordingControlPanelController.swift"
         )
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 

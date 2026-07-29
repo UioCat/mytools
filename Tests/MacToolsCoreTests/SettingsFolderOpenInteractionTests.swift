@@ -48,12 +48,12 @@ final class SettingsFolderOpenInteractionTests: XCTestCase {
         }
         XCTAssertEqual(openCount, 1)
 
-        let settingsSource = try source(at: "Sources/MacToolsCore/UI/SettingsView.swift")
+        let settingsSource = try source(at: "Sources/MacToolsCore/UI/Settings/SettingsView.swift")
         let clipboardSettingsSource = try source(
-            at: "Sources/MacToolsCore/UI/ClipboardSettingsEditor.swift"
+            at: "Sources/MacToolsCore/UI/Settings/ClipboardSettingsEditor.swift"
         )
-        let runtimeSource = try source(at: "Sources/MacTools/App/RuntimeViews.swift")
-        let environmentSource = try source(at: "Sources/MacTools/App/AppEnvironment.swift")
+        let runtimeSource = try source(at: "Sources/MacTools/Application/RuntimeViews.swift")
+        let environmentSource = try source(at: "Sources/MacTools/Application/AppEnvironment.swift")
 
         XCTAssertTrue(clipboardSettingsSource.contains("Image(systemName: \"folder\")"))
         XCTAssertTrue(clipboardSettingsSource.contains(".help(\"打开统一存储文件夹\")"))

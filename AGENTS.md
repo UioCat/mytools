@@ -9,9 +9,11 @@ MacTools 是一个使用 Swift Package Manager 构建、面向 macOS 26 及以�
 | 路径 | 职责 |
 | --- | --- |
 | `Package.swift` | `MacTools` 可执行程序和 `MacToolsCore` 库的 SwiftPM 定义；外部依赖为 GRDB.swift |
-| `Sources/MacTools` | AppKit 入口、运行时依赖装配、菜单栏、面板、Finder 集成、全局右键监控和 ScreenCaptureKit 实现 |
-| `Sources/MacTools/App/ScreenCapture` | 选区覆盖层、截图编辑器、静态截图、MP4 录制器和录制控制 |
+| `Sources/MacTools/Application` | AppKit 入口、生命周期、运行时依赖装配、菜单栏和 SwiftUI 运行时接线 |
+| `Sources/MacTools/Features` | 剪贴板面板状态和超级右键等可执行层功能协调 |
+| `Sources/MacTools/Platform` | ScreenCaptureKit、iCloud Drive、系统语音、Accessibility 和旧 Keychain 等 macOS 适配 |
 | `Sources/MacToolsCore` | 可复用的模型、服务、状态机、持久化、设置、权限、翻译、窗口布局逻辑、截图渲染和 SwiftUI 视图 |
+| `Sources/MacToolsCore/UI` | 按工作台、功能页面和 DesignSystem 分组的可复用 SwiftUI 展示层 |
 | `Tests/MacToolsCoreTests` | 聚焦的单元测试以及 UI 决策和快照辅助工具 |
 | `scripts/package_app.sh` | 发布构建、本地 `.app` 组装，以及受信任签名或临时签名 |
 | `scripts/rebuild_and_run_app.sh` | 重新构建、替换正在运行的应用，并启动 `build/MacTools.app` |
@@ -20,7 +22,10 @@ MacTools 是一个使用 Swift Package Manager 构建、面向 macOS 26 及以�
 
 ## 架构边界
 
-- 将 AppKit 和操作系统集成保留在 `Sources/MacTools/App`；将可复用行为与状态保留在 `MacToolsCore`。
+- 将应用装配保留在 `Sources/MacTools/Application`，功能协调放在 `Sources/MacTools/Features`，
+  操作系统集成放在 `Sources/MacTools/Platform`；将可复用行为与状态保留在 `MacToolsCore`。
+- `Sources/MacToolsCore/UI` 不得导入 GRDB 或直接引用数据库、仓储、Payload、同步目录和加密凭据存储实现；
+  数据和系统动作必须通过状态对象、协议或闭包注入。
 - 优先采用 SwiftPM 原生改动。不要仅为配置已经能够通过 `Package.swift` 或脚本表达的构建行为而添加 Xcode 工程。
 - 当逻辑需要可测试时，应注入剪贴板、工作区、事件发送、权限、翻译 HTTP、文件系统、时钟和截图录制服务。
 - 保持超级右键各阶段可观察：事件检测、权限预检查、选区或 Finder 解析、分类、操作构建和面板展示。

@@ -201,27 +201,26 @@ public struct CredentialEnvelopeCodec: Sendable {
         }
     }
 
-    /// 转换 `encode` 接收的设置与凭据领域数据，并返回规范化结果。
+    /// 使用稳定键顺序和毫秒时间编码凭据信封，供本地及云端副本写入。
     public func encode(_ envelope: CredentialEnvelope) throws -> Data {
         try encoder().encode(envelope)
     }
 
-    /// 转换 `decode` 接收的设置与凭据领域数据，并返回规范化结果。
+    /// 解码信封结构；认证和凭据用途校验由 open 阶段完成。
     public func decode(_ data: Data) throws -> CredentialEnvelope {
         try decoder().decode(CredentialEnvelope.self, from: data)
     }
 
-    /// 转换 `encodeHeader` 接收的设置与凭据领域数据，并返回规范化结果。
+    /// 编码经过认证但不加密的协议头，作为 AES-GCM AAD。
     private func encodeHeader(_ header: AuthenticatedHeader) throws -> Data {
         try encoder().encode(header)
     }
 
-    /// 转换 `encodePayload` 接收的设置与凭据领域数据，并返回规范化结果。
+    /// 编码实际凭据或删除标记，随后交给 AES-GCM 密封。
     private func encodePayload(_ payload: SealedPayload) throws -> Data {
         try encoder().encode(payload)
     }
 
-    /// 转换 `encoder` 接收的设置与凭据领域数据，并返回规范化结果。
     /// 创建稳定排序的编码器，确保 AAD 在不同设备上产生一致字节序列。
     private func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -230,7 +229,7 @@ public struct CredentialEnvelopeCodec: Sendable {
         return encoder
     }
 
-    /// 转换 `decoder` 接收的设置与凭据领域数据，并返回规范化结果。
+    /// 创建与信封协议毫秒时间格式一致的解码器。
     private func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970

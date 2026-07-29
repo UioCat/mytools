@@ -48,7 +48,7 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
 
     func testCoordinatorDelegatesSingleCycleWorkToCoreRunner() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+            "Sources/MacTools/Platform/Sync/ICloudDriveSyncCoordinator.swift"
         )
 
         XCTAssertTrue(source.contains("private let cycleRunner: DriveSyncCycleRunner"))
@@ -59,7 +59,7 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
 
     func testCoordinatorGuardsRunningCyclesAndPublishedResultsWithLease() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+            "Sources/MacTools/Platform/Sync/ICloudDriveSyncCoordinator.swift"
         )
 
         XCTAssertTrue(source.contains("private struct CycleLease"))
@@ -71,7 +71,7 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
 
     func testCoordinatorReconcilesCredentialInsideCoordinatedSyncAndBeforeDeviceRemoval() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/Sync/ICloudDriveSyncCoordinator.swift"
+            "Sources/MacTools/Platform/Sync/ICloudDriveSyncCoordinator.swift"
         )
 
         XCTAssertTrue(source.contains("private let credentialSyncEngine: CredentialSyncEngine"))

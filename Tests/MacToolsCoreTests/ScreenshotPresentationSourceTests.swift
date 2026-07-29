@@ -4,7 +4,7 @@ import XCTest
 final class ScreenshotPresentationSourceTests: XCTestCase {
     func testScreenCaptureExcludesCurrentProcessByProcessIdentifier() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/SystemScreenCaptureService.swift"
+            "Sources/MacTools/Platform/ScreenCapture/SystemScreenCaptureService.swift"
         )
 
         XCTAssertTrue(source.contains("application.processID == ProcessInfo.processInfo.processIdentifier"))
@@ -12,7 +12,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testScreenCaptureUsesTopLeftDisplaySourceCoordinates() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/SystemScreenCaptureService.swift"
+            "Sources/MacTools/Platform/ScreenCapture/SystemScreenCaptureService.swift"
         )
 
         XCTAssertTrue(source.contains("selection.screenCaptureKitSourceFrame"))
@@ -21,16 +21,16 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testScreenshotEditorReusesSelectionPanelWithoutSecondDimLayerOrApplicationActivation() throws {
         let controllerSource = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenshotEditorPanelController.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorPanelController.swift"
         )
         let coordinatorSource = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenCaptureCoordinator.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenCaptureCoordinator.swift"
         )
         let overlaySource = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenSelectionOverlayController.swift"
         )
         let editorViewSource = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenshotEditorView.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorView.swift"
         )
 
         let presentationStart = try XCTUnwrap(
@@ -74,7 +74,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testSelectionOverlayStaysVisibleAndLocksAfterSubmission() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenSelectionOverlayController.swift"
         )
         let submissionStart = try XCTUnwrap(source.range(of: "selectionView.onDragFinished"))
         let panelStart = try XCTUnwrap(
@@ -93,7 +93,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testCaptureModeToolbarUsesSharedSwiftUILiquidGlassSurface() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenSelectionOverlayController.swift"
         )
 
         XCTAssertTrue(source.contains("NSHostingView("))
@@ -106,7 +106,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testScreenshotEditorUsesSingleRowToolbarAndExclusiveParameterPopovers() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenshotEditorView.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorView.swift"
         )
 
         XCTAssertTrue(source.contains("private var editorToolbar: some View {\n        HStack"))
@@ -122,25 +122,25 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testPlainLiquidGlassButtonsUseTheSharedFullSurfaceHitTarget() throws {
         let surfaceSource = try sourceFile(
-            "Sources/MacToolsCore/UI/LiquidGlassSurface.swift"
+            "Sources/MacToolsCore/UI/DesignSystem/LiquidGlassSurface.swift"
         )
         let overlaySource = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenSelectionOverlayController.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenSelectionOverlayController.swift"
         )
         let editorSource = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenshotEditorView.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorView.swift"
         )
         let runtimeSource = try sourceFile(
-            "Sources/MacTools/App/RuntimeViews.swift"
+            "Sources/MacTools/Application/RuntimeViews.swift"
         )
         let themeSource = try sourceFile(
-            "Sources/MacToolsCore/UI/MacToolsGlassTheme.swift"
+            "Sources/MacToolsCore/UI/DesignSystem/MacToolsGlassTheme.swift"
         )
         let mainPanelSource = try sourceFile(
-            "Sources/MacToolsCore/UI/MainPanelView.swift"
+            "Sources/MacToolsCore/UI/Clipboard/MainPanelView.swift"
         )
         let contextPanelSource = try sourceFile(
-            "Sources/MacToolsCore/UI/ContextActionView.swift"
+            "Sources/MacToolsCore/UI/SuperRightClick/ContextActionView.swift"
         )
 
         XCTAssertTrue(surfaceSource.contains("func liquidGlassButtonHitTarget("))
@@ -162,7 +162,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testScreenTopologyChangeInvalidatesCacheAndMissingDisplayRetriesOnce() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/SystemScreenCaptureService.swift"
+            "Sources/MacTools/Platform/ScreenCapture/SystemScreenCaptureService.swift"
         )
 
         XCTAssertTrue(source.contains("NSApplication.didChangeScreenParametersNotification"))
@@ -172,7 +172,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
 
     func testPendingCaptureCancellationDiscardsLateScreenshotAndRecordingResults() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/ScreenCapture/ScreenCaptureCoordinator.swift"
+            "Sources/MacTools/Platform/ScreenCapture/ScreenCaptureCoordinator.swift"
         )
 
         XCTAssertTrue(source.contains("!isCancelled else"))

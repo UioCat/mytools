@@ -29,7 +29,7 @@ final class TranslationModuleSourceTests: XCTestCase {
 
     func testCredentialUnavailableStatusDoesNotClaimKeychainIsRuntimeStorage() throws {
         let source = try sourceFile(
-            "Sources/MacToolsCore/UI/TranslationSettingsEditor.swift"
+            "Sources/MacToolsCore/UI/Translation/TranslationSettingsEditor.swift"
         )
 
         XCTAssertTrue(source.contains("翻译凭据暂时不可用"))
@@ -37,7 +37,7 @@ final class TranslationModuleSourceTests: XCTestCase {
     }
 
     private func runtimeViewsSource() throws -> String {
-        try sourceFile("Sources/MacTools/App/RuntimeViews.swift")
+        try sourceFile("Sources/MacTools/Application/RuntimeViews.swift")
     }
 
     private func sourceFile(_ path: String) throws -> String {

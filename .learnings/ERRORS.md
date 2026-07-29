@@ -1619,3 +1619,73 @@ Assign dictionary values to local variables before interpolating them into diagn
 - **Notes**: Moved the width and height lookups into local variables; the corrected probe reported zero on-screen MacTools windows.
 
 ---
+
+## [ERR-20260729-002] apply_patch rejected content-free file moves
+
+**Logged**: 2026-07-29T16:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+A multi-file `apply_patch` operation rejected pure move hunks that contained no context or changed lines.
+
+### Error
+```
+apply_patch verification failed: invalid hunk at line 2,
+Update file hunk for path 'Sources/MacTools/MacToolsMain.swift' is empty
+```
+
+### Context
+- The task needs Git-recognizable source moves while preserving executable behavior.
+- The rejected patch contained only `Update File` and `Move to` markers.
+- The patch was rejected atomically, so no source file was partially moved.
+
+### Suggested Fix
+Include a small in-scope comment update in each move hunk, such as correcting the file-level responsibility after
+the directory boundary changes.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools, Sources/MacToolsCore/UI
+
+### Resolution
+- **Resolved**: 2026-07-29T16:00:00+08:00
+- **Notes**: Replaced content-free moves with atomic moves that also update file-level responsibility comments.
+
+---
+
+## [ERR-20260729-003] zsh parsed a quoted secret-scan regular expression as a glob
+
+**Logged**: 2026-07-29T15:52:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A supplemental high-risk credential scan failed before execution because nested single quotes ended the shell-quoted
+PCRE expression and exposed the remaining pattern to zsh glob parsing.
+
+### Error
+```
+zsh:1: bad pattern
+```
+
+### Context
+- The repository's required broad sensitive-word scan had already completed.
+- The failed command was an additional literal-format scan and did not modify source files.
+- The expression included a character class containing both quote types inside a single-quoted shell argument.
+
+### Suggested Fix
+Run complex credential patterns inside a Ruby heredoc so the regular expression is parsed by Ruby rather than
+re-escaped through the shell.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-07-29T15:52:00+08:00
+- **Notes**: Replaced the shell-quoted PCRE command with an equivalent read-only Ruby scanner.
+
+---

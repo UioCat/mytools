@@ -137,7 +137,7 @@ final class PermissionServiceTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let runtimeSource = try String(
-            contentsOf: repositoryRoot.appendingPathComponent("Sources/MacTools/App/RuntimeViews.swift"),
+            contentsOf: repositoryRoot.appendingPathComponent("Sources/MacTools/Application/RuntimeViews.swift"),
             encoding: .utf8
         )
 

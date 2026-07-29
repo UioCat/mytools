@@ -3,7 +3,7 @@ import XCTest
 
 final class AppEnvironmentStartupSourceTests: XCTestCase {
     func testPayloadMaintenanceRunsAfterRuntimeServicesStartInsteadOfDuringInitialization() throws {
-        let source = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
+        let source = try sourceFile("Sources/MacTools/Application/AppEnvironment.swift")
         let initializerStart = try XCTUnwrap(source.range(of: "    init() {"))
         let startMethod = try XCTUnwrap(
             source.range(of: "    func start() {", range: initializerStart.upperBound..<source.endIndex)
@@ -21,7 +21,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
     }
 
     func testMaintenanceWorkerPreservesCleanupOrderAndSingleRunGuard() throws {
-        let source = try sourceFile("Sources/MacTools/App/AppEnvironmentWorkers.swift")
+        let source = try sourceFile("Sources/MacTools/Application/AppEnvironmentWorkers.swift")
         let workerStart = try XCTUnwrap(source.range(of: "actor AppMaintenanceWorker"))
         let pasteAttemptStart = try XCTUnwrap(
             source.range(of: "@MainActor\nfinal class PasteActivationAttempt")
@@ -37,7 +37,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
     }
 
     func testAutomaticPasteKeepsActivationAndTimeoutPathsWithoutDeprecatedOption() throws {
-        let source = try sourceFile("Sources/MacTools/App/AppEnvironmentWorkers.swift")
+        let source = try sourceFile("Sources/MacTools/Application/AppEnvironmentWorkers.swift")
 
         XCTAssertTrue(source.contains("final class PasteActivationAttempt"))
         XCTAssertTrue(source.contains("milliseconds(80)"))
@@ -48,7 +48,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
 
     func testCredentialStartupChecksLocalAndCloudBeforeLegacyMigration() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/AppEnvironment+Credentials.swift"
+            "Sources/MacTools/Application/AppEnvironment+Credentials.swift"
         )
 
         let localLoad = try XCTUnwrap(
@@ -71,8 +71,8 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
     }
 
     func testSyncFolderPreparationRunsThroughBackgroundWorker() throws {
-        let environmentSource = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
-        let workersSource = try sourceFile("Sources/MacTools/App/AppEnvironmentWorkers.swift")
+        let environmentSource = try sourceFile("Sources/MacTools/Application/AppEnvironment.swift")
+        let workersSource = try sourceFile("Sources/MacTools/Application/AppEnvironmentWorkers.swift")
 
         XCTAssertTrue(environmentSource.contains("await worker.prepare("))
         XCTAssertTrue(environmentSource.contains("await worker.persist(prepared)"))
@@ -87,7 +87,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
     }
 
     func testRemoteSettingsRestartSuperRightClickMonitorOnlyWhenItsDependenciesChange() throws {
-        let source = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
+        let source = try sourceFile("Sources/MacTools/Application/AppEnvironment.swift")
         let applyStart = try XCTUnwrap(
             source.range(of: "    private func applyRemoteSettings(_ remoteSettings: AppSettings) {")
         )
@@ -125,7 +125,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
 
     func testCredentialApplyRefreshesRuntimeOnlyWhenLoadedValueChanges() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/AppEnvironment+Credentials.swift"
+            "Sources/MacTools/Application/AppEnvironment+Credentials.swift"
         )
         let applyStart = try XCTUnwrap(
             source.range(of: "    func applyCredentialLoadResult(")
@@ -171,7 +171,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
 
     func testLegacyKeychainReaderIsReadOnly() throws {
         let source = try sourceFile(
-            "Sources/MacTools/App/Sync/KeychainCredentialStore.swift"
+            "Sources/MacTools/Platform/Sync/KeychainCredentialStore.swift"
         )
 
         XCTAssertTrue(source.contains("SecItemCopyMatching"))

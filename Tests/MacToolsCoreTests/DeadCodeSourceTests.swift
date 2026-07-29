@@ -4,9 +4,9 @@ import XCTest
 final class DeadCodeSourceTests: XCTestCase {
     func testRemovedCloudAccountSwitchCallbackIsNotPropagatedThroughRuntimeViews() throws {
         for path in [
-            "Sources/MacTools/App/AppEnvironment.swift",
-            "Sources/MacTools/App/RuntimeViews.swift",
-            "Sources/MacToolsCore/UI/SettingsView.swift"
+            "Sources/MacTools/Application/AppEnvironment.swift",
+            "Sources/MacTools/Application/RuntimeViews.swift",
+            "Sources/MacToolsCore/UI/Settings/SettingsView.swift"
         ] {
             let source = try sourceFile(path)
             XCTAssertFalse(source.contains("confirmCloudAccountSwitch"), path)

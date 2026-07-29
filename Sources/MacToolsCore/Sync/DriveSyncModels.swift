@@ -262,6 +262,7 @@ public struct SyncContentDescriptor: Equatable, Sendable {
     public var storedByteCount: Int64
     public var source: SyncContentSource
 
+    /// 描述一个尚未物化的同步内容对象及其本地来源和容量占用。
     public init(
         contentID: String,
         kind: ClipboardContentKind,
@@ -284,6 +285,7 @@ public struct SyncExportDraft: Equatable, Sendable {
     public var outboxCutoff: Date
     public var unavailableClipboardRecordNames: Set<String>
 
+    /// 建立一次同步导出草稿；outbox 截止时间用于成功后确认本轮已发布变更。
     public init(
         clipboard: SyncClipboardSnapshot,
         preferences: SyncPreferencesSnapshot,
@@ -300,6 +302,7 @@ public struct SyncExportDraft: Equatable, Sendable {
         self.unavailableClipboardRecordNames = unavailableClipboardRecordNames
     }
 
+    /// 同时移除被容量策略淘汰的内容描述符和引用记录，保持导出快照自洽。
     public func excludingContentIDs(_ excludedContentIDs: Set<String>) -> Self {
         guard !excludedContentIDs.isEmpty else { return self }
         var filtered = self
@@ -312,6 +315,7 @@ public struct SyncExportDraft: Equatable, Sendable {
         return filtered
     }
 
+    /// 将草稿与已经按需物化的内容合并为可写入远端目录的导出包。
     public func bundle(contents: [SyncExportContent] = []) -> SyncExportBundle {
         SyncExportBundle(
             clipboard: clipboard,

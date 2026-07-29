@@ -203,7 +203,8 @@ scripts/diagnose_super_right_click.sh --clear-log --probe
 
 ## 开发约定
 
-- AppKit 系统集成保留在 `Sources/MacTools/App`，可测试业务逻辑优先放入 `MacToolsCore`。
+- 应用装配、功能协调和 macOS 系统适配分别位于 `Sources/MacTools/Application`、
+  `Sources/MacTools/Features` 和 `Sources/MacTools/Platform`；可测试业务逻辑优先放入 `MacToolsCore`。
 - 系统服务通过协议或闭包注入，行为变化补充 `Tests/MacToolsCoreTests` 中的聚焦测试。
 - UI 改动必须运行 `scripts/rebuild_and_run_app.sh`，并在明暗背景检查所有受影响面板的圆角、阴影、标题栏残留和外层 backing layer。
 - 不提交 `.env*`、凭证、`.idea/`、`build/`、`.build/`、SQLite、剪贴板缓存、运行日志和本地用户数据。

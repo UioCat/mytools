@@ -67,7 +67,7 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
-    /// 保存 `store` 接收的本地存储领域数据，并保持既有持久化约束。
+    /// 规范化并按 SHA-256 内容寻址写入载荷，使用 staging 和原子替换避免半文件。
     public func store(_ data: Data, format: String) throws -> PayloadObjectDescriptor {
         try withExclusiveAccess {
             try storeUnlocked(data, format: format)
@@ -81,7 +81,7 @@ public final class PayloadStore: @unchecked Sendable {
         return try operation()
     }
 
-    /// 判断 `contains` 所描述的本地存储领域条件是否成立。
+    /// 验证相对路径安全后判断本地对象文件是否存在。
     public func contains(relativePath: String) -> Bool {
         withExclusiveAccess {
             guard let fileURL = fileURL(for: relativePath) else { return false }
@@ -89,7 +89,7 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `objectRelativePaths` 对应的本地存储领域数据或状态结果。
+    /// 枚举对象目录下所有合法存储对象的相对路径。
     public func objectRelativePaths() throws -> [String] {
         try withExclusiveAccess {
             guard fileManager.fileExists(atPath: objectsDirectory.path) else { return [] }
@@ -177,7 +177,7 @@ public final class PayloadStore: @unchecked Sendable {
         )
     }
 
-    /// 计算并返回 `fileURL` 对应的本地存储领域数据或状态结果。
+    /// 将经过路径穿越校验的相对对象路径解析为本地 URL。
     public func fileURL(for relativePath: String) -> URL? {
         guard Self.isValidRelativePath(relativePath) else {
             return nil
@@ -225,7 +225,7 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `totalBytes` 对应的本地存储领域数据或状态结果。
+    /// 汇总当前对象目录中所有普通文件的分配字节数。
     public func totalBytes() throws -> Int {
         guard fileManager.fileExists(atPath: objectsDirectory.path) else {
             return 0
@@ -258,7 +258,7 @@ public final class PayloadStore: @unchecked Sendable {
         rootDirectory.appendingPathComponent("store.json")
     }
 
-    /// 安排或刷新 `prepareStorage` 对应的本地存储领域工作。
+    /// 创建对象和 staging 目录并收紧目录权限。
     private func prepareStorage() throws {
         try SensitiveFilePermissions.prepareDirectory(at: rootDirectory)
         try SensitiveFilePermissions.prepareDirectory(at: objectsDirectory)
@@ -270,20 +270,20 @@ public final class PayloadStore: @unchecked Sendable {
         try SensitiveFilePermissions.secureFile(at: manifestURL)
     }
 
-    /// 计算并返回 `relativeObjectPath` 对应的本地存储领域数据或状态结果。
+    /// 使用摘要前缀分片生成稳定的内容寻址相对路径。
     private static func relativeObjectPath(contentHash: String, format: String) -> String {
         let prefix = String(contentHash.prefix(2))
         return "objects/sha256/\(prefix)/\(contentHash).\(format)"
     }
 
-    /// 转换 `normalizedExtension` 接收的本地存储领域数据，并返回规范化结果。
+    /// 将格式名限制为可用于对象文件扩展名的安全字符。
     private static func normalizedExtension(_ value: String) -> String {
         let withoutDot = value.hasPrefix(".") ? String(value.dropFirst()) : value
         let filtered = withoutDot.lowercased().filter { $0.isLetter || $0.isNumber }
         return filtered.isEmpty ? "bin" : filtered
     }
 
-    /// 判断 `isValidStoredObject` 所描述的本地存储领域条件是否成立。
+    /// 校验已有对象的字节数、摘要和格式，防止复用损坏文件。
     private static func isValidStoredObject(
         _ data: Data,
         contentHash: String,
@@ -296,7 +296,7 @@ public final class PayloadStore: @unchecked Sendable {
         return isValidPNGData(data)
     }
 
-    /// 判断 `isValidPNGData` 所描述的本地存储领域条件是否成立。
+    /// 使用 PNG 文件签名快速拒绝无效图片载荷。
     static func isValidPNGData(_ data: Data) -> Bool {
         guard data.starts(with: pngSignature),
               let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
@@ -307,7 +307,7 @@ public final class PayloadStore: @unchecked Sendable {
         return CGImageSourceCreateImageAtIndex(imageSource, 0, nil) != nil
     }
 
-    /// 判断 `isValidRelativePath` 所描述的本地存储领域条件是否成立。
+    /// 拒绝绝对路径、空路径和父目录分量，确保对象访问不能逃逸根目录。
     private static func isValidRelativePath(_ value: String) -> Bool {
         guard !value.isEmpty, !value.hasPrefix("/"), !value.contains("..") else {
             return false

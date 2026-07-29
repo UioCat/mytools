@@ -13,7 +13,7 @@ final class LoggerSourceTests: XCTestCase {
         XCTAssertTrue(recordBody.contains("Self.fileWriteQueue.async"))
         XCTAssertFalse(recordBody.contains("FileHandle"))
 
-        let appDelegateSource = try sourceFile("Sources/MacTools/App/AppDelegate.swift")
+        let appDelegateSource = try sourceFile("Sources/MacTools/Application/AppDelegate.swift")
         XCTAssertTrue(appDelegateSource.contains("func applicationWillTerminate"))
         XCTAssertTrue(appDelegateSource.contains("environment.logger.flush()"))
     }

@@ -79,7 +79,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testToolbarScopesArrowKeysToFocusablePaneButtons() throws {
-        let source = try sourceFile("Sources/MacToolsCore/UI/SettingsNavigation.swift")
+        let source = try sourceFile("Sources/MacToolsCore/UI/Settings/SettingsNavigation.swift")
 
         XCTAssertTrue(source.contains("@FocusState private var focusTarget"))
         XCTAssertTrue(source.contains(".focusable()"))
@@ -101,7 +101,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testSettingsSectionsUseFlatGroupedContentInsteadOfCards() throws {
-        let source = try sourceFile("Sources/MacToolsCore/UI/SettingsComponents.swift")
+        let source = try sourceFile("Sources/MacToolsCore/UI/Settings/SettingsComponents.swift")
 
         XCTAssertTrue(source.contains(".liquidGlassGroup(spacing: 8)"))
         XCTAssertFalse(source.contains("SettingsContentSurfaceModifier"))
@@ -109,7 +109,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testRuntimeRetainsSelectionForCurrentAppSessionAndDefaultsToGeneral() throws {
-        let source = try sourceFile("Sources/MacTools/App/RuntimeViews.swift")
+        let source = try sourceFile("Sources/MacTools/Application/RuntimeViews.swift")
 
         XCTAssertTrue(
             source.contains("@State private var selectedSettingsPane: SettingsPane = .general")

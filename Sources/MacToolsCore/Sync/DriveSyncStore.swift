@@ -76,7 +76,7 @@ public struct SyncStorageInventory: Equatable, Sendable {
         self.metadataBytes = metadataBytes
     }
 
-    /// 计算并返回 `usage` 对应的同步核心领域数据或状态结果。
+    /// 使用已缓存清单和外部普通历史数量构造容量快照，避免重新扫描目录。
     public func usage(
         capacityBytes: Int64,
         ordinaryHistoryCount: Int
@@ -91,7 +91,7 @@ public struct SyncStorageInventory: Equatable, Sendable {
         )
     }
 
-    /// 计算并返回 `removingObjects` 对应的同步核心领域数据或状态结果。
+    /// 从不可变清单移除指定内容对象并同步扣减分类字节数。
     public func removingObjects(withContentIDs contentIDs: Set<String>) -> Self {
         guard !contentIDs.isEmpty else { return self }
         var updated = self
@@ -145,6 +145,7 @@ public struct SyncStorageInventory: Equatable, Sendable {
         return updated
     }
 
+    /// 按内容类型增加缓存统计；不计入当前同步协议不支持的载荷类型。
     private mutating func addBytes(_ bytes: Int64, kind: ClipboardContentKind) {
         switch kind {
         case .imageData:
@@ -156,6 +157,7 @@ public struct SyncStorageInventory: Equatable, Sendable {
         }
     }
 
+    /// 按内容类型扣减缓存统计，并将异常负数钳制为零。
     private mutating func subtractBytes(_ bytes: Int64, kind: ClipboardContentKind) {
         switch kind {
         case .imageData:
@@ -198,6 +200,7 @@ public struct SyncContentPreparationResult: Equatable, Sendable {
     public var uploadedContentIDs: Set<String>
     public var unavailableContentIDs: Set<String>
 
+    /// 汇总共享内容准备阶段的已有、刚上传和不可用对象集合。
     public init(
         availableContentIDs: Set<String> = [],
         uploadedContentIDs: Set<String> = [],
@@ -215,6 +218,7 @@ public struct DriveSyncWriteResult: Equatable, Sendable {
     public var manifestDigest: String
     public var metadataByteDelta: Int64
 
+    /// 返回写入后的 manifest、摘要及元数据容量变化，供周期缓存原位更新。
     public init(
         manifest: SyncReplicaManifest,
         manifestDigest: String,
@@ -239,7 +243,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         self.fileManager = fileManager
     }
 
-    /// 安排或刷新 `prepare` 对应的同步核心领域工作。
+    /// 创建或校验同步目录协议结构，并在首次初始化时写入容量配置。
     @discardableResult
     public func prepare(
         initialCapacity: SyncStorageLimit = .default,
@@ -264,7 +268,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return descriptor
     }
 
-    /// 读取并返回 `readProtocol` 对应的同步核心领域数据。
+    /// 读取并校验同步根目录协议描述；版本或结构不兼容时抛错。
     public func readProtocol() throws -> SyncProtocolDescriptor {
         guard fileManager.fileExists(atPath: protocolURL.path) else {
             throw DriveSyncStoreError.missingProtocol
@@ -279,7 +283,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return descriptor
     }
 
-    /// 计算并返回 `replicas` 对应的同步核心领域数据或状态结果。
+    /// 读取指定 generation 下所有完整设备副本，跳过未下载或损坏目录。
     public func replicas(generation: Int) throws -> [DriveSyncReplica] {
         try scanReplicas(generation: generation).replicas
     }
@@ -488,7 +492,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return result
     }
 
-    /// 计算并返回 `contentData` 对应的同步核心领域数据或状态结果。
+    /// 读取并校验共享内容对象；文件尚未下载时返回 nil 供下轮重试。
     public func contentData(contentID: String, kind: ClipboardContentKind) throws -> Data? {
         let url = try contentURL(contentID: contentID, kind: kind)
         guard fileManager.fileExists(atPath: url.path) else { return nil }
@@ -504,12 +508,12 @@ public final class DriveSyncStore: @unchecked Sendable {
         return data
     }
 
-    /// 计算并返回 `contentFileURL` 对应的同步核心领域数据或状态结果。
+    /// 校验内容摘要与类型后返回共享对象的规范文件 URL。
     public func contentFileURL(contentID: String, kind: ClipboardContentKind) throws -> URL {
         try contentURL(contentID: contentID, kind: kind)
     }
 
-    /// 保存 `writeEvictions` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 原子写入容量淘汰快照，并返回元数据字节变化。
     @discardableResult
     public func writeEvictions(_ snapshot: SyncEvictionSnapshot) throws -> Int64 {
         let url = evictionsURL.appendingPathComponent("\(snapshot.deviceID).json")
@@ -552,7 +556,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return snapshot
     }
 
-    /// 保存 `writeReset` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 写入 generation 重置标记，使所有设备在下一周期采用新代际。
     public func writeReset(_ marker: SyncResetMarker) throws {
         try verifiedWrite(
             SyncSnapshotCodec.encode(marker),
@@ -560,7 +564,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
-    /// 计算并返回 `highestResetGeneration` 对应的同步核心领域数据或状态结果。
+    /// 扫描有效重置标记并返回最高 generation，缺失时返回协议初始值。
     public func highestResetGeneration() throws -> Int {
         try jsonFiles(in: resetsURL).reduce(1) { value, url in
             let marker = try SyncSnapshotCodec.decode(
@@ -576,7 +580,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 保存 `writeRemovedDevice` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 原子写入设备移除标记，阻止已移除副本继续参与合并和垃圾回收确认。
     public func writeRemovedDevice(_ marker: SyncRemovedDeviceMarker) throws {
         let directory = removedDevicesURL.appendingPathComponent(
             marker.removedDeviceID,
@@ -621,7 +625,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return removed
     }
 
-    /// 计算并返回 `usage` 对应的同步核心领域数据或状态结果。
+    /// 通过一次目录盘点计算当前容量使用和普通历史数量。
     public func usage(capacityBytes: Int64, ordinaryHistoryCount: Int) throws -> SyncStorageUsage {
         try storageInventory().usage(
             capacityBytes: capacityBytes,
@@ -629,7 +633,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
-    /// 计算并返回 `storageInventory` 对应的同步核心领域数据或状态结果。
+    /// 递归盘点共享内容、设备快照和协议元数据，形成可缓存清单。
     public func storageInventory() throws -> SyncStorageInventory {
         var objects: [SyncStoredObject] = []
         var imageBytes: Int64 = 0
@@ -681,7 +685,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
-    /// 保存 `storedObjectDirectoryKind` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 将共享对象一级目录映射为协议支持的内容类型。
     private func storedObjectDirectoryKind(for url: URL) -> ClipboardContentKind? {
         let components = url.pathComponents
         guard let objectsIndex = components.lastIndex(of: "objects"),
@@ -723,7 +727,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 保存 `storedObjects` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 枚举并校验所有共享内容对象的摘要、类型和字节数。
     public func storedObjects() throws -> [SyncStoredObject] {
         try storageInventory().objects
     }
@@ -836,7 +840,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
     }
 
-    /// 计算并返回 `snapshotData` 对应的同步核心领域数据或状态结果。
+    /// 从设备快照目录读取指定 JSON；未下载文件返回 nil，损坏内容抛错。
     private func snapshotData(
         named fileName: String,
         expectedDigest: String,
@@ -853,7 +857,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return data
     }
 
-    /// 保存 `writeSnapshotRevision` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 原子写入单个 revision 快照并返回写入前后的元数据字节差。
     private func writeSnapshotRevision(
         clipboardData: Data,
         preferencesData: Data,
@@ -878,7 +882,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 读取并返回 `currentManifest` 对应的同步核心领域数据。
+    /// 尝试读取设备当前 manifest；不存在、未下载或损坏时返回 nil 触发完整重写。
     private func currentManifest(at deviceDirectory: URL) -> SyncReplicaManifest? {
         let url = deviceDirectory.appendingPathComponent("manifest.json")
         guard fileManager.fileExists(atPath: url.path),
@@ -903,7 +907,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 保存 `writeContentIfNeeded` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 仅在共享对象不存在时写入内容，并通过摘要回读验证写入结果。
     private func writeContentIfNeeded(_ content: SyncExportContent) throws {
         let url = try contentURL(contentID: content.contentID, kind: content.kind)
         try validateContent(content.data, contentID: content.contentID, kind: content.kind)
@@ -971,7 +975,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `contentURL` 对应的同步核心领域数据或状态结果。
+    /// 校验摘要和类型后构造内容寻址对象路径，拒绝目录穿越输入。
     private func contentURL(contentID: String, kind: ClipboardContentKind) throws -> URL {
         guard Self.isValidContentID(contentID) else {
             throw DriveSyncStoreError.invalidContentID(contentID)
@@ -993,7 +997,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `verifiedWrite` 对应的同步核心领域数据或状态结果。
+    /// 使用 staging 文件、原子替换和写后回读保证元数据文件完整可见。
     private func verifiedWrite(_ data: Data, to url: URL) throws {
         try fileManager.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -1008,7 +1012,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 读取并返回 `readData` 对应的同步核心领域数据。
+    /// 请求 iCloud 下载并读取文件；可选缺失文件返回 nil，必需文件缺失抛错。
     private func readData(
         at url: URL,
         options: Data.ReadingOptions = []
@@ -1049,7 +1053,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `jsonFiles` 对应的同步核心领域数据或状态结果。
+    /// 返回目录下按文件名排序的普通 JSON 文件，便于确定性合并。
     private func jsonFiles(in directory: URL) throws -> [URL] {
         guard fileManager.fileExists(atPath: directory.path) else { return [] }
         return try fileManager.contentsOfDirectory(
@@ -1085,7 +1089,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         return bytes
     }
 
-    /// 判断 `isValidContentID` 所描述的同步核心领域条件是否成立。
+    /// 只接受 64 位小写十六进制 SHA-256 内容标识。
     private static func isValidContentID(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy {
             (48...57).contains($0) || (97...102).contains($0)
@@ -1103,12 +1107,12 @@ public final class DriveSyncStore: @unchecked Sendable {
             && !value.hasPrefix(".")
     }
 
-    /// 计算并返回 `snapshotDirectoryName` 对应的同步核心领域数据或状态结果。
+    /// 使用 generation 和 revision 生成不可变设备快照目录名。
     private static func snapshotDirectoryName(generation: Int, revision: Int64) -> String {
         "g\(generation)-r\(revision)-\(UUID().uuidString.lowercased())"
     }
 
-    /// 判断 `isValidSnapshotDirectoryName` 所描述的同步核心领域条件是否成立。
+    /// 校验快照目录名严格符合 generation-revision 协议格式。
     private static func isValidSnapshotDirectoryName(_ value: String) -> Bool {
         !value.isEmpty
             && value.utf8.count <= 160

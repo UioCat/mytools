@@ -9,6 +9,7 @@ public struct ClipboardUpsertResult: Equatable {
     public let prunedItemIDs: [UUID]
     public let duplicateRecordIDs: [UUID]
 
+    /// 汇总一次 upsert 的最终记录、插入状态以及需要清理的历史或重复记录。
     public init(
         itemID: UUID,
         inserted: Bool,
@@ -27,6 +28,7 @@ public struct ClipboardSyncCandidate: Sendable {
     public var item: ClipboardItem
     public var payloadByteCount: Int64?
 
+    /// 建立同步候选；payload 字节数为空表示记录没有外部载荷元数据。
     public init(item: ClipboardItem, payloadByteCount: Int64?) {
         self.item = item
         self.payloadByteCount = payloadByteCount

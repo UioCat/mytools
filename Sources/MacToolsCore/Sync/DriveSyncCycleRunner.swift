@@ -41,20 +41,24 @@ public struct DriveSyncCycleResult: Sendable {
 
 /// 管理 `DriveSyncCycleRunner` 在同步核心领域中的生命周期、依赖和可变状态。
 public final class DriveSyncCycleRunner: @unchecked Sendable {
+    /// 同步内容缓存使用的复合键；摘要相同但类型不同的对象不能共享缓存条目。
     private struct ContentKey: Hashable {
         var contentID: String
         var kind: ClipboardContentKind
 
+        /// 内容摘要和载荷类型共同确定缓存项身份，避免不同目录类型错误复用。
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.contentID == rhs.contentID && lhs.kind == rhs.kind
         }
 
+        /// 使用与相等判断相同的字段生成哈希，保持 Hashable 约定。
         func hash(into hasher: inout Hasher) {
             hasher.combine(contentID)
             hasher.combine(kind.rawValue)
         }
     }
 
+    /// 保存一次稳定远端观察结果，供无变化周期跳过重复目录扫描和摘要计算。
     private struct ObservationCache {
         var rootURL: URL
         var storeID: UUID

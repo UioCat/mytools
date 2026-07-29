@@ -34,14 +34,14 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         self.codec = codec
     }
 
-    /// 读取并返回 `readEnvelope` 对应的设置与凭据领域数据。
+    /// 在进程锁内读取并验证指定凭据的本地加密信封。
     public func readEnvelope(for credential: CredentialKey) throws -> CredentialEnvelope? {
         try withLock {
             try readEnvelopeUnlocked(for: credential)
         }
     }
 
-    /// 读取并返回 `readRecord` 对应的设置与凭据领域数据。
+    /// 读取、认证并解密本地凭据记录；文件不存在时返回 nil。
     public func readRecord(for credential: CredentialKey) throws -> CredentialEnvelopeRecord? {
         try withLock {
             guard let envelope = try readEnvelopeUnlocked(for: credential) else { return nil }
@@ -49,7 +49,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
-    /// 保存 `write` 接收的设置与凭据领域数据，并保持既有持久化约束。
+    /// 先验证信封可由指定凭据打开，再通过原子替换持久化并回读确认。
     public func write(
         _ envelope: CredentialEnvelope,
         for credential: CredentialKey
@@ -124,7 +124,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
-    /// 判断 `isMigrationComplete` 所描述的设置与凭据领域条件是否成立。
+    /// 校验迁移标记权限和版本；未知版本作为不兼容状态抛错。
     public func isMigrationComplete() throws -> Bool {
         try withLock {
             guard fileManager.fileExists(atPath: migrationMarkerURL.path) else {
@@ -153,7 +153,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
-    /// 读取并返回 `readEnvelopeUnlocked` 对应的设置与凭据领域数据。
+    /// 在调用方已持锁时读取并认证信封，同时修复目标文件权限。
     private func readEnvelopeUnlocked(
         for credential: CredentialKey
     ) throws -> CredentialEnvelope? {
@@ -164,7 +164,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         return envelope
     }
 
-    /// 保存 `writeUnlocked` 接收的设置与凭据领域数据，并保持既有持久化约束。
+    /// 在调用方已持锁时验证、编码、原子写入并回读信封。
     private func writeUnlocked(
         _ envelope: CredentialEnvelope,
         for credential: CredentialKey
@@ -216,7 +216,7 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
         }
     }
 
-    /// 应用 `applyFilePermissions` 接收的新值，并更新相关设置与凭据领域状态。
+    /// 将凭据信封、staging 文件或迁移标记权限收紧为仅当前用户可读写。
     private func applyFilePermissions(at url: URL) throws {
         try fileManager.setAttributes(
             [.posixPermissions: 0o600],

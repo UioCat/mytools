@@ -3,7 +3,7 @@ import XCTest
 
 final class CodeOrganizationSourceTests: XCTestCase {
     func testSettingsViewRemainsACompactCompositionRoot() throws {
-        let settingsView = try sourceFile("Sources/MacToolsCore/UI/SettingsView.swift")
+        let settingsView = try sourceFile("Sources/MacToolsCore/UI/Settings/SettingsView.swift")
 
         XCTAssertLessThanOrEqual(settingsView.lineCount, 400)
         XCTAssertTrue(settingsView.contains("public struct SettingsView: View"))
@@ -30,8 +30,8 @@ final class CodeOrganizationSourceTests: XCTestCase {
     }
 
     func testAppEnvironmentKeepsExecutionWorkersInDedicatedFile() throws {
-        let environment = try sourceFile("Sources/MacTools/App/AppEnvironment.swift")
-        let workers = try sourceFile("Sources/MacTools/App/AppEnvironmentWorkers.swift")
+        let environment = try sourceFile("Sources/MacTools/Application/AppEnvironment.swift")
+        let workers = try sourceFile("Sources/MacTools/Application/AppEnvironmentWorkers.swift")
 
         XCTAssertLessThan(environment.lineCount, 1_000)
         XCTAssertFalse(environment.contains("actor ClipboardPollingWorker"))
@@ -42,15 +42,51 @@ final class CodeOrganizationSourceTests: XCTestCase {
         XCTAssertTrue(workers.contains("final class PasteActivationAttempt"))
     }
 
+    func testUIFilesDoNotDependOnConcreteStorageImplementations() throws {
+        let uiDirectory = repositoryRoot.appendingPathComponent(
+            "Sources/MacToolsCore/UI",
+            isDirectory: true
+        )
+        let forbiddenReferences = [
+            "import GRDB",
+            "ClipboardDatabase",
+            "ClipboardRepository",
+            "DriveSyncStore",
+            "PayloadStore",
+            "PreferenceRepository",
+            "DeviceOverrideRepository",
+            "EncryptedCredentialStore"
+        ]
+        let enumerator = try XCTUnwrap(
+            FileManager.default.enumerator(
+                at: uiDirectory,
+                includingPropertiesForKeys: nil
+            )
+        )
+
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "swift" {
+            let source = try String(contentsOf: fileURL, encoding: .utf8)
+            for forbiddenReference in forbiddenReferences {
+                XCTAssertFalse(
+                    source.contains(forbiddenReference),
+                    "\(fileURL.path) must not reference \(forbiddenReference)"
+                )
+            }
+        }
+    }
+
     private func sourceFile(_ path: String) throws -> String {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
+        try String(
             contentsOf: repositoryRoot.appendingPathComponent(path),
             encoding: .utf8
         )
+    }
+
+    private var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 }
 

@@ -19,7 +19,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `upsert` 接收的本地存储领域数据，并保持既有持久化约束。
+    /// 按内容摘要合并剪贴板记录，在同一事务更新字段时钟、历史裁剪和同步 outbox。
     @discardableResult
     public func upsert(
         _ item: ClipboardItem,
@@ -324,7 +324,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `item` 对应的本地存储领域数据或状态结果。
+    /// 按稳定 UUID 读取一条剪贴板记录；不存在时返回 nil。
     public func item(id: UUID) throws -> ClipboardItem? {
         let payloadRootPath = payloadStore?.rootDirectory.path
         return try database.writer.read { db in
@@ -339,7 +339,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 应用 `setFavorite` 接收的新值，并更新相关本地存储领域状态。
+    /// 更新收藏值和逻辑时钟，并在需要时重新裁剪普通历史与发布同步变更。
     public func setFavorite(id: UUID, isFavorite: Bool, historyLimit: Int? = nil) throws {
         try database.writer.write { db in
             let deviceID = try self.deviceID(in: db)
@@ -359,7 +359,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         collectPayloadGarbageAfterCommit()
     }
 
-    /// 应用 `setPinned` 接收的新值，并更新相关本地存储领域状态。
+    /// 更新置顶值和逻辑时钟，并把字段变化写入本机副本与同步 outbox。
     public func setPinned(id: UUID, isPinned: Bool, historyLimit: Int? = nil) throws {
         try database.writer.write { db in
             let deviceID = try self.deviceID(in: db)
@@ -457,7 +457,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `countNormalItems` 对应的本地存储领域数据或状态结果。
+    /// 统计未收藏且未置顶的普通历史数量。
     public func countNormalItems() throws -> Int {
         try database.writer.read { db in
             try Int.fetchOne(
@@ -549,7 +549,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `upsertPayload` 接收的本地存储领域数据，并保持既有持久化约束。
+    /// 在当前数据库事务登记内容寻址载荷，并保留已有云端状态。
     private func upsertPayload(
         _ payload: PayloadObjectDescriptor,
         in db: Database,
@@ -646,7 +646,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         return itemIDs
     }
 
-    /// 安排或刷新 `enqueueUnreferencedPayloads` 对应的本地存储领域工作。
+    /// 将失去记录引用的载荷加入延迟垃圾回收队列，实际删文件发生在事务提交后。
     private func enqueueUnreferencedPayloads(_ payloadIDs: [String], in db: Database) throws {
         for payloadID in Set(payloadIDs) {
             let referenceCount = try Int.fetchOne(
@@ -668,7 +668,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 安排或刷新 `enqueueTombstones` 对应的本地存储领域工作。
+    /// 为已删除记录生成当前同步 generation 的 tombstone 和 outbox 事件。
     private func enqueueTombstones(_ itemIDs: [UUID], in db: Database) throws {
         let generation = try currentSyncGeneration(in: db)
         for itemID in itemIDs {
@@ -704,7 +704,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 安排或刷新 `enqueueSyncChange` 对应的本地存储领域工作。
+    /// 使用实体标识和当前时间覆盖写入 outbox，合并同一实体的重复本地变化。
     private func enqueueSyncChange(
         recordType: String,
         recordName: String,
@@ -729,7 +729,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
-    /// 安排或刷新 `enqueueSyncChangeIfSyncable` 对应的本地存储领域工作。
+    /// 仅为远端协议支持的剪贴板类型发布同步变更。
     private func enqueueSyncChangeIfSyncable(
         recordName: String,
         operation: String,
@@ -750,7 +750,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
-    /// 保存 `upsertLocalDeviceReplica` 接收的本地存储领域数据，并保持既有持久化约束。
+    /// 将当前记录映射写入本机副本表，供后续多设备合并和删除判断使用。
     private func upsertLocalDeviceReplica(
         recordName: String,
         lastCapturedAt: Date,
@@ -793,7 +793,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
-    /// 安排或刷新 `enqueueReplicaDeletions` 对应的本地存储领域工作。
+    /// 为指定记录的所有设备副本排队删除事件，避免远端旧副本复活本地删除。
     private func enqueueReplicaDeletions(
         targetRecordNames: [String],
         in db: Database
@@ -815,7 +815,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `recordAlias` 接收的本地存储领域数据，并保持既有持久化约束。
+    /// 记录远端 recordName 到本地规范记录的别名，支持确定性去重后的后续同步。
     private func recordAlias(
         loserRecordName: String,
         winnerRecordName: String,
@@ -906,7 +906,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         )
     }
 
-    /// 读取并返回 `currentSyncGeneration` 对应的本地存储领域数据。
+    /// 从设备状态读取当前同步 generation，缺失时使用协议初始代际。
     private func currentSyncGeneration(in db: Database) throws -> Int {
         try Int.fetchOne(
             db,
@@ -914,7 +914,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         ) ?? 1
     }
 
-    /// 计算并返回 `deviceID` 对应的本地存储领域数据或状态结果。
+    /// 读取或创建本机设备标识，保证字段时钟和副本归属稳定。
     private func deviceID(in db: Database) throws -> String {
         if let data = try Data.fetchOne(
             db,
@@ -934,7 +934,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         return value
     }
 
-    /// 判断 `isSyncable` 所描述的本地存储领域条件是否成立。
+    /// 仅允许文字、URL 和图片进入当前同步协议。
     private static func isSyncable(_ kind: ClipboardContentKind) -> Bool {
         kind == .text || kind == .url || kind == .imageData
     }
@@ -944,7 +944,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         try? garbageCollector?.collect()
     }
 
-    /// 计算并返回 `latest` 对应的本地存储领域数据或状态结果。
+    /// 返回两个可选时间中的较新值，供合并使用次数和保留时间使用。
     private static func latest(_ lhs: Date?, _ rhs: Date?) -> Date? {
         switch (lhs, rhs) {
         case let (lhs?, rhs?): return max(lhs, rhs)
@@ -954,7 +954,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `uuid` 对应的本地存储领域数据或状态结果。
+    /// 将数据库文本主键转换为 UUID，无效值按损坏数据抛错。
     private static func uuid(from value: String) throws -> UUID {
         guard let uuid = UUID(uuidString: value) else {
             throw ClipboardRecordError.invalidUUID(value)
@@ -962,7 +962,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         return uuid
     }
 
-    /// 计算并返回 `likePattern` 对应的本地存储领域数据或状态结果。
+    /// 转义 SQL LIKE 通配符并生成包含匹配模式。
     private static func likePattern(for query: String) -> String {
         let escaped = query
             .replacingOccurrences(of: "\\", with: "\\\\")

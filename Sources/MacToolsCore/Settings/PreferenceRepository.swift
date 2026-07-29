@@ -56,7 +56,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         self.encoder.outputFormatting = [.sortedKeys]
     }
 
-    /// 读取并返回 `load` 对应的设置与凭据领域数据。
+    /// 从统一设置记录解码完整 AppSettings；尚未初始化时返回 nil。
     public func load() throws -> AppSettings? {
         try database.writer.read { db in
             guard let data = try Data.fetchOne(
@@ -68,7 +68,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `save` 接收的设置与凭据领域数据，并保持既有持久化约束。
+    /// 保存账号级设置；设备同步开关保持现有值，并为实际变化的领域推进字段时钟。
     public func save(
         _ settings: AppSettings,
         at date: Date = Date(),
@@ -86,7 +86,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `save` 接收的设置与凭据领域数据，并保持既有持久化约束。
+    /// 同时保存账号级设置和显式设备同步开关，用于开启或关闭同步的单事务切换。
     public func save(
         _ settings: AppSettings,
         deviceSyncEnabled: Bool,
@@ -105,7 +105,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `domainDocument` 对应的设置与凭据领域数据或状态结果。
+    /// 导出指定设置领域及其字段时钟；未知或尚未保存的领域返回 nil。
     public func domainDocument(_ domain: String) throws -> PreferenceDomainDocument? {
         guard let keys = Self.domainKeys.first(where: { $0.domain == domain })?.keys else {
             return nil
@@ -147,7 +147,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 应用 `applyRemoteDomain` 接收的新值，并更新相关设置与凭据领域状态。
+    /// 按字段逻辑时钟合并一个远端设置领域，同时保留设备级配置和独立凭据。
     public func applyRemoteDomain(
         _ document: PreferenceDomainDocument,
         at date: Date = Date()
@@ -197,7 +197,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `rawData` 对应的设置与凭据领域数据或状态结果。
+    /// 返回统一设置记录的原始 JSON，供迁移和诊断测试使用。
     public func rawData() throws -> Data? {
         try database.writer.read { db in
             try Data.fetchOne(
@@ -208,7 +208,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `save` 接收的设置与凭据领域数据，并保持既有持久化约束。
+    /// 在单一 GRDB 事务更新设置、设备开关、字段时钟和同步 outbox。
     private func save(
         data: Data,
         deviceSyncEnabled: Bool?,
@@ -269,7 +269,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 转换 `encodedSanitized` 接收的设置与凭据领域数据，并返回规范化结果。
+    /// 清除 API Key 等设备或独立存储字段后编码可持久化账号设置。
     private func encodedSanitized(_ settings: AppSettings) throws -> Data {
         var sanitized = settings
         sanitized.translation.apiKey = ""
@@ -279,7 +279,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         return try encoder.encode(sanitized)
     }
 
-    /// 保存 `upsertPreference` 接收的设置与凭据领域数据，并保持既有持久化约束。
+    /// 覆盖写入唯一设置记录及更新时间，不改变字段时钟。
     private func upsertPreference(data: Data, at date: Date, in db: Database) throws {
         try db.execute(
             sql: """
@@ -294,7 +294,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         )
     }
 
-    /// 计算并返回 `fieldClocks` 对应的设置与凭据领域数据或状态结果。
+    /// 读取指定领域每个叶子字段的逻辑时钟，缺失字段使用零时钟。
     private func fieldClocks(
         domain: String,
         in db: Database
@@ -311,7 +311,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `upsertClock` 接收的设置与凭据领域数据，并保持既有持久化约束。
+    /// 覆盖写入单个设置叶子字段的逻辑时钟和值摘要。
     private func upsertClock(
         domain: String,
         path: String,
@@ -333,7 +333,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         )
     }
 
-    /// 安排或刷新 `enqueueDomain` 对应的设置与凭据领域工作。
+    /// 将设置领域加入同步 outbox，合并同一领域的重复本地变更。
     private func enqueueDomain(_ domain: String, at date: Date, in db: Database) throws {
         let generation = try Int.fetchOne(
             db,
@@ -355,7 +355,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         )
     }
 
-    /// 计算并返回 `deviceID` 对应的设置与凭据领域数据或状态结果。
+    /// 读取或创建本机设备标识，作为设置字段时钟的稳定胜负键。
     private func deviceID(in db: Database) throws -> String {
         if let data = try Data.fetchOne(
             db,
@@ -379,7 +379,7 @@ public final class PreferenceRepository: @unchecked Sendable {
         return value
     }
 
-    /// 计算并返回 `changedLeafPaths` 对应的设置与凭据领域数据或状态结果。
+    /// 递归比较 JSON 树并返回发生语义变化的叶子路径集合。
     private static func changedLeafPaths(old: Any?, new: Any?, path: String) -> Set<String> {
         if let old = old as? [String: Any], let new = new as? [String: Any] {
             return Set(old.keys).union(new.keys).reduce(into: []) { result, key in

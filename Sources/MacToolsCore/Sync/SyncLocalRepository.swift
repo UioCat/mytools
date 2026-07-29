@@ -27,7 +27,7 @@ public struct SyncReplicaReceipt: Equatable, Sendable {
         self.appliedAt = appliedAt
     }
 
-    /// 判断 `matches` 所描述的同步核心领域条件是否成立。
+    /// 判断回执是否仍对应同一 store、generation、设备 revision 和内容摘要。
     public func matches(
         deviceID: String,
         generation: Int,
@@ -84,7 +84,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 读取并返回 `currentGeneration` 对应的同步核心领域数据。
+    /// 返回指定 store 的当前同步 generation；首次使用时建立初始状态。
     public func currentGeneration(storeID: UUID) throws -> Int {
         try database.writer.read { db in
             try Int.fetchOne(
@@ -95,7 +95,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 应用 `adoptGeneration` 接收的新值，并更新相关同步核心领域状态。
+    /// 采用更高远端 generation，并清理旧代际回执和待发布状态；不会回退本地代际。
     @discardableResult
     public func adoptGeneration(_ generation: Int, storeID: UUID, at date: Date = Date()) throws -> Bool {
         try database.writer.write { db in
@@ -143,7 +143,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 判断 `hasPendingChanges` 所描述的同步核心领域条件是否成立。
+    /// 查询给定截止时间前是否存在需要导出的 outbox 变化。
     public func hasPendingChanges(
         excludingClipboardRecordNames excludedRecordNames: Set<String> = []
     ) throws -> Bool {
@@ -161,7 +161,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 安排或刷新 `prepareForReplacementDevice` 对应的同步核心领域工作。
+    /// 为设备身份替换重建本机副本与 outbox，使新设备能够发布完整当前状态。
     public func prepareForReplacementDevice() throws {
         try database.writer.write { db in
             try db.execute(sql: "DELETE FROM sync_outbox")
@@ -225,7 +225,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 执行 `exportBundle` 对应的同步核心领域输入输出操作。
+    /// 导出当前同步范围的轻量草稿，不读取图片 payload 内容。
     public func exportBundle(
         deviceID: String,
         generation: Int,
@@ -246,7 +246,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         )
     }
 
-    /// 执行 `exportBundle` 对应的同步核心领域输入输出操作。
+    /// 兼容调用方直接导出完整内容包，并按需物化草稿中的 payload。
     public func exportBundle(
         deviceID: String,
         generation: Int,
@@ -569,7 +569,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 应用 `apply` 接收的新值，并更新相关同步核心领域状态。
+    /// 在本地事务应用远端 tombstone，并阻止已删除记录由旧副本复活。
     public func apply(tombstones snapshot: SyncTombstoneSnapshot) throws {
         for record in snapshot.records {
             var resolvedTargetRecordName = record.targetRecordName
@@ -612,7 +612,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `tombstonedRecordNames` 对应的同步核心领域数据或状态结果。
+    /// 返回指定 generation 中仍有效的远端删除记录名集合。
     public func tombstonedRecordNames(generation: Int) throws -> Set<String> {
         try database.writer.read { db in
             Set(try String.fetchAll(
@@ -669,7 +669,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         return acknowledged
     }
 
-    /// 应用 `apply` 接收的新值，并更新相关同步核心领域状态。
+    /// 按字段时钟合并远端偏好；没有字段获胜时返回 nil。
     @discardableResult
     public func apply(preferences snapshot: SyncPreferencesSnapshot) throws -> AppSettings? {
         var lastSettings: AppSettings?
@@ -741,7 +741,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 保存 `recordReceipt` 接收的同步核心领域数据，并保持既有持久化约束。
+    /// 覆盖保存设备副本回执，供稳定周期跳过重复导入。
     public func recordReceipt(_ receipt: SyncReplicaReceipt) throws {
         try database.writer.write { db in
             try db.execute(
@@ -763,7 +763,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `receipts` 对应的同步核心领域数据或状态结果。
+    /// 返回当前 store 和 generation 的全部设备回执。
     public func receipts() throws -> [SyncReplicaReceipt] {
         try database.writer.read { db in
             try Row.fetchAll(
@@ -781,7 +781,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 计算并返回 `garbageCollectionCandidates` 对应的同步核心领域数据或状态结果。
+    /// 选择经过稳定观察且所有可见设备回执均确认无引用的共享对象。
     public func garbageCollectionCandidates(
         allContentIDs: Set<String>,
         referencedContentIDs: Set<String>,
@@ -842,7 +842,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 判断 `isSyncable` 所描述的同步核心领域条件是否成立。
+    /// 限制同步导出为当前协议支持的文字、URL 和图片类型。
     private static func isSyncable(_ kind: ClipboardContentKind) -> Bool {
         kind == .text || kind == .url || kind == .imageData
     }
