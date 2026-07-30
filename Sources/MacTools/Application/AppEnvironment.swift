@@ -740,14 +740,6 @@ final class AppEnvironment {
     private func pasteAfterActivatingTarget(_ targetApplication: NSRunningApplication?) {
         pasteActivationAttempt?.cancel()
         pasteActivationAttempt = nil
-        guard let targetApplication else {
-            logger.error("paste target missing; sending paste after fallback delay")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.clipboardModel.paste()
-            }
-            return
-        }
-
         let attempt = PasteActivationAttempt(
             targetApplication: targetApplication,
             notificationCenter: NSWorkspace.shared.notificationCenter,

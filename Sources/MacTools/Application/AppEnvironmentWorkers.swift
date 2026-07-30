@@ -257,31 +257,50 @@ actor AppMaintenanceWorker {
 /// 管理 `PasteActivationAttempt` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class PasteActivationAttempt {
-    private let targetApplication: NSRunningApplication
+    private let targetApplication: NSRunningApplication?
     private let notificationCenter: NotificationCenter
     private let logger: Logger
+    private let fallbackWait: () async -> Void
     private let paste: () -> Void
     private let onFinish: (PasteActivationAttempt) -> Void
     private var observer: NSObjectProtocol?
+    private var fallbackTask: Task<Void, Never>?
     private var didPaste = false
 
     /// 创建 `PasteActivationAttempt`，保存传入依赖并建立初始状态。
     init(
-        targetApplication: NSRunningApplication,
+        targetApplication: NSRunningApplication?,
         notificationCenter: NotificationCenter,
         logger: Logger,
+        fallbackWait: @escaping () async -> Void = {
+            try? await Task.sleep(for: .milliseconds(250))
+        },
         paste: @escaping () -> Void,
         onFinish: @escaping (PasteActivationAttempt) -> Void
     ) {
         self.targetApplication = targetApplication
         self.notificationCenter = notificationCenter
         self.logger = logger
+        self.fallbackWait = fallbackWait
         self.paste = paste
         self.onFinish = onFinish
     }
 
     /// 激活原前台应用，并以激活通知优先、超时兜底的方式仅发送一次粘贴。
-    func start() {
+    @discardableResult
+    func start() -> Task<Void, Never>? {
+        guard let targetApplication else {
+            logger.error("paste target missing; sending paste after fallback delay")
+            let task = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await fallbackWait()
+                guard !Task.isCancelled else { return }
+                pasteOnce(reason: "missing target fallback")
+            }
+            fallbackTask = task
+            return task
+        }
+
         let targetProcessIdentifier = targetApplication.processIdentifier
         observer = notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -307,12 +326,15 @@ final class PasteActivationAttempt {
             try? await Task.sleep(for: .milliseconds(800))
             self?.pasteOnce(reason: "activation timeout fallback")
         }
+        return nil
     }
 
     /// 取消尚未发送的粘贴，并移除应用激活观察者。
     func cancel() {
         guard !didPaste else { return }
         didPaste = true
+        fallbackTask?.cancel()
+        fallbackTask = nil
         removeObserver()
         onFinish(self)
     }
@@ -321,11 +343,11 @@ final class PasteActivationAttempt {
     private func pasteOnce(reason: String) {
         guard !didPaste else { return }
         didPaste = true
+        fallbackTask = nil
         removeObserver()
 
-        logger.info(
-            "sending paste to \(targetApplication.localizedName ?? "unknown") via \(reason)"
-        )
+        let targetName = targetApplication?.localizedName ?? "missing target"
+        logger.info("sending paste to \(targetName) via \(reason)")
         paste()
         onFinish(self)
     }
