@@ -112,6 +112,89 @@ actor ClipboardPollingWorker {
     }
 }
 
+/// 剪贴板面板访问存储和准备载荷时使用的异步边界。
+protocol ClipboardPanelWorking: Sendable {
+    func load(limit: Int) async throws -> [ClipboardItem]
+    func markUsedAndLoad(
+        id: UUID,
+        at date: Date,
+        limit: Int
+    ) async throws -> [ClipboardItem]
+    func setFavoriteAndLoad(
+        id: UUID,
+        isFavorite: Bool,
+        historyLimit: Int,
+        limit: Int
+    ) async throws -> [ClipboardItem]
+    func deleteAndLoad(
+        id: UUID,
+        limit: Int
+    ) async throws -> [ClipboardItem]
+    func clearNonFavoritesAndLoad(
+        limit: Int
+    ) async throws -> [ClipboardItem]
+    func prepareContent(
+        for item: ClipboardItem
+    ) async throws -> PreparedPasteboardContent
+}
+
+/// 串行执行剪贴板面板的仓储访问、载荷清理和图片准备。
+actor ClipboardPanelWorker: ClipboardPanelWorking {
+    private let repository: ClipboardRepository
+
+    init(repository: ClipboardRepository) {
+        self.repository = repository
+    }
+
+    func load(limit: Int) throws -> [ClipboardItem] {
+        try repository.search("", limit: limit)
+    }
+
+    func markUsedAndLoad(
+        id: UUID,
+        at date: Date,
+        limit: Int
+    ) throws -> [ClipboardItem] {
+        try repository.markUsed(id: id, at: date)
+        return try repository.search("", limit: limit)
+    }
+
+    func setFavoriteAndLoad(
+        id: UUID,
+        isFavorite: Bool,
+        historyLimit: Int,
+        limit: Int
+    ) throws -> [ClipboardItem] {
+        try repository.setFavorite(
+            id: id,
+            isFavorite: isFavorite,
+            historyLimit: historyLimit
+        )
+        return try repository.search("", limit: limit)
+    }
+
+    func deleteAndLoad(
+        id: UUID,
+        limit: Int
+    ) throws -> [ClipboardItem] {
+        try repository.delete(id: id)
+        return try repository.search("", limit: limit)
+    }
+
+    func clearNonFavoritesAndLoad(
+        limit: Int
+    ) throws -> [ClipboardItem] {
+        try repository.deleteAllNonFavorites()
+        return try repository.search("", limit: limit)
+    }
+
+    func prepareContent(
+        for item: ClipboardItem
+    ) throws -> PreparedPasteboardContent {
+        try PasteActionService.prepareContent(for: item)
+    }
+}
+
 /// 串行管理 `AppMaintenanceWorker` 在应用运行时与 AppKit 集成中的可变状态和异步操作。
 actor AppMaintenanceWorker {
     private let repository: ClipboardRepository

@@ -1,8 +1,50 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import MacToolsCore
 
 final class PasteActionServiceTests: XCTestCase {
+    func testPrepareImageContentReturnsNormalizedPNG() throws {
+        let tiffURL = try temporaryImageURL(data: try makeTIFFImageData())
+        defer { try? FileManager.default.removeItem(at: tiffURL.deletingLastPathComponent()) }
+
+        let content = try PasteActionService.prepareContent(
+            for: .testItem(kind: .imageData, cachedFilePath: tiffURL.path)
+        )
+
+        guard case let .png(data) = content else {
+            return XCTFail("expected prepared PNG")
+        }
+        XCTAssertEqual(
+            data.prefix(8),
+            Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        )
+    }
+
+    func testWritePreparedPNGDoesNotReadOrNormalizeTheSourceAgain() throws {
+        let pasteboard = FakeWritablePasteboard()
+        let service = PasteActionService(
+            pasteboard: pasteboard,
+            eventSender: FakePasteEventSender()
+        )
+        let png = Data([0x89, 0x50, 0x4E, 0x47])
+
+        try service.write(.png(png))
+
+        XCTAssertEqual(pasteboard.operations, [.writeImageData(png)])
+    }
+
+    func testPrepareImageContentMapsUnreadableSourceToInvalidImageData() {
+        let item = ClipboardItem.testItem(
+            kind: .imageData,
+            cachedFilePath: "/tmp/MacToolsTests-\(UUID().uuidString)/missing.tiff"
+        )
+
+        XCTAssertThrowsError(try PasteActionService.prepareContent(for: item)) { error in
+            XCTAssertEqual(error as? PasteActionError, .invalidImageData)
+        }
+    }
+
     func testCopyOnlyWritesTextToPasteboard() throws {
         let pasteboard = FakeWritablePasteboard()
         let sender = FakePasteEventSender()
@@ -36,15 +78,21 @@ final class PasteActionServiceTests: XCTestCase {
         XCTAssertNil(pasteboard.writtenText)
     }
 
-    func testCopyImageDataWritesCachedImageBytesInsteadOfFileURL() throws {
-        let cachedImageURL = try temporaryImageURL(data: Data([0x89, 0x50, 0x4E, 0x47]))
+    func testCopyImageDataWritesNormalizedPNGInsteadOfFileURL() throws {
+        let cachedImageURL = try temporaryImageURL(data: try makeTIFFImageData())
         defer { try? FileManager.default.removeItem(at: cachedImageURL.deletingLastPathComponent()) }
         let pasteboard = FakeWritablePasteboard()
         let service = PasteActionService(pasteboard: pasteboard, eventSender: FakePasteEventSender())
 
         try service.copy(.testItem(kind: .imageData, cachedFilePath: cachedImageURL.path))
 
-        XCTAssertEqual(pasteboard.operations, [.writeImageData(Data([0x89, 0x50, 0x4E, 0x47]))])
+        guard case let .writeImageData(data) = pasteboard.operations.first else {
+            return XCTFail("expected normalized PNG data")
+        }
+        XCTAssertEqual(
+            data.prefix(8),
+            Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        )
     }
 
     func testCopyThrowsUnsupportedItemWhenNoRestorableContentExists() {
@@ -161,4 +209,16 @@ private func temporaryImageURL(data: Data) throws -> URL {
     let fileURL = root.appendingPathComponent("cached-image.png")
     try data.write(to: fileURL)
     return fileURL
+}
+
+private func makeTIFFImageData() throws -> Data {
+    let image = NSImage(size: NSSize(width: 1, height: 1))
+    image.lockFocus()
+    NSColor.systemBlue.setFill()
+    NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+    image.unlockFocus()
+    guard let data = image.tiffRepresentation else {
+        throw PasteActionError.invalidImageData
+    }
+    return data
 }

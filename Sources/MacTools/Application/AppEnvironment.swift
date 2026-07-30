@@ -90,8 +90,11 @@ final class AppEnvironment {
     var legacySettingsURL: URL?
     private var syncFolderSelectionGeneration = 0
 
+    private lazy var clipboardPanelWorker = ClipboardPanelWorker(
+        repository: repository
+    )
     private lazy var clipboardModel = ClipboardPanelModel(
-        repository: repository,
+        worker: clipboardPanelWorker,
         pasteActionService: pasteActionService,
         logger: logger,
         historyLimit: { [weak self] in
@@ -456,7 +459,7 @@ final class AppEnvironment {
         settings = updated
         onSettingsChanged(updated)
         Task { await clipboardPollingWorker.updateSettings(updated) }
-        clipboardModel.refresh()
+        Task { await clipboardModel.refresh() }
         syncCoordinator.updateConfiguration(
             historyLimit: updated.clipboard.maxHistoryCount,
             clipboardScope: updated.sync.clipboardScope,
@@ -583,7 +586,7 @@ final class AppEnvironment {
             if shouldRestartSuperRightClickMonitor {
                 startSuperRightClickMonitor()
             }
-            clipboardModel.refresh()
+            Task { await clipboardModel.refresh() }
         } catch {
             logger.error("remote preferences apply failed: \(String(reflecting: type(of: error)))")
         }
@@ -659,7 +662,7 @@ final class AppEnvironment {
             do {
                 let recorded = try await clipboardPollingWorker.pollOnce(sourceApp: sourceApp)
                 if recorded {
-                    clipboardModel.refresh()
+                    await clipboardModel.refresh()
                     scheduleSync()
                 }
             } catch {
@@ -683,31 +686,46 @@ final class AppEnvironment {
 
     /// 将面板选中记录恢复到系统剪贴板，失败只记录错误并保持面板打开。
     private func copyFromPanel(_ item: ClipboardItem) {
-        do {
-            try clipboardModel.copy(item)
-        } catch {
-            logger.error("clipboard copy failed: \(error)")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await clipboardModel.copy(item)
+            } catch {
+                logger.error("clipboard copy failed: \(error)")
+            }
         }
     }
 
     /// 先恢复记录并检查事件发送权限，再关闭面板并激活原前台应用执行粘贴。
     private func pasteFromPanel(_ item: ClipboardItem) {
-        do {
-            try clipboardModel.copy(item)
-        } catch {
-            logger.error("clipboard copy before paste failed: \(error)")
-            return
+        let flow = ClipboardPasteFlow(
+            copy: { [weak self] item in
+                guard let self else {
+                    throw AppEnvironmentError.unavailable
+                }
+                try await clipboardModel.copy(item)
+            },
+            canPostPasteEvent: { [weak self] in
+                self?.canPostPasteEvent() ?? false
+            },
+            showPermissionAlert: { [weak self] in
+                self?.logger.error("paste failed: missing post event permission")
+                self?.showPostEventRequiredAlert()
+            },
+            hidePanel: { [weak self] in
+                self?.mainPanel.hide()
+            },
+            activateAndPaste: { [weak self] in
+                guard let self else { return }
+                pasteAfterActivatingTarget(appBeforePanel)
+            },
+            reportError: { [weak self] error in
+                self?.logger.error("clipboard copy before paste failed: \(error)")
+            }
+        )
+        Task { @MainActor in
+            await flow.run(item)
         }
-
-        guard canPostPasteEvent() else {
-            logger.error("paste failed: missing post event permission")
-            showPostEventRequiredAlert()
-            return
-        }
-
-        let targetApplication = appBeforePanel
-        mainPanel.hide()
-        pasteAfterActivatingTarget(targetApplication)
     }
 
     /// 激活原前台应用后发送一次粘贴；无目标时使用短延迟兜底。

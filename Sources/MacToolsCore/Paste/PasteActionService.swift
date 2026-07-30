@@ -23,6 +23,13 @@ public protocol PasteEventSender {
     func sendPasteShortcut()
 }
 
+/// 已完成文件读取和图片规范化、可直接写入系统剪贴板的内容。
+public enum PreparedPasteboardContent: Equatable, Sendable {
+    case text(String)
+    case fileURL(URL)
+    case png(Data)
+}
+
 /// 管理 `PasteActionService` 在自动粘贴领域中的生命周期、依赖和可变状态。
 public final class PasteActionService {
     private let pasteboard: WritablePasteboard
@@ -36,24 +43,45 @@ public final class PasteActionService {
 
     /// 按文本、图片、文件路径的优先级把剪贴板条目写回系统剪贴板。
     public func copy(_ item: ClipboardItem) throws {
+        try write(Self.prepareContent(for: item))
+    }
+
+    /// 按文本、图片、文件路径的优先级准备可直接写入系统剪贴板的内容。
+    public static func prepareContent(
+        for item: ClipboardItem
+    ) throws -> PreparedPasteboardContent {
         if let text = item.text {
-            pasteboard.writeText(text)
-            return
+            return .text(text)
         }
 
         // 图片统一转为 PNG 后写入，确保截图和缓存格式差异不会泄漏到下游应用。
         if item.kind == .imageData, let path = item.cachedFilePath ?? item.originalPath {
-            let imageData = try Data(contentsOf: URL(fileURLWithPath: path))
-            try pasteboard.writeImageData(imageData)
-            return
+            guard
+                let imageData = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                let pngData = ImageDataNormalizer.pngData(from: imageData)
+            else {
+                throw PasteActionError.invalidImageData
+            }
+            return .png(pngData)
         }
 
         if let path = item.originalPath ?? item.cachedFilePath {
-            pasteboard.writeFileURL(URL(fileURLWithPath: path))
-            return
+            return .fileURL(URL(fileURLWithPath: path))
         }
 
         throw PasteActionError.unsupportedItem
+    }
+
+    /// 把已准备好的内容写入系统剪贴板，不再访问源文件或解码图片。
+    public func write(_ content: PreparedPasteboardContent) throws {
+        switch content {
+        case let .text(text):
+            pasteboard.writeText(text)
+        case let .fileURL(url):
+            pasteboard.writeFileURL(url)
+        case let .png(data):
+            try pasteboard.writeImageData(data)
+        }
     }
 
     /// 先更新系统剪贴板，再发送 Command+V；写入失败时不会发送粘贴事件。
@@ -97,12 +125,8 @@ public final class SystemWritablePasteboard: WritablePasteboard {
 
     /// 保存 `writeImageData` 接收的自动粘贴领域数据，并保持既有持久化约束。
     public func writeImageData(_ data: Data) throws {
-        guard let pngData = ImageDataNormalizer.pngData(from: data) else {
-            throw PasteActionError.invalidImageData
-        }
-
         pasteboard.clearContents()
-        pasteboard.setData(pngData, forType: .png)
+        pasteboard.setData(data, forType: .png)
     }
 }
 

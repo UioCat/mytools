@@ -258,19 +258,19 @@ struct RuntimeClipboardModuleView: View {
                 }
             },
             onFavoriteToggle: { item in
-                model.toggleFavorite(item)
+                Task { await model.toggleFavorite(item) }
             },
             onDelete: { item in
-                model.delete(item)
+                Task { await model.delete(item) }
             },
             onClear: {
-                model.clearNonFavorites()
+                Task { await model.clearNonFavorites() }
             },
             onDismiss: onDismiss,
             presentation: .embedded
         )
         .onAppear {
-            model.refresh()
+            Task { await model.refresh() }
         }
     }
 }
