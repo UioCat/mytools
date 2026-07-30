@@ -1456,7 +1456,7 @@ End packaged UI verification sessions before running the in-process XCTest suite
 ## [ERR-20260728-014] CodeGraph unavailable for button hit-area investigation
 
 **Logged**: 2026-07-28T20:24:00+08:00
-**Priority**: low
+**Priority**: medium
 **Status**: resolved
 **Area**: frontend
 
@@ -1483,6 +1483,7 @@ Use focused source and test searches for this bounded regression; initialize Cod
 ### Resolution
 - **Resolved**: 2026-07-28T20:24:00+08:00
 - **Notes**: Continued with exact source ranges, recent diff inspection, and focused tests without creating a new repository index.
+- **Recurrence**: 2026-07-30; a broad performance audit also could not use CodeGraph. Continued with repository-wide `rg`, direct source inspection, and runtime sampling.
 
 ---
 
@@ -1687,5 +1688,83 @@ re-escaped through the shell.
 ### Resolution
 - **Resolved**: 2026-07-29T15:52:00+08:00
 - **Notes**: Replaced the shell-quoted PCRE command with an equivalent read-only Ruby scanner.
+
+---
+
+## [ERR-20260730-001] performance skill referenced a missing checklist
+
+**Logged**: 2026-07-30T17:20:35+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+The performance optimization skill references a detailed checklist that is absent from the installed skill package.
+
+### Error
+```
+sed: /Users/bytedance/.codex/skills/performance-optimization/references/performance-checklist.md: No such file or directory
+```
+
+### Context
+- Attempted to load the skill's linked checklist before auditing the macOS application.
+- The main `SKILL.md` was available and complete.
+- The missing reference is outside this repository and does not block source inspection or runtime measurement.
+
+### Suggested Fix
+Restore `references/performance-checklist.md` in the installed performance skill package or remove the stale reference.
+
+### Metadata
+- Reproducible: yes
+- Related Files: /Users/bytedance/.codex/skills/performance-optimization/SKILL.md
+
+### Resolution
+- **Resolved**: 2026-07-30T17:20:35+08:00
+- **Notes**: Continued with the main performance workflow and a Swift/macOS-specific audit.
+
+---
+
+## [ERR-20260730-002] performance audit probes assumed unsupported fields and stale paths
+
+**Logged**: 2026-07-30T17:20:35+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+Several read-only performance probes initially assumed Linux-style `ps` fields, guessed source paths, emitted
+unbounded heap output, or targeted the legacy clipboard database name instead of the unified Store path.
+
+### Error
+```
+ps: thcount: keyword not found
+ps: nlwp: keyword not found
+nl: Sources/MacToolsCore/Utilities/ImageDataNormalizer.swift: No such file or directory
+rg: Sources/MacToolsCore/Store: No such file or directory
+Error: in prepare, no such table: clipboard_items
+```
+
+### Context
+- The host uses the macOS BSD `ps`, whose supported output keywords differ from Linux and from some older macOS examples.
+- `ImageDataNormalizer` belongs to `MacToolsCore/Clipboard`, and storage code belongs to
+  `MacToolsCore/Storage`.
+- The active database path is defined by `MacToolsStorePaths.databaseURL` as `Store/mactools.sqlite3`;
+  `Clipboard.sqlite` is only the legacy migration source.
+- An unconstrained `heap`/`leaks` batch exceeded the tool output budget before the probes were rerun with
+  filtered output.
+
+### Suggested Fix
+Resolve paths with `rg --files`, inspect `MacToolsStorePaths` and SQLite `.tables` before querying, use only
+verified BSD `ps` fields, and cap diagnostic output at the command boundary.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/Storage/MacToolsStorePaths.swift,
+  Sources/MacToolsCore/Clipboard/ImageDataNormalizer.swift
+
+### Resolution
+- **Resolved**: 2026-07-30T17:20:35+08:00
+- **Notes**: Re-ran the probes against the verified paths, used supported `ps` fields, and constrained heap and
+  leak summaries.
 
 ---
