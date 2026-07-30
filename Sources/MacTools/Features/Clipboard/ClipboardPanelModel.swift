@@ -55,9 +55,13 @@ final class ClipboardPanelModel: ObservableObject {
     }
 
     /// 执行 `copy` 对应的应用运行时与 AppKit 集成输入输出操作。
-    func copy(_ item: ClipboardItem) async throws {
+    func copy(
+        _ item: ClipboardItem,
+        validateBeforeWrite: () throws -> Void = {}
+    ) async throws {
         let generation = nextGeneration()
         let content = try await worker.prepareContent(for: item)
+        try validateBeforeWrite()
         try pasteActionService.write(content)
         do {
             let items = try await worker.markUsedAndLoad(

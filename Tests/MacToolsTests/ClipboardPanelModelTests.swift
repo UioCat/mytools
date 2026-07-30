@@ -142,6 +142,41 @@ final class ClipboardPanelModelTests: XCTestCase {
         XCTAssertEqual(stored.useCount, 0)
         XCTAssertNil(stored.lastUsedAt)
     }
+
+    @MainActor
+    func testCancellationAfterPrepareDoesNotWritePasteboard() async throws {
+        let item = ClipboardItem.testItem(text: "old")
+        let worker = SuspendedContentPreparationWorker(content: .text("old"))
+        let pasteboard = FakeWritablePasteboard()
+        let model = ClipboardPanelModel(
+            worker: worker,
+            pasteActionService: PasteActionService(
+                pasteboard: pasteboard,
+                eventSender: FakePasteEventSender()
+            ),
+            logger: makeTestLogger(),
+            historyLimit: { 500 }
+        )
+
+        let copyTask = Task { @MainActor in
+            try await model.copy(
+                item,
+                validateBeforeWrite: { try Task.checkCancellation() }
+            )
+        }
+        await worker.waitUntilPrepareIsSuspended()
+        copyTask.cancel()
+        await worker.resumePrepare()
+
+        do {
+            try await copyTask.value
+            XCTFail("expected cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+        XCTAssertTrue(pasteboard.operations.isEmpty)
+    }
 }
 
 private actor ControlledClipboardPanelWorker: ClipboardPanelWorking {
@@ -267,6 +302,71 @@ private actor PrepareFailureClipboardPanelWorker: ClipboardPanelWorking {
         for item: ClipboardItem
     ) async throws -> PreparedPasteboardContent {
         throw MacToolsTestError.expectedFailure
+    }
+}
+
+private actor SuspendedContentPreparationWorker: ClipboardPanelWorking {
+    private let content: PreparedPasteboardContent
+    private var prepareIsSuspended = false
+    private var prepareContinuation: CheckedContinuation<Void, Never>?
+
+    init(content: PreparedPasteboardContent) {
+        self.content = content
+    }
+
+    func load(limit: Int) async throws -> [ClipboardItem] {
+        throw MacToolsTestError.unexpectedCall
+    }
+
+    func markUsedAndLoad(
+        id: UUID,
+        at date: Date,
+        limit: Int
+    ) async throws -> [ClipboardItem] {
+        throw MacToolsTestError.unexpectedCall
+    }
+
+    func setFavoriteAndLoad(
+        id: UUID,
+        isFavorite: Bool,
+        historyLimit: Int,
+        limit: Int
+    ) async throws -> [ClipboardItem] {
+        throw MacToolsTestError.unexpectedCall
+    }
+
+    func deleteAndLoad(
+        id: UUID,
+        limit: Int
+    ) async throws -> [ClipboardItem] {
+        throw MacToolsTestError.unexpectedCall
+    }
+
+    func clearNonFavoritesAndLoad(
+        limit: Int
+    ) async throws -> [ClipboardItem] {
+        throw MacToolsTestError.unexpectedCall
+    }
+
+    func prepareContent(
+        for item: ClipboardItem
+    ) async throws -> PreparedPasteboardContent {
+        prepareIsSuspended = true
+        await withCheckedContinuation {
+            prepareContinuation = $0
+        }
+        return content
+    }
+
+    func waitUntilPrepareIsSuspended() async {
+        while !prepareIsSuspended {
+            await Task.yield()
+        }
+    }
+
+    func resumePrepare() {
+        prepareContinuation?.resume()
+        prepareContinuation = nil
     }
 }
 

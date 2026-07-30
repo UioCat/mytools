@@ -8,9 +8,9 @@ import Foundation
 /// 定义 `WritablePasteboard` 在自动粘贴领域中需要满足的能力边界。
 public protocol WritablePasteboard {
     /// 保存 `writeText` 接收的自动粘贴领域数据，并保持既有持久化约束。
-    func writeText(_ text: String)
+    func writeText(_ text: String) throws
     /// 保存 `writeFileURL` 接收的自动粘贴领域数据，并保持既有持久化约束。
-    func writeFileURL(_ url: URL)
+    func writeFileURL(_ url: URL) throws
     /// 保存 `writeImageData` 接收的自动粘贴领域数据，并保持既有持久化约束。
     func writeImageData(_ data: Data) throws
 }
@@ -76,9 +76,9 @@ public final class PasteActionService {
     public func write(_ content: PreparedPasteboardContent) throws {
         switch content {
         case let .text(text):
-            pasteboard.writeText(text)
+            try pasteboard.writeText(text)
         case let .fileURL(url):
-            pasteboard.writeFileURL(url)
+            try pasteboard.writeFileURL(url)
         case let .png(data):
             try pasteboard.writeImageData(data)
         }
@@ -100,33 +100,77 @@ public final class PasteActionService {
 public enum PasteActionError: Error, Equatable {
     case unsupportedItem
     case invalidImageData
+    case pasteboardWriteFailed
+}
+
+/// 将 AppKit 剪贴板的 Bool 写入结果暴露为可测试边界。
+protocol AppKitPasteboardWriting: AnyObject {
+    func clearContents()
+    func setString(_ text: String) -> Bool
+    func writeFileURL(_ url: URL) -> Bool
+    func setPNGData(_ data: Data) -> Bool
+}
+
+/// 把 `NSPasteboard` 适配为最小写入边界。
+private final class AppKitPasteboardWriter: AppKitPasteboardWriting {
+    private let pasteboard: NSPasteboard
+
+    init(pasteboard: NSPasteboard) {
+        self.pasteboard = pasteboard
+    }
+
+    func clearContents() {
+        pasteboard.clearContents()
+    }
+
+    func setString(_ text: String) -> Bool {
+        pasteboard.setString(text, forType: .string)
+    }
+
+    func writeFileURL(_ url: URL) -> Bool {
+        pasteboard.writeObjects([url as NSURL])
+    }
+
+    func setPNGData(_ data: Data) -> Bool {
+        pasteboard.setData(data, forType: .png)
+    }
 }
 
 /// 管理 `SystemWritablePasteboard` 在自动粘贴领域中的生命周期、依赖和可变状态。
 public final class SystemWritablePasteboard: WritablePasteboard {
-    private let pasteboard: NSPasteboard
+    private let writer: any AppKitPasteboardWriting
 
     /// 创建 `SystemWritablePasteboard`，保存传入依赖并建立初始状态。
     public init(pasteboard: NSPasteboard = .general) {
-        self.pasteboard = pasteboard
+        self.writer = AppKitPasteboardWriter(pasteboard: pasteboard)
+    }
+
+    init(writer: any AppKitPasteboardWriting) {
+        self.writer = writer
     }
 
     /// 保存 `writeText` 接收的自动粘贴领域数据，并保持既有持久化约束。
-    public func writeText(_ text: String) {
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+    public func writeText(_ text: String) throws {
+        writer.clearContents()
+        guard writer.setString(text) else {
+            throw PasteActionError.pasteboardWriteFailed
+        }
     }
 
     /// 保存 `writeFileURL` 接收的自动粘贴领域数据，并保持既有持久化约束。
-    public func writeFileURL(_ url: URL) {
-        pasteboard.clearContents()
-        pasteboard.writeObjects([url as NSURL])
+    public func writeFileURL(_ url: URL) throws {
+        writer.clearContents()
+        guard writer.writeFileURL(url) else {
+            throw PasteActionError.pasteboardWriteFailed
+        }
     }
 
     /// 保存 `writeImageData` 接收的自动粘贴领域数据，并保持既有持久化约束。
     public func writeImageData(_ data: Data) throws {
-        pasteboard.clearContents()
-        pasteboard.setData(data, forType: .png)
+        writer.clearContents()
+        guard writer.setPNGData(data) else {
+            throw PasteActionError.pasteboardWriteFailed
+        }
     }
 }
 

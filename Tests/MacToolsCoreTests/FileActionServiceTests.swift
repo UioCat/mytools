@@ -3,6 +3,21 @@ import XCTest
 @testable import MacToolsCore
 
 final class FileActionServiceTests: XCTestCase {
+    func testCopyPathPropagatesPasteboardWriteFailure() {
+        let pasteboard = FakeWritablePasteboard()
+        pasteboard.writeError = FileActionTestError.expectedFailure
+        let service = FileActionService(workspace: FakeWorkspaceOpening())
+
+        XCTAssertThrowsError(
+            try service.copyPath(
+                item: .testItem(kind: .file, originalPath: "/tmp/report.pdf"),
+                pasteboard: pasteboard
+            )
+        ) { error in
+            XCTAssertEqual(error as? FileActionTestError, .expectedFailure)
+        }
+    }
+
     func testOpenTerminalRunsBuiltInTerminalForFolderPath() throws {
         let processRunner = FakeProcessRunner()
         let folderURL = temporaryFolderURL()
@@ -134,9 +149,11 @@ private final class FakeWritablePasteboard: WritablePasteboard {
         case writeImageData(Data)
     }
 
+    var writeError: Error?
     private(set) var operations: [Operation] = []
 
-    func writeText(_ text: String) {
+    func writeText(_ text: String) throws {
+        if let writeError { throw writeError }
         operations.append(.writeText(text))
     }
 
@@ -147,6 +164,10 @@ private final class FakeWritablePasteboard: WritablePasteboard {
     func writeImageData(_ data: Data) {
         operations.append(.writeImageData(data))
     }
+}
+
+private enum FileActionTestError: Error {
+    case expectedFailure
 }
 
 private final class FakeProcessRunner: ProcessRunning {

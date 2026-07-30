@@ -84,6 +84,7 @@ final class AppEnvironment {
     private var superRightClickMonitor: SuperRightClickMonitor?
     private var appBeforePanel: NSRunningApplication?
     private var pasteActivationAttempt: PasteActivationAttempt?
+    private var clipboardPasteFlowTask: Task<Void, Never>?
     var credentialLoadGeneration = 0
     var credentialLoadFinished = false
     var credentialLegacyLoadStarted = false
@@ -102,6 +103,30 @@ final class AppEnvironment {
                 ?? AppSettings.defaults.clipboard.maxHistoryCount
         },
         onLocalChange: { [weak self] in self?.scheduleSync() }
+    )
+    private lazy var clipboardPasteFlow = ClipboardPasteFlow(
+        copy: { [weak self] item, validateCurrent in
+            guard let self else {
+                throw AppEnvironmentError.unavailable
+            }
+            try await clipboardModel.copy(
+                item,
+                validateBeforeWrite: validateCurrent
+            )
+        },
+        canPostPasteEvent: { [weak self] in
+            self?.canPostPasteEvent() ?? false
+        },
+        showPermissionAlert: { [weak self] in
+            self?.logger.error("paste failed: missing post event permission")
+            self?.showPostEventRequiredAlert()
+        },
+        hidePanel: { [weak self] in
+            self?.mainPanel.hide()
+        },
+        reportError: { [weak self] error in
+            self?.logger.error("clipboard copy before paste failed: \(error)")
+        }
     )
 
     lazy var mainPanel = MainPanelController(
@@ -698,34 +723,17 @@ final class AppEnvironment {
 
     /// 先恢复记录并检查事件发送权限，再关闭面板并激活原前台应用执行粘贴。
     private func pasteFromPanel(_ item: ClipboardItem) {
-        let flow = ClipboardPasteFlow(
-            copy: { [weak self] item in
-                guard let self else {
-                    throw AppEnvironmentError.unavailable
-                }
-                try await clipboardModel.copy(item)
-            },
-            canPostPasteEvent: { [weak self] in
-                self?.canPostPasteEvent() ?? false
-            },
-            showPermissionAlert: { [weak self] in
-                self?.logger.error("paste failed: missing post event permission")
-                self?.showPostEventRequiredAlert()
-            },
-            hidePanel: { [weak self] in
-                self?.mainPanel.hide()
-            },
-            activateAndPaste: { [weak self] in
-                guard let self else { return }
-                pasteAfterActivatingTarget(appBeforePanel)
-            },
-            reportError: { [weak self] error in
-                self?.logger.error("clipboard copy before paste failed: \(error)")
+        let targetApplication = appBeforePanel
+        pasteActivationAttempt?.cancel()
+        pasteActivationAttempt = nil
+        clipboardPasteFlowTask = clipboardPasteFlow.start(
+            item,
+            target: targetApplication,
+            replacing: clipboardPasteFlowTask,
+            activateAndPaste: { [weak self] targetApplication in
+                self?.pasteAfterActivatingTarget(targetApplication)
             }
         )
-        Task { @MainActor in
-            await flow.run(item)
-        }
     }
 
     /// 激活原前台应用后发送一次粘贴；无目标时使用短延迟兜底。

@@ -38,7 +38,7 @@ public final class FileActionService {
     /// 执行 `copyPath` 对应的文件操作领域输入输出操作。
     public func copyPath(item: ClipboardItem, pasteboard: WritablePasteboard) throws {
         let path = try originalPath(for: item)
-        pasteboard.writeText(path)
+        try pasteboard.writeText(path)
     }
 
     /// 展示 `openTerminal` 对应的文件操作领域界面或系统位置。

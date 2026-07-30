@@ -301,16 +301,26 @@ final class ContextPanelController {
                 logger.error("copy translated text failed: no translated text")
                 return .close
             }
-            pasteboard.writeText(translatedText)
-            logger.info("super panel copied translated text")
-            return .close
+            do {
+                try pasteboard.writeText(translatedText)
+                logger.info("super panel copied translated text")
+                return .close
+            } catch {
+                logger.error("copy translated text failed: \(error)")
+                return .keepVisible
+            }
         case .textTransit:
             showTextTransit(originalText)
             return .keepVisible
         case .copyTransitText:
-            pasteboard.writeText(Self.normalizedText(originalText))
-            logger.info("super panel copied transit text")
-            return .close
+            do {
+                try pasteboard.writeText(Self.normalizedText(originalText))
+                logger.info("super panel copied transit text")
+                return .close
+            } catch {
+                logger.error("copy transit text failed: \(error)")
+                return .keepVisible
+            }
         case .copyPath, .createNewFile, .openTerminal, .revealInFinder, .openClaudeCode,
              .openClaudeCodeSkipConfirmation, .windowLayoutButton:
             logger.error("unexpected text action: \(actionID.rawValue)")

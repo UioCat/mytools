@@ -4,6 +4,35 @@ import XCTest
 @testable import MacToolsCore
 
 final class PasteActionServiceTests: XCTestCase {
+    func testSystemPasteboardThrowsWhenTextWriteIsRejected() {
+        let writer = RejectingAppKitPasteboardWriter()
+        let pasteboard = SystemWritablePasteboard(writer: writer)
+
+        XCTAssertThrowsError(try pasteboard.writeText("hello")) { error in
+            XCTAssertEqual(error as? PasteActionError, .pasteboardWriteFailed)
+        }
+    }
+
+    func testSystemPasteboardThrowsWhenFileURLWriteIsRejected() {
+        let writer = RejectingAppKitPasteboardWriter()
+        let pasteboard = SystemWritablePasteboard(writer: writer)
+
+        XCTAssertThrowsError(
+            try pasteboard.writeFileURL(URL(fileURLWithPath: "/tmp/report.pdf"))
+        ) { error in
+            XCTAssertEqual(error as? PasteActionError, .pasteboardWriteFailed)
+        }
+    }
+
+    func testSystemPasteboardThrowsWhenPNGWriteIsRejected() {
+        let writer = RejectingAppKitPasteboardWriter()
+        let pasteboard = SystemWritablePasteboard(writer: writer)
+
+        XCTAssertThrowsError(try pasteboard.writeImageData(Data([0x89, 0x50]))) { error in
+            XCTAssertEqual(error as? PasteActionError, .pasteboardWriteFailed)
+        }
+    }
+
     func testPrepareImageContentReturnsNormalizedPNG() throws {
         let tiffURL = try temporaryImageURL(data: try makeTIFFImageData())
         defer { try? FileManager.default.removeItem(at: tiffURL.deletingLastPathComponent()) }
@@ -221,4 +250,11 @@ private func makeTIFFImageData() throws -> Data {
         throw PasteActionError.invalidImageData
     }
     return data
+}
+
+private final class RejectingAppKitPasteboardWriter: AppKitPasteboardWriting {
+    func clearContents() {}
+    func setString(_ text: String) -> Bool { false }
+    func writeFileURL(_ url: URL) -> Bool { false }
+    func setPNGData(_ data: Data) -> Bool { false }
 }
