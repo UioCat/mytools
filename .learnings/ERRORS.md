@@ -32,6 +32,72 @@ possible credential literal detected
 
 ---
 
+## [ERR-20260730-018] task-brief-nested-sdd-workspace-permission
+
+**Logged**: 2026-07-30T18:06:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The bundled `task-brief` script invokes `sdd-workspace` directly, so wrapping only the outer script with `bash` does not bypass the missing executable bit.
+
+### Error
+```text
+task-brief: line 24: .../scripts/sdd-workspace: Permission denied
+```
+
+### Context
+- Outer command explicitly used `bash .../scripts/task-brief`.
+- `task-brief` line 24 executes the sibling `sdd-workspace` path directly.
+- No task brief or source change was produced.
+
+### Suggested Fix
+Add the user executable bit to the bundled `sdd-workspace` script, then rerun the official task-brief generator.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/superpowers/plans/2026-07-30-p1-performance-risk-hardening.md
+
+### Resolution
+- **Resolved**: 2026-07-30T18:06:00+08:00
+- **Notes**: Added the user executable bit to `sdd-workspace`; the official generator then wrote the 264-line Task 1 brief.
+
+---
+
+## [ERR-20260730-017] sdd-workspace-direct-execution
+
+**Logged**: 2026-07-30T18:05:11+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+The bundled `sdd-workspace` script is readable but has no executable bit, so direct execution fails.
+
+### Error
+```text
+zsh: permission denied: .../subagent-driven-development/scripts/sdd-workspace
+```
+
+### Context
+- Command: `.../scripts/sdd-workspace docs/superpowers/plans/2026-07-30-p1-performance-risk-hardening.md`
+- Script permissions: `-rw-r--r--`
+- The repository and implementation worktree were not modified by the failed command.
+
+### Suggested Fix
+Invoke the bundled script explicitly with `bash` instead of relying on its executable bit.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/superpowers/plans/2026-07-30-p1-performance-risk-hardening.md
+
+### Resolution
+- **Resolved**: 2026-07-30T18:05:11+08:00
+- **Notes**: Explicit `bash` execution succeeded and created the plan-specific SDD workspace.
+
+---
+
 ## [ERR-20260728-018] release verification cleanup rejected by command safety policy
 
 **Logged**: 2026-07-28T20:34:30+08:00
