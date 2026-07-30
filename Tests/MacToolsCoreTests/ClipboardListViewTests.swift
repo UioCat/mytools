@@ -6,6 +6,19 @@ import UniformTypeIdentifiers
 import XCTest
 @testable import MacToolsCore
 
+private final class LockedThreadObservation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Bool] = []
+
+    func append(_ value: Bool) {
+        lock.withLock { values.append(value) }
+    }
+
+    var snapshot: [Bool] {
+        lock.withLock { values }
+    }
+}
+
 final class ClipboardListViewTests: XCTestCase {
     func testClipboardCategoriesContainOnlyRequestedModes() {
         XCTAssertEqual(ClipboardPanelMode.allCases, [.all, .text, .images, .favorites])
@@ -243,60 +256,6 @@ final class ClipboardListViewTests: XCTestCase {
         )
     }
 
-    func testImagePreviewSourceCacheKeyTracksFileChanges() throws {
-        let directory = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let fileURL = directory.appendingPathComponent("preview.png")
-        try Data([1]).write(to: fileURL)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSince1970: 10)],
-            ofItemAtPath: fileURL.path
-        )
-        let firstKey = try XCTUnwrap(
-            ClipboardImagePreviewSource.source(for: makeImageItem(originalPath: fileURL.path))?.cacheKey
-        )
-
-        try Data([1, 2, 3, 4]).write(to: fileURL)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSince1970: 20)],
-            ofItemAtPath: fileURL.path
-        )
-        let updatedKey = try XCTUnwrap(
-            ClipboardImagePreviewSource.source(for: makeImageItem(originalPath: fileURL.path))?.cacheKey
-        )
-
-        XCTAssertNotEqual(firstKey, updatedKey)
-        XCTAssertTrue(updatedKey.contains(fileURL.path))
-    }
-
-    func testImagePreviewSourceCacheKeyIncludesContentHash() throws {
-        let directory = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let fileURL = directory.appendingPathComponent("preview.png")
-        try Data([1, 2, 3, 4]).write(to: fileURL)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSince1970: 10)],
-            ofItemAtPath: fileURL.path
-        )
-
-        let firstKey = try XCTUnwrap(
-            ClipboardImagePreviewSource.source(
-                for: makeImageItem(originalPath: fileURL.path, contentHash: "first")
-            )?.cacheKey
-        )
-        let updatedKey = try XCTUnwrap(
-            ClipboardImagePreviewSource.source(
-                for: makeImageItem(originalPath: fileURL.path, contentHash: "second")
-            )?.cacheKey
-        )
-
-        XCTAssertNotEqual(firstKey, updatedKey)
-        XCTAssertTrue(firstKey.contains("hash:first"))
-        XCTAssertTrue(updatedKey.contains("hash:second"))
-    }
-
     func testImagePreviewCacheLoadsImageIOThumbnailAndMetric() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -304,8 +263,9 @@ final class ClipboardListViewTests: XCTestCase {
         let fileURL = directory.appendingPathComponent("preview.png")
         try writeTestPNG(to: fileURL, width: 2, height: 3)
 
-        let source = try XCTUnwrap(
-            ClipboardImagePreviewSource.source(for: makeImageItem(originalPath: fileURL.path))
+        let source = ClipboardImagePreviewSource.resolve(
+            .init(path: fileURL.path, contentHash: nil),
+            attributes: .init(byteCount: 64, modificationDate: nil)
         )
         let cache = ClipboardImagePreviewCache(
             configuration: .init(countLimit: 2, totalCostLimit: 2 * 1024 * 1024)
@@ -341,34 +301,119 @@ final class ClipboardListViewTests: XCTestCase {
         )
     }
 
-    func testImagePreviewSourcePrefersThumbnailThenCachedFileThenOriginalPath() {
-        XCTAssertEqual(
-            ClipboardImagePreviewSource.source(
+    func testImagePreviewRequestSelectsPathWithoutResolvingFileAttributes() throws {
+        let request = try XCTUnwrap(
+            ClipboardImagePreviewRequest.request(
                 for: makeImageItem(
-                    thumbnailPath: "/tmp/thumb.png",
-                    cachedFilePath: "/tmp/cache.png",
-                    originalPath: "/tmp/original.png"
+                    thumbnailPath: "/not-mounted/thumb.png",
+                    cachedFilePath: "/cache/image.png",
+                    originalPath: "/original/image.png",
+                    contentHash: "  abc123  "
                 )
-            )?.path,
-            "/tmp/thumb.png"
+            )
         )
+
+        XCTAssertEqual(request.path, "/not-mounted/thumb.png")
+        XCTAssertEqual(request.contentHash, "abc123")
+    }
+
+    @MainActor
+    func testImagePreviewLoaderResolvesAndDecodesOffMainThread() async throws {
+        let observations = LockedThreadObservation()
+        let request = ClipboardImagePreviewRequest(
+            path: "/virtual/image.png",
+            contentHash: "hash"
+        )
+        let loader = ClipboardImagePreviewLoader(
+            attributesProvider: { _ in
+                observations.append(Thread.isMainThread)
+                return .init(
+                    byteCount: 4,
+                    modificationDate: Date(timeIntervalSinceReferenceDate: 10)
+                )
+            },
+            previewProvider: { _ in
+                observations.append(Thread.isMainThread)
+                return nil
+            }
+        )
+
+        _ = await loader.load(request)
+
+        XCTAssertEqual(observations.snapshot, [false, false])
+    }
+
+    func testResolvedImagePreviewCacheKeyTracksAttributesAndContentHash() {
+        let request = ClipboardImagePreviewRequest(
+            path: "/cache/image.png",
+            contentHash: "first"
+        )
+        let first = ClipboardImagePreviewSource.resolve(
+            request,
+            attributes: .init(
+                byteCount: 1,
+                modificationDate: Date(timeIntervalSinceReferenceDate: 10)
+            )
+        )
+        let changed = ClipboardImagePreviewSource.resolve(
+            .init(path: request.path, contentHash: "second"),
+            attributes: .init(
+                byteCount: 4,
+                modificationDate: Date(timeIntervalSinceReferenceDate: 20)
+            )
+        )
+
         XCTAssertEqual(
-            ClipboardImagePreviewSource.source(
-                for: makeImageItem(cachedFilePath: "/tmp/cache.png", originalPath: "/tmp/original.png")
-            )?.path,
-            "/tmp/cache.png"
+            first.cacheKey,
+            "/cache/image.png|size:1|modified:10.0|hash:first"
         )
-        XCTAssertEqual(
-            ClipboardImagePreviewSource.source(
-                for: makeImageItem(originalPath: "/tmp/original.png")
-            )?.path,
-            "/tmp/original.png"
+        XCTAssertNotEqual(first.cacheKey, changed.cacheKey)
+    }
+
+    @MainActor
+    func testCancelledImagePreviewLoadDoesNotReturnDecodedPreview() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("preview.png")
+        try writeTestPNG(to: fileURL, width: 2, height: 3)
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let cache = ClipboardImagePreviewCache(
+            configuration: .init(countLimit: 1, totalCostLimit: 1_024 * 1_024)
         )
+        let loader = ClipboardImagePreviewLoader(
+            attributesProvider: { _ in
+                .init(
+                    byteCount: 64,
+                    modificationDate: Date(timeIntervalSinceReferenceDate: 10)
+                )
+            },
+            previewProvider: { source in
+                started.signal()
+                release.wait()
+                return cache.preview(for: source)
+            }
+        )
+        let task = Task {
+            await loader.load(.init(path: fileURL.path, contentHash: "hash"))
+        }
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                started.wait()
+                continuation.resume()
+            }
+        }
+
+        task.cancel()
+        release.signal()
+
+        let preview = await task.value
+        XCTAssertNil(preview)
     }
 
     func testImagePreviewSourceIgnoresNonImagesAndMissingPaths() {
-        XCTAssertNil(ClipboardImagePreviewSource.source(for: makeItem()))
-        XCTAssertNil(ClipboardImagePreviewSource.source(for: makeImageItem()))
+        XCTAssertNil(ClipboardImagePreviewRequest.request(for: makeItem()))
+        XCTAssertNil(ClipboardImagePreviewRequest.request(for: makeImageItem()))
     }
 
     private func makeItem(

@@ -58,7 +58,7 @@ public struct ClipboardRowView: View {
 
         if ClipboardRowContentStyle.style(for: item.kind) == .expandedImagePreview {
             imageRowContent(metadata: metadata)
-                .task(id: imagePreviewSource) {
+                .task(id: imagePreviewRequest) {
                     await loadImagePreview()
                 }
         } else {
@@ -212,13 +212,13 @@ public struct ClipboardRowView: View {
         .accessibilityLabel(Text(presentation.accessibilityLabel))
     }
 
-    private var imagePreviewSource: ClipboardImagePreviewSource? {
-        ClipboardImagePreviewSource.source(for: item)
+    private var imagePreviewRequest: ClipboardImagePreviewRequest? {
+        ClipboardImagePreviewRequest.request(for: item)
     }
 
     private var currentImagePreview: ClipboardLoadedImagePreview? {
-        guard let imagePreviewSource,
-              loadedImagePreview?.source == imagePreviewSource else {
+        guard let imagePreviewRequest,
+              loadedImagePreview?.request == imagePreviewRequest else {
             return nil
         }
 
@@ -227,30 +227,20 @@ public struct ClipboardRowView: View {
 
     /// 异步读取并返回 `loadImagePreview` 对应的 SwiftUI 展示层数据。
     private func loadImagePreview() async {
-        guard let imagePreviewSource else {
+        guard let imagePreviewRequest else {
             loadedImagePreview = nil
             return
         }
 
-        guard loadedImagePreview?.source != imagePreviewSource else {
+        guard loadedImagePreview?.request != imagePreviewRequest else {
             return
         }
 
-        let decodeTask = Task.detached(priority: .utility) { () -> ClipboardLoadedImagePreview? in
-            guard !Task.isCancelled else {
-                return nil
-            }
-
-            return ClipboardImagePreviewCache.shared.preview(for: imagePreviewSource)
-        }
-        let preview = await withTaskCancellationHandler {
-            await decodeTask.value
-        } onCancel: {
-            decodeTask.cancel()
-        }
+        let request = imagePreviewRequest
+        let preview = await ClipboardImagePreviewLoader.live.load(request)
 
         guard !Task.isCancelled,
-              self.imagePreviewSource == imagePreviewSource else {
+              imagePreviewRequest == request else {
             return
         }
 
@@ -349,6 +339,31 @@ struct ClipboardRowMetadataPresentation: Equatable {
     }
 }
 
+/// 描述图片预览在解析文件属性前所需的纯值请求。
+struct ClipboardImagePreviewRequest: Equatable, Hashable, Sendable {
+    let path: String
+    let contentHash: String?
+
+    /// 按缩略图、缓存文件、原始路径的顺序选择首个可用图片来源。
+    static func request(for item: ClipboardItem) -> ClipboardImagePreviewRequest? {
+        guard item.kind == .imageData || item.kind == .imageFile else {
+            return nil
+        }
+
+        guard let path = [item.thumbnailPath, item.cachedFilePath, item.originalPath]
+            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty }) else {
+            return nil
+        }
+
+        let contentHash = item.contentHash?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ClipboardImagePreviewRequest(
+            path: path,
+            contentHash: contentHash?.isEmpty == false ? contentHash : nil
+        )
+    }
+}
+
 /// 封装 `ClipboardImagePreviewSource` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
     let path: String
@@ -360,40 +375,20 @@ struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
         self.cacheKey = cacheKey ?? path
     }
 
-    /// 按缩略图、缓存文件、原始路径的顺序选择首个可用图片来源。
-    static func source(for item: ClipboardItem) -> ClipboardImagePreviewSource? {
-        guard item.kind == .imageData || item.kind == .imageFile else {
-            return nil
-        }
-
-        guard let path = [item.thumbnailPath, item.cachedFilePath, item.originalPath]
-            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
-            .first(where: { !$0.isEmpty }) else {
-            return nil
-        }
-
-        return ClipboardImagePreviewSource(path: path, cacheKey: cacheKey(forPath: path, contentHash: item.contentHash))
-    }
-
-    /// 使用路径、文件大小、修改时间和内容哈希生成预览缓存键。
-    static func cacheKey(forPath path: String, contentHash: String? = nil) -> String {
-        // 文件属性查询发生在调用线程；路径来自 File Provider 时可能触发同步 I/O。
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
-            return [path, normalizedContentHash(contentHash)]
-                .compactMap(\.self)
-                .joined(separator: "|")
-        }
-
-        let fileSize = attributes[.size] as? NSNumber
-        let modificationDate = attributes[.modificationDate] as? Date
-        return [
-            path,
-            fileSize.map { "size:\($0.int64Value)" },
-            modificationDate.map { "modified:\($0.timeIntervalSinceReferenceDate)" },
-            normalizedContentHash(contentHash)
+    /// 使用已解析的文件属性和内容哈希生成预览缓存键。
+    static func resolve(
+        _ request: ClipboardImagePreviewRequest,
+        attributes: ClipboardImagePreviewFileAttributes?
+    ) -> ClipboardImagePreviewSource {
+        let cacheKey = [
+            request.path,
+            attributes?.byteCount.map { "size:\($0)" },
+            attributes?.modificationDate.map { "modified:\($0.timeIntervalSinceReferenceDate)" },
+            normalizedContentHash(request.contentHash)
         ]
         .compactMap(\.self)
         .joined(separator: "|")
+        return ClipboardImagePreviewSource(path: request.path, cacheKey: cacheKey)
     }
 
     /// 转换 `normalizedContentHash` 接收的 SwiftUI 展示层数据，并返回规范化结果。
@@ -407,8 +402,63 @@ struct ClipboardImagePreviewSource: Equatable, Hashable, Sendable {
     }
 }
 
+struct ClipboardImagePreviewFileAttributes: Equatable, Sendable {
+    let byteCount: Int64?
+    let modificationDate: Date?
+}
+
+struct ClipboardImagePreviewLoader: Sendable {
+    typealias AttributesProvider = @Sendable (String) -> ClipboardImagePreviewFileAttributes?
+    typealias PreviewProvider = @Sendable (ClipboardImagePreviewSource) -> ClipboardLoadedImagePreview?
+
+    private let attributesProvider: AttributesProvider
+    private let previewProvider: PreviewProvider
+
+    init(
+        attributesProvider: @escaping AttributesProvider,
+        previewProvider: @escaping PreviewProvider
+    ) {
+        self.attributesProvider = attributesProvider
+        self.previewProvider = previewProvider
+    }
+
+    func load(_ request: ClipboardImagePreviewRequest) async -> ClipboardLoadedImagePreview? {
+        let task = Task.detached(priority: .utility) { [attributesProvider, previewProvider] () -> ClipboardLoadedImagePreview? in
+            guard !Task.isCancelled else { return nil }
+            let attributes = attributesProvider(request.path)
+            guard !Task.isCancelled else { return nil }
+            let source = ClipboardImagePreviewSource.resolve(request, attributes: attributes)
+            guard !Task.isCancelled else { return nil }
+            return previewProvider(source)?.replacing(request: request)
+        }
+
+        return await withTaskCancellationHandler(operation: {
+            let preview = await task.value
+            return Task.isCancelled ? nil : preview
+        }, onCancel: {
+            task.cancel()
+        })
+    }
+
+    static let live = ClipboardImagePreviewLoader(
+        attributesProvider: { path in
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
+                return nil
+            }
+            return ClipboardImagePreviewFileAttributes(
+                byteCount: (attributes[.size] as? NSNumber)?.int64Value,
+                modificationDate: attributes[.modificationDate] as? Date
+            )
+        },
+        previewProvider: { source in
+            ClipboardImagePreviewCache.shared.preview(for: source)
+        }
+    )
+}
+
 /// 封装 `ClipboardLoadedImagePreview` 在 SwiftUI 展示层中的值语义和相关操作。
 struct ClipboardLoadedImagePreview: @unchecked Sendable {
+    let request: ClipboardImagePreviewRequest
     let source: ClipboardImagePreviewSource
     let cgImage: CGImage
     let pixelWidth: Int
@@ -420,6 +470,16 @@ struct ClipboardLoadedImagePreview: @unchecked Sendable {
 
     var byteCost: Int {
         cgImage.bytesPerRow * cgImage.height
+    }
+
+    func replacing(request: ClipboardImagePreviewRequest) -> ClipboardLoadedImagePreview {
+        ClipboardLoadedImagePreview(
+            request: request,
+            source: source,
+            cgImage: cgImage,
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight
+        )
     }
 }
 
@@ -488,6 +548,7 @@ final class ClipboardImagePreviewCache: @unchecked Sendable {
         }
 
         return ClipboardLoadedImagePreview(
+            request: .init(path: source.path, contentHash: nil),
             source: source,
             cgImage: cgImage,
             pixelWidth: properties?[kCGImagePropertyPixelWidth] as? Int ?? cgImage.width,
