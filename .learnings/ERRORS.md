@@ -1552,6 +1552,7 @@ Keep the real edge click on the repository's existing settings control instead o
 - **Notes**: Removed the extra SwiftUI button and second NSWindow test, then added the edge click to the existing stable settings-category control; plain glass callers remain covered by the failing-then-passing source contract.
 - **Recurrence**: 2026-07-29T14:56:58+08:00; two single-process full-suite runs reproduced the AppKit crash several seconds after the window click test.
 - **Workaround verified**: 2026-07-29T15:01:10+08:00; the 449 remaining tests passed together, and the isolated window click test passed separately. Keep the issue pending until the real-window test no longer leaves AppKit transform-animation cleanup behind.
+- **Recurrence**: 2026-07-30T17:49:42+08:00; the clean performance-hardening worktree baseline reproduced the same `EXC_BAD_ACCESS` in `-[_NSWindowTransformAnimation dealloc]` after all reported assertions had passed. The crash report was `xctest-2026-07-30-174908.ips`.
 
 ---
 
