@@ -32,6 +32,109 @@ possible credential literal detected
 
 ---
 
+## [ERR-20260804-001] image forwarding callback passed the array index as detail
+
+**Logged**: 2026-08-04T15:53:53+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+Forwarding `view_image` results with `Array.forEach(image)` accidentally passed the numeric array index as the
+optional image detail argument.
+
+### Error
+```
+image detail must be a string when provided
+```
+
+### Context
+- Two local screenshots were loaded in parallel through `view_image`.
+- The global `image` helper accepts a second optional detail argument, so `forEach` supplied its index there.
+- The failed forwarding call did not modify the screenshots or repository source files.
+
+### Suggested Fix
+Forward each result with an explicit single-argument call, such as `for (const item of results) image(item)`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-08-04T15:53:53+08:00
+- **Notes**: Replaced the callback shorthand with an explicit single-argument forwarding loop.
+
+---
+
+## [ERR-20260804-002] System Events failed while enumerating Chrome windows
+
+**Logged**: 2026-08-04T15:57:34+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A read-only AppleScript query through System Events failed while collecting Chrome window geometry.
+
+### Error
+```
+System Events encountered an error: AppleEvent handler failed. (-10000)
+```
+
+### Context
+- The diagnostic attempted to enumerate Chrome window position, size, subrole, and minimized state without mutating windows.
+- The AppleScript bridge failed before returning any window evidence.
+- Product behavior and repository files were unaffected.
+
+### Suggested Fix
+Use a direct Accessibility API probe instead of routing the query through System Events and AppleScript.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: Sources/MacTools/Platform/WindowLayout/SystemWindowLayoutService.swift
+
+### Resolution
+- **Resolved**: 2026-08-04T15:57:34+08:00
+- **Notes**: Discarded the failed AppleScript result and continued with a direct AX API probe.
+
+---
+
+## [ERR-20260804-003] Swift AX probe used an escaped literal inside string interpolation
+
+**Logged**: 2026-08-04T15:58:37+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A direct Swift Accessibility probe failed to compile because a quoted AX attribute literal was embedded inside a
+long string interpolation.
+
+### Error
+```
+cannot find ')' to match opening '(' in string interpolation
+unterminated string literal
+```
+
+### Context
+- The read-only probe was intended to report Chrome window geometry and whether AX position and size are settable.
+- The failure occurred at compile time before any Accessibility query ran.
+- The problematic expression interpolated `boolAttribute(window, "AXFullScreen" as CFString)` directly.
+
+### Suggested Fix
+Assign all diagnostic attribute names and formatted values to local variables before constructing the output line.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/Platform/WindowLayout/SystemWindowLayoutService.swift
+- See Also: ERR-20260725-004
+
+### Resolution
+- **Resolved**: 2026-08-04T15:58:37+08:00
+- **Notes**: Rewrote the probe to compute each diagnostic value before interpolation.
+
+---
+
 ## [ERR-20260728-018] release verification cleanup rejected by command safety policy
 
 **Logged**: 2026-07-28T20:34:30+08:00
