@@ -1912,7 +1912,7 @@ verified table list.
 ## [ERR-20260805-002] diagnostic classifier used prohibited temporary-file cleanup
 
 **Logged**: 2026-08-05T18:11:44+08:00
-**Priority**: low
+**Priority**: medium
 **Status**: resolved
 **Area**: tooling
 
@@ -1937,7 +1937,9 @@ Use an inline Ruby or shell array classifier that reads the existing log without
 
 ### Resolution
 - **Resolved**: 2026-08-05T18:11:44+08:00
-- **Notes**: Replaced the temporary-file pipeline with an inline, read-only Ruby classifier.
+- **Notes**: Replaced the temporary-file pipeline with an inline, read-only Ruby classifier. The same prohibited
+  cleanup pattern recurred on 2026-08-06 while aggregating lock-screen performance logs; use a direct stream
+  processor with no temporary file for all follow-up diagnostics.
 
 ---
 
