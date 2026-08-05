@@ -1830,7 +1830,7 @@ Restore `references/performance-checklist.md` in the installed performance skill
 ## [ERR-20260730-002] performance audit probes assumed unsupported fields and stale paths
 
 **Logged**: 2026-07-30T17:20:35+08:00
-**Priority**: low
+**Priority**: medium
 **Status**: resolved
 **Area**: tooling
 
@@ -1869,5 +1869,111 @@ verified BSD `ps` fields, and cap diagnostic output at the command boundary.
 - **Resolved**: 2026-07-30T17:20:35+08:00
 - **Notes**: Re-ran the probes against the verified paths, used supported `ps` fields, and constrained heap and
   leak summaries.
+
+---
+
+## [ERR-20260805-001] runtime database probe queried an unverified table name
+
+**Logged**: 2026-08-05T18:11:44+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A read-only runtime diagnostic queried `payload_refs` even though the active unified database uses
+`payload_objects`.
+
+### Error
+```
+Error: in prepare, no such table: payload_refs
+```
+
+### Context
+- The probe was collecting only storage counts while investigating a MacTools resource stall.
+- The same command printed `.tables`, but issued the aggregate query before adapting it to the observed schema.
+- The failed statement was read-only and did not modify application data.
+
+### Suggested Fix
+Run SQLite schema discovery in a separate command, then build follow-up read-only queries exclusively from the
+verified table list.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/Storage/ClipboardDatabase.swift
+- See Also: ERR-20260730-002
+
+### Resolution
+- **Resolved**: 2026-08-05T18:11:44+08:00
+- **Notes**: Re-ran the aggregate using the verified `payload_objects` table and raised the linked recurring
+  diagnostic mistake to medium priority.
+
+---
+
+## [ERR-20260805-002] diagnostic classifier used prohibited temporary-file cleanup
+
+**Logged**: 2026-08-05T18:11:44+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A read-only log-classification command was rejected because its temporary-file cleanup used `rm -f`.
+
+### Error
+```
+rm -f style commands are not permitted. Use a safer approach
+```
+
+### Context
+- The command intended to store a fixed list of safe log prefixes in a `mktemp` file.
+- No project or runtime file was changed or deleted because the command was rejected before launch.
+
+### Suggested Fix
+Use an inline Ruby or shell array classifier that reads the existing log without creating temporary files.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-08-05T18:11:44+08:00
+- **Notes**: Replaced the temporary-file pipeline with an inline, read-only Ruby classifier.
+
+---
+
+## [ERR-20260805-003] SwiftPM manifest library does not match the active compiler
+
+**Logged**: 2026-08-05T18:19:07+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tooling
+
+### Summary
+Focused tests could not start because the active Command Line Tools installation links the package manifest
+against an incompatible `PackageDescription` library.
+
+### Error
+```
+error: 'mytools': Invalid manifest
+Undefined symbols for architecture arm64:
+  PackageDescription.Package.__allocating_init(...)
+
+/Library/Developer/CommandLineTools/usr/include/swift/module.modulemap:13:8:
+error: redefinition of module 'SwiftBridging'
+```
+
+### Context
+- `xcode-select -p` resolves to `/Library/Developer/CommandLineTools`.
+- The active compiler reports Apple Swift 6.1.2 and targets macOS 16.0.
+- The failure occurs while linking `Package.swift`, before project sources or tests compile.
+- A standalone frontend parse is also blocked by duplicate `SwiftBridging` module maps in the same toolchain.
+- No additional dependency or toolchain was installed during diagnosis.
+
+### Suggested Fix
+Repair or reinstall a matching Apple Command Line Tools/Xcode toolchain, then rerun the focused SwiftPM tests.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Package.swift
 
 ---
