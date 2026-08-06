@@ -72,6 +72,7 @@
 - Open settings and switch appearance among `跟随系统`, `浅色模式`, and `深色模式`; confirm every open MacTools panel updates immediately, the choice survives relaunch, and `跟随系统` reacts to the macOS appearance.
 - Long right-click selected text or a Finder item, click a window layout button, and confirm the frontmost app window moves to the selected visible-screen region.
 - Press a configured window layout shortcut while another app is frontmost and confirm its focused window moves to the matching visible-screen region.
+- Put a Chrome window in `右 1/3`, then trigger `右半屏` and `满屏` at least 20 times each. Confirm every result reaches both the target position and width, with no “position changed but one-third width remained” state. Repeat with a native AppKit app, then rapidly alternate `右 1/3`、`右半屏`、`满屏` and confirm an older delayed request never overwrites the latest layout.
 - 打开设置，在超级右键中拖动长按响应滑块到 `250 毫秒`、`300 毫秒` 和 `350 毫秒`；确认按钮可随拖动移动，松手后保存，并改变长按右键触发速度。
 - Open settings and confirm the translation section shows Aliyun Bailian, model `qwen-mt-turbo`, and a masked API Key after saving.
 - Click the API Key eye button; confirm the saved key can be revealed and hidden again.

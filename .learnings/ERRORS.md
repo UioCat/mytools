@@ -1979,3 +1979,37 @@ Repair or reinstall a matching Apple Command Line Tools/Xcode toolchain, then re
 - Related Files: Package.swift
 
 ---
+
+## [ERR-20260806-001] AppleScript window-layout shortcut injection denied
+
+**Logged**: 2026-08-06T15:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The shell could not inject window-layout shortcuts into Chrome during packaged-app verification because macOS denied synthetic keyboard events.
+
+### Error
+```
+“System Events”遇到一个错误：“osascript”不允许发送按键。 (1002)
+```
+
+### Context
+- Built and launched the packaged `build/MacTools.app`, then attempted a reversible Chrome bounds check.
+- The current `osascript` process does not have Accessibility permission to send keyboard input.
+- The command stopped before sending a shortcut or modifying the Chrome window.
+
+### Suggested Fix
+Keep the real Chrome shortcut sequence in `docs/manual-verification.md`; run it through physical user input or a terminal process that already has explicit Accessibility permission. Do not alter TCC permissions during automated verification.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/manual-verification.md, scripts/rebuild_and_run_app.sh
+- See Also: ERR-20260716-001, ERR-20260728-011
+
+### Resolution
+- **Resolved**: 2026-08-06T15:20:00+08:00
+- **Notes**: Stopped synthetic input automation, retained the packaged build result, and left the Chrome transition sequence as an explicit manual verification boundary.
+
+---

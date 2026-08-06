@@ -40,6 +40,118 @@ final class WindowLayoutCalculatorTests: XCTestCase {
         )
     }
 
+    func testWindowFrameApplicationClassifiesPositionAndSizeIndependently() {
+        let targetFrame = CGRect(x: 100, y: 50, width: 1_200, height: 800)
+
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mismatchedComponents(
+                actualPosition: CGPoint(x: 100.75, y: 49.25),
+                actualSize: CGSize(width: 1_201, height: 799),
+                target: targetFrame
+            ),
+            []
+        )
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mismatchedComponents(
+                actualPosition: CGPoint(x: 101.01, y: 50),
+                actualSize: targetFrame.size,
+                target: targetFrame
+            ),
+            .position
+        )
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mismatchedComponents(
+                actualPosition: targetFrame.origin,
+                actualSize: CGSize(width: 1_198.99, height: 800),
+                target: targetFrame
+            ),
+            .size
+        )
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mismatchedComponents(
+                actualPosition: nil,
+                actualSize: targetFrame.size,
+                target: targetFrame
+            ),
+            .position
+        )
+    }
+
+    func testWindowFrameApplicationMovesBeforeGrowingFromRightThirdToRightHalf() {
+        let current = CGRect(x: 900, y: 50, width: 400, height: 800)
+        let target = CGRect(x: 700, y: 50, width: 600, height: 800)
+
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mutationPlan(
+                current: current,
+                target: target,
+                components: [.position, .size]
+            ),
+            [.position(target.origin), .size(target.size)]
+        )
+    }
+
+    func testWindowFrameApplicationShrinksBeforeMovingFromMaximizedToCentered() {
+        let current = CGRect(x: 100, y: 50, width: 1_200, height: 800)
+        let target = CGRect(x: 220, y: 130, width: 960, height: 640)
+
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mutationPlan(
+                current: current,
+                target: target,
+                components: [.position, .size]
+            ),
+            [.size(target.size), .position(target.origin)]
+        )
+    }
+
+    func testWindowFrameApplicationUsesIntermediateSizeForMixedResize() {
+        let current = CGRect(x: 220, y: 130, width: 960, height: 640)
+        let target = CGRect(x: 900, y: 50, width: 400, height: 800)
+
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mutationPlan(
+                current: current,
+                target: target,
+                components: [.position, .size]
+            ),
+            [
+                .size(CGSize(width: 400, height: 640)),
+                .position(target.origin),
+                .size(target.size)
+            ]
+        )
+    }
+
+    func testWindowFrameApplicationRetriesOnlyMismatchedComponent() {
+        let current = CGRect(x: 900, y: 50, width: 400, height: 800)
+        let target = CGRect(x: 700, y: 50, width: 600, height: 800)
+
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mutationPlan(
+                current: current,
+                target: target,
+                components: .position
+            ),
+            [.position(target.origin)]
+        )
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mutationPlan(
+                current: current,
+                target: target,
+                components: .size
+            ),
+            [.size(target.size)]
+        )
+    }
+
+    func testWindowFrameApplicationBoundsWriteAttemptsAndElapsedTime() {
+        XCTAssertTrue(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 1, elapsed: 0.02))
+        XCTAssertTrue(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 2, elapsed: 0.08))
+        XCTAssertFalse(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 3, elapsed: 0.08))
+        XCTAssertFalse(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 1, elapsed: 0.12))
+    }
+
     func testCombinationButtonCyclesThroughModes() {
         let button = WindowLayoutButton(
             id: "custom.left-right",

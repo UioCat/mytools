@@ -424,3 +424,135 @@ public enum WindowLayoutCalculator {
         )
     }
 }
+
+/// 描述窗口矩形中可独立写入和校验的属性。
+public struct WindowFrameComponents: OptionSet, Equatable, Sendable {
+    public let rawValue: UInt8
+
+    public init(rawValue: UInt8) {
+        self.rawValue = rawValue
+    }
+
+    public static let position = WindowFrameComponents(rawValue: 1 << 0)
+    public static let size = WindowFrameComponents(rawValue: 1 << 1)
+    public static let all: WindowFrameComponents = [.position, .size]
+}
+
+/// 描述一次辅助功能窗口属性写入。
+public enum WindowFrameMutation: Equatable, Sendable {
+    case position(CGPoint)
+    case size(CGSize)
+}
+
+/// 定义窗口布局写入后的几何校验、写入顺序与有限重试策略。
+public enum WindowFrameApplicationPolicy {
+    public static let maximumWriteAttempts = 3
+    public static let verificationInterval: TimeInterval = 0.016
+    public static let verificationTimeout: TimeInterval = 0.12
+    public static let frameTolerance: CGFloat = 1
+
+    /// 分别判断实际位置和尺寸是否达到目标；无法读取的属性保持为待处理状态。
+    public static func mismatchedComponents(
+        actualPosition: CGPoint?,
+        actualSize: CGSize?,
+        target: CGRect,
+        tolerance: CGFloat = frameTolerance
+    ) -> WindowFrameComponents {
+        guard isValid(frame: target), tolerance >= 0 else {
+            return .all
+        }
+
+        var result: WindowFrameComponents = []
+        if
+            actualPosition?.x.isFinite != true
+                || actualPosition?.y.isFinite != true
+                || abs((actualPosition?.x ?? .infinity) - target.origin.x) > tolerance
+                || abs((actualPosition?.y ?? .infinity) - target.origin.y) > tolerance
+        {
+            result.insert(.position)
+        }
+        if
+            actualSize?.width.isFinite != true
+                || actualSize?.height.isFinite != true
+                || (actualSize?.width ?? -1) < 0
+                || (actualSize?.height ?? -1) < 0
+                || abs((actualSize?.width ?? .infinity) - target.width) > tolerance
+                || abs((actualSize?.height ?? .infinity) - target.height) > tolerance
+        {
+            result.insert(.size)
+        }
+        return result
+    }
+
+    /// 按实际尺寸变化方向生成写入计划，并只包含仍未到位的属性。
+    public static func mutationPlan(
+        current: CGRect,
+        target: CGRect,
+        components: WindowFrameComponents,
+        tolerance: CGFloat = frameTolerance
+    ) -> [WindowFrameMutation] {
+        guard isValid(frame: target), tolerance >= 0, !components.isEmpty else {
+            return []
+        }
+        if components == .position {
+            return [.position(target.origin)]
+        }
+        if components == .size {
+            return [.size(target.size)]
+        }
+        guard isValid(frame: current) else {
+            return [.position(target.origin), .size(target.size)]
+        }
+
+        let grows = target.width > current.width + tolerance
+            || target.height > current.height + tolerance
+        let shrinks = target.width < current.width - tolerance
+            || target.height < current.height - tolerance
+
+        if grows && shrinks {
+            let intermediateSize = CGSize(
+                width: min(current.width, target.width),
+                height: min(current.height, target.height)
+            )
+            return [
+                .size(intermediateSize),
+                .position(target.origin),
+                .size(target.size)
+            ]
+        }
+        if shrinks {
+            return [.size(target.size), .position(target.origin)]
+        }
+        return [.position(target.origin), .size(target.size)]
+    }
+
+    /// 判断系统回读的窗口矩形是否已经达到目标，允许不超过一个点的舍入差异。
+    public static func isSatisfied(
+        actual: CGRect,
+        target: CGRect,
+        tolerance: CGFloat = frameTolerance
+    ) -> Bool {
+        mismatchedComponents(
+            actualPosition: actual.origin,
+            actualSize: actual.size,
+            target: target,
+            tolerance: tolerance
+        ).isEmpty
+    }
+
+    /// 仅在写入轮数和总时限均未耗尽时允许下一轮写入。
+    public static func shouldWrite(afterAttempt attempt: Int, elapsed: TimeInterval) -> Bool {
+        attempt < maximumWriteAttempts && elapsed < verificationTimeout
+    }
+
+    private static func isValid(frame: CGRect) -> Bool {
+        !frame.isNull
+            && !frame.isInfinite
+            && frame.origin.x.isFinite
+            && frame.origin.y.isFinite
+            && frame.width.isFinite
+            && frame.height.isFinite
+            && frame.width >= 0
+            && frame.height >= 0
+    }
+}
