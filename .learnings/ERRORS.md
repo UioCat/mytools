@@ -2013,3 +2013,36 @@ Keep the real Chrome shortcut sequence in `docs/manual-verification.md`; run it 
 - **Notes**: Stopped synthetic input automation, retained the packaged build result, and left the Chrome transition sequence as an explicit manual verification boundary.
 
 ---
+
+## [ERR-20260806-002] zsh reserved path parameter shadowed PATH
+
+**Logged**: 2026-08-06T09:14:02Z
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A zsh validation loop used `path` as its iterator variable, which replaced the shell's special `path` array and made subsequent commands unavailable.
+
+### Error
+```
+zsh:10: command not found: git
+```
+
+### Context
+- The command checked whether paths referenced by an update design document existed.
+- In zsh, `path` is tied to the `PATH` environment variable.
+- The loop completed without changing project files, then `git add`, `git diff`, and `git status` could not start.
+
+### Suggested Fix
+Use a non-special iterator such as `referenced_path` in zsh loops and start the follow-up validation in a fresh shell.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/superpowers/specs/2026-08-06-github-sparkle-update-design.md
+
+### Resolution
+- **Resolved**: 2026-08-06T09:14:02Z
+- **Notes**: Replaced the iterator with `referenced_path`; no source or index state needed recovery.
+
+---
