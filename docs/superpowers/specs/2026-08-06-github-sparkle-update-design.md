@@ -74,7 +74,7 @@ https://github.com/UioCat/mytools/releases/latest/download/appcast.xml
 - DMG 的 HTTPS 下载地址、文件长度和 Sparkle EdDSA 签名；
 - 面向用户的版本说明。
 
-`CFBundleShortVersionString` 取去掉 `v` 前缀的标签版本，`CFBundleVersion` 使用 GitHub Actions 的递增构建号。应用只消费正式发布的稳定 Release，不把草稿或预发布版本暴露给默认更新源。
+`CFBundleShortVersionString` 取去掉 `v` 前缀的标签版本。`CFBundleVersion` 由语义版本确定性派生：首段为 `1000 + major`，后两段为 `minor.patch`，例如 `0.3.0` 对应 `1000.3.0`。该序列高于首个更新版本使用的旧构建号 `7`，并确保本地包、Release 应用和 appcast 使用同一套单调递增规则。应用只消费正式发布的稳定 Release，不把草稿或预发布版本暴露给默认更新源。
 
 ### 签名与密钥
 
@@ -97,7 +97,7 @@ https://github.com/UioCat/mytools/releases/latest/download/appcast.xml
 3. 先签名嵌套 framework 和 helper，再签名主应用，继续支持当前 ad-hoc 签名和未来 Developer ID 签名；
 4. 校验可执行文件的动态依赖均指向应用包内部，不依赖 `.build` 或开发机路径。
 
-签名流程显式覆盖嵌套组件，不以 `codesign --deep` 代替正确的由内到外签名。`scripts/rebuild_and_run_app.sh` 继续复用同一打包入口，本地正式版本安装时显式传入对应版本和构建号，避免显示默认 `0.1.0`。
+签名流程显式覆盖嵌套组件，不以 `codesign --deep` 代替正确的由内到外签名。`scripts/rebuild_and_run_app.sh` 继续复用同一打包入口：日常本地包使用默认语义版本并自动派生构建号；仅在验证较低构建或指定发布产物时显式传入版本和构建号。
 
 ### GitHub Release 发布
 

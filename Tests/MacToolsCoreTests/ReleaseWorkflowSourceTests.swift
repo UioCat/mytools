@@ -9,7 +9,16 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(workflow.contains("APPCAST_INPUT_DIR"))
         XCTAssertTrue(workflow.contains("generate_appcast"))
         XCTAssertTrue(workflow.contains("--ed-key-file -"))
-        XCTAssertTrue(workflow.contains("--versions \"$GITHUB_RUN_NUMBER\""))
+        XCTAssertTrue(workflow.contains("BUILD_NUMBER=\"$(scripts/macos_build_number.sh \"$VERSION\")\""))
+        XCTAssertTrue(
+            workflow.contains(
+                "printf 'MACOS_BUILD_NUMBER=%s\\n' \"$BUILD_NUMBER\" >> \"$GITHUB_ENV\""
+            )
+        )
+        XCTAssertTrue(workflow.contains("--versions \"$MACOS_BUILD_NUMBER\""))
+        XCTAssertFalse(workflow.contains("--versions \"$GITHUB_RUN_NUMBER\""))
+        XCTAssertTrue(workflow.contains("'Print :CFBundleVersion'"))
+        XCTAssertTrue(workflow.contains("= \"$MACOS_BUILD_NUMBER\""))
         XCTAssertTrue(workflow.contains("--download-url-prefix"))
         XCTAssertTrue(workflow.contains("sparkle:edSignature"))
         XCTAssertTrue(workflow.contains("sparkle-signatures"))

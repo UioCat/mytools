@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/MacTools-release.XXXXXX")"
+BUILD_NUMBER_SCRIPT="$ROOT_DIR/scripts/macos_build_number.sh"
 APP_DIR="$ROOT_DIR/build/MacTools.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
@@ -10,9 +10,10 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 BUNDLE_ID="${MACOS_BUNDLE_ID:-local.mactools.mvp}"
 APP_VERSION="${MACOS_APP_VERSION:-0.3.0}"
-BUILD_NUMBER="${MACOS_BUILD_NUMBER:-1}"
+BUILD_NUMBER="${MACOS_BUILD_NUMBER:-$("$BUILD_NUMBER_SCRIPT" "$APP_VERSION")}"
 FORCE_ADHOC_SIGNING="${MACOS_FORCE_ADHOC_SIGNING:-0}"
 SPARKLE_PUBLIC_KEY="${MACOS_SPARKLE_PUBLIC_KEY:-yLe/vkXicHCaK5ckGlBofZee559tbU22/q8Q8FWmDWc=}"
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/MacTools-release.XXXXXX")"
 
 cleanup_build_directory() {
   rm -rf -- "$BUILD_DIR"

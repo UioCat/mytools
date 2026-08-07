@@ -18,19 +18,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve release version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_NUMBER="$(scripts/macos_build_number.sh "$VERSION")"
+          printf 'MACOS_APP_VERSION=%s\n' "$VERSION" >> "$GITHUB_ENV"
+          printf 'MACOS_BUILD_NUMBER=%s\n' "$BUILD_NUMBER" >> "$GITHUB_ENV"
+
       - name: Build ad-hoc signed app
         env:
-          MACOS_APP_VERSION: ${{ github.ref_name }}
-          MACOS_BUILD_NUMBER: ${{ github.run_number }}
           MACOS_FORCE_ADHOC_SIGNING: "1"
-        run: |
-          MACOS_APP_VERSION="${MACOS_APP_VERSION#v}" scripts/package_app.sh
+        run: scripts/package_app.sh
 
       - name: Verify app bundle
         run: |
           codesign --verify --deep --strict --verbose=2 build/MacTools.app
           codesign -dv --verbose=4 build/MacTools.app 2>&1 | grep -q '^Signature=adhoc$'
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/MacTools.app/Contents/Info.plist)" = "${GITHUB_REF_NAME#v}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/MacTools.app/Contents/Info.plist)" = "$MACOS_APP_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/MacTools.app/Contents/Info.plist)" = "$MACOS_BUILD_NUMBER"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' build/MacTools.app/Contents/Info.plist)" = "AppIcon.icns"
           test -f build/MacTools.app/Contents/Resources/AppIcon.icns
           test -d build/MacTools.app/Contents/Frameworks/Sparkle.framework
@@ -113,14 +118,14 @@ jobs:
             --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" \
             --link "https://github.com/$GITHUB_REPOSITORY" \
             --embed-release-notes \
-            --versions "$GITHUB_RUN_NUMBER" \
+            --versions "$MACOS_BUILD_NUMBER" \
             --maximum-versions 1 \
             --maximum-deltas 0 \
             -o "$GITHUB_WORKSPACE/dist/appcast.xml" \
             "$APPCAST_INPUT_DIR"
 
           xmllint --noout dist/appcast.xml
-          grep -q "<sparkle:version>$GITHUB_RUN_NUMBER</sparkle:version>" dist/appcast.xml
+          grep -q "<sparkle:version>$MACOS_BUILD_NUMBER</sparkle:version>" dist/appcast.xml
           grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" dist/appcast.xml
           grep -q 'sparkle:edSignature=' dist/appcast.xml
           grep -q '<!-- sparkle-signatures:' dist/appcast.xml
@@ -182,6 +187,7 @@ jobs:
             cd "$VERIFY_DIR"
             shasum -a 256 -c "$CHECKSUM_NAME"
             xmllint --noout appcast.xml
+            grep -q "<sparkle:version>$MACOS_BUILD_NUMBER</sparkle:version>" appcast.xml
             grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" appcast.xml
             grep -q 'sparkle:edSignature=' appcast.xml
             grep -q '<!-- sparkle-signatures:' appcast.xml
