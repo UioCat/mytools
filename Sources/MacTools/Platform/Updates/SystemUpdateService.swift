@@ -61,7 +61,6 @@ final class SystemUpdateService: ObservableObject {
     ) -> SoftwareUpdateSettingsState {
         SoftwareUpdateSettingsState(
             version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—",
-            buildNumber: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—",
             canCheckForUpdates: updater.canCheckForUpdates,
             automaticallyChecksForUpdates: updater.automaticallyChecksForUpdates,
             automaticallyDownloadsUpdates: updater.automaticallyDownloadsUpdates

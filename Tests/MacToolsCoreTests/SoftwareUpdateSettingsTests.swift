@@ -3,16 +3,15 @@ import XCTest
 @testable import MacToolsCore
 
 final class SoftwareUpdateSettingsTests: XCTestCase {
-    func testVersionDescriptionIncludesShortVersionAndBuildNumber() {
+    func testPresentationStateContainsOnlyUserFacingVersion() {
         let state = SoftwareUpdateSettingsState(
             version: "0.2.0",
-            buildNumber: "42",
             canCheckForUpdates: true,
             automaticallyChecksForUpdates: true,
             automaticallyDownloadsUpdates: false
         )
 
-        XCTAssertEqual(state.versionDescription, "0.2.0（构建 42）")
+        XCTAssertEqual(state.version, "0.2.0")
     }
 
     func testGeneralSettingsContainsDedicatedSoftwareUpdateSection() {
@@ -29,7 +28,9 @@ final class SoftwareUpdateSettingsTests: XCTestCase {
 
         XCTAssertTrue(source.contains("Button(action: checkForUpdates)"))
         XCTAssertTrue(source.contains("Text(\"MacTools \\(state.version)\")"))
-        XCTAssertTrue(source.contains("Text(\"构建 \\(state.buildNumber) · 当前已安装版本\")"))
+        XCTAssertTrue(source.contains("Text(\"当前已安装版本\")"))
+        XCTAssertFalse(source.contains("state.buildNumber"))
+        XCTAssertFalse(source.contains("构建"))
         XCTAssertTrue(source.contains("SettingsSectionDivider()"))
         XCTAssertTrue(source.contains("title: \"自动检查更新\""))
         XCTAssertTrue(source.contains("title: \"自动下载并安装更新\""))

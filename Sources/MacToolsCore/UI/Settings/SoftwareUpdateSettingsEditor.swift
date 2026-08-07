@@ -6,20 +6,17 @@ import SwiftUI
 /// 软件更新服务向通用设置页面提供的只读快照。
 public struct SoftwareUpdateSettingsState: Equatable, Sendable {
     public var version: String
-    public var buildNumber: String
     public var canCheckForUpdates: Bool
     public var automaticallyChecksForUpdates: Bool
     public var automaticallyDownloadsUpdates: Bool
 
     public init(
         version: String,
-        buildNumber: String,
         canCheckForUpdates: Bool,
         automaticallyChecksForUpdates: Bool,
         automaticallyDownloadsUpdates: Bool
     ) {
         self.version = version
-        self.buildNumber = buildNumber
         self.canCheckForUpdates = canCheckForUpdates
         self.automaticallyChecksForUpdates = automaticallyChecksForUpdates
         self.automaticallyDownloadsUpdates = automaticallyDownloadsUpdates
@@ -27,15 +24,10 @@ public struct SoftwareUpdateSettingsState: Equatable, Sendable {
 
     public static let unavailable = SoftwareUpdateSettingsState(
         version: "—",
-        buildNumber: "—",
         canCheckForUpdates: false,
         automaticallyChecksForUpdates: false,
         automaticallyDownloadsUpdates: false
     )
-
-    public var versionDescription: String {
-        "\(version)（构建 \(buildNumber)）"
-    }
 }
 
 /// 在通用设置中展示版本、手动检查入口和 Sparkle 设备级偏好。
@@ -81,7 +73,7 @@ struct SoftwareUpdateSettingsEditor: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(MacToolsGlassTheme.textPrimary)
 
-                Text("构建 \(state.buildNumber) · 当前已安装版本")
+                Text("当前已安装版本")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(MacToolsGlassTheme.textTertiary)
             }
