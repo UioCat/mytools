@@ -9,7 +9,7 @@ MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 BUNDLE_ID="${MACOS_BUNDLE_ID:-local.mactools.mvp}"
-APP_VERSION="${MACOS_APP_VERSION:-0.1.0}"
+APP_VERSION="${MACOS_APP_VERSION:-0.3.0}"
 BUILD_NUMBER="${MACOS_BUILD_NUMBER:-1}"
 FORCE_ADHOC_SIGNING="${MACOS_FORCE_ADHOC_SIGNING:-0}"
 SPARKLE_PUBLIC_KEY="${MACOS_SPARKLE_PUBLIC_KEY:-yLe/vkXicHCaK5ckGlBofZee559tbU22/q8Q8FWmDWc=}"
@@ -81,7 +81,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>0.3.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>

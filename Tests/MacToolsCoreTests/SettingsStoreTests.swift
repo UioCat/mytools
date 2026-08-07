@@ -35,6 +35,8 @@ final class SettingsStoreTests: XCTestCase {
             [
                 ["Control+Command+Left"],
                 ["Control+Command+Right"],
+                ["Control+Command+Up"],
+                ["Control+Command+Down"],
                 ["Control+Option+Left"],
                 ["Control+Option+Right"],
                 ["Option+Command+Left"],
@@ -46,6 +48,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.windowLayout.visibleButtons.map(\.title), [
             "左半屏",
             "右半屏",
+            "上半屏",
+            "下半屏",
             "左 1/3",
             "右 1/3",
             "左 2/3",
@@ -53,6 +57,117 @@ final class SettingsStoreTests: XCTestCase {
             "居中",
             "满屏"
         ])
+    }
+
+    func testLegacyDefaultWindowLayoutAddsVerticalModesAndShortcuts() throws {
+        let legacy = WindowLayoutSettings(
+            enabledModes: [
+                .leftHalf,
+                .rightHalf,
+                .leftThird,
+                .rightThird,
+                .leftTwoThirds,
+                .rightTwoThirds,
+                .centered,
+                .maximize
+            ],
+            modeShortcuts: [
+                WindowLayoutModeShortcuts(
+                    mode: .leftHalf,
+                    shortcuts: [HotKeyBinding(key: "Left", modifiers: ["Control", "Command"])]
+                ),
+                WindowLayoutModeShortcuts(
+                    mode: .rightHalf,
+                    shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Control", "Command"])]
+                ),
+                WindowLayoutModeShortcuts(
+                    mode: .leftThird,
+                    shortcuts: [HotKeyBinding(key: "Left", modifiers: ["Control", "Option"])]
+                ),
+                WindowLayoutModeShortcuts(
+                    mode: .rightThird,
+                    shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Control", "Option"])]
+                ),
+                WindowLayoutModeShortcuts(
+                    mode: .leftTwoThirds,
+                    shortcuts: [HotKeyBinding(key: "Left", modifiers: ["Option", "Command"])]
+                ),
+                WindowLayoutModeShortcuts(
+                    mode: .rightTwoThirds,
+                    shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Option", "Command"])]
+                ),
+                WindowLayoutModeShortcuts(
+                    mode: .centered,
+                    shortcuts: [HotKeyBinding(key: "0", modifiers: ["Control", "Option"])]
+                ),
+                WindowLayoutModeShortcuts(
+                    mode: .maximize,
+                    shortcuts: [HotKeyBinding(key: "0", modifiers: ["Control", "Command"])]
+                )
+            ]
+        )
+
+        let loaded = try JSONDecoder().decode(
+            WindowLayoutSettings.self,
+            from: JSONEncoder().encode(legacy)
+        )
+
+        XCTAssertEqual(loaded.enabledModes, WindowLayoutMode.allCases)
+        XCTAssertEqual(loaded.modeShortcuts, WindowLayoutSettings.defaultModeShortcuts)
+    }
+
+    func testCustomizedWindowLayoutDoesNotGainNewModesOrShortcutsWhenDecoded() throws {
+        let customized = WindowLayoutSettings(
+            enabledModes: [.leftHalf],
+            modeShortcuts: [
+                WindowLayoutModeShortcuts(
+                    mode: .leftHalf,
+                    shortcuts: [HotKeyBinding(key: "L", modifiers: ["Control", "Command"])]
+                )
+            ]
+        )
+
+        let loaded = try JSONDecoder().decode(
+            WindowLayoutSettings.self,
+            from: JSONEncoder().encode(customized)
+        )
+
+        XCTAssertEqual(loaded.enabledModes, [.leftHalf])
+        XCTAssertEqual(loaded.modeShortcuts, customized.modeShortcuts)
+        XCTAssertTrue(loaded.shortcuts(for: .topHalf).isEmpty)
+        XCTAssertTrue(loaded.shortcuts(for: .bottomHalf).isEmpty)
+    }
+
+    func testCustomizedLegacyShortcutPreventsWholeDefaultMigration() throws {
+        let legacyModes: [WindowLayoutMode] = [
+            .leftHalf,
+            .rightHalf,
+            .leftThird,
+            .rightThird,
+            .leftTwoThirds,
+            .rightTwoThirds,
+            .centered,
+            .maximize
+        ]
+        var shortcuts = WindowLayoutSettings.defaultModeShortcuts.filter {
+            $0.mode != .topHalf && $0.mode != .bottomHalf
+        }
+        shortcuts[0] = WindowLayoutModeShortcuts(
+            mode: .leftHalf,
+            shortcuts: [HotKeyBinding(key: "L", modifiers: ["Control", "Command"])]
+        )
+        let customized = WindowLayoutSettings(
+            enabledModes: legacyModes,
+            modeShortcuts: shortcuts
+        )
+
+        let loaded = try JSONDecoder().decode(
+            WindowLayoutSettings.self,
+            from: JSONEncoder().encode(customized)
+        )
+
+        XCTAssertEqual(loaded.enabledModes, legacyModes)
+        XCTAssertEqual(loaded.modeShortcuts, customized.modeShortcuts)
     }
 
     func testLoadReturnsDefaultsWhenFileDoesNotExist() throws {

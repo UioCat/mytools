@@ -15,6 +15,14 @@ final class WindowLayoutCalculatorTests: XCTestCase {
             CGRect(x: 700, y: 50, width: 600, height: 800)
         )
         XCTAssertEqual(
+            WindowLayoutCalculator.targetFrame(for: .topHalf, in: visibleFrame),
+            CGRect(x: 100, y: 450, width: 1_200, height: 400)
+        )
+        XCTAssertEqual(
+            WindowLayoutCalculator.targetFrame(for: .bottomHalf, in: visibleFrame),
+            CGRect(x: 100, y: 50, width: 1_200, height: 400)
+        )
+        XCTAssertEqual(
             WindowLayoutCalculator.targetFrame(for: .leftThird, in: visibleFrame),
             CGRect(x: 100, y: 50, width: 400, height: 800)
         )
@@ -147,9 +155,191 @@ final class WindowLayoutCalculatorTests: XCTestCase {
 
     func testWindowFrameApplicationBoundsWriteAttemptsAndElapsedTime() {
         XCTAssertTrue(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 1, elapsed: 0.02))
-        XCTAssertTrue(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 2, elapsed: 0.08))
-        XCTAssertFalse(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 3, elapsed: 0.08))
-        XCTAssertFalse(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 1, elapsed: 0.12))
+        XCTAssertTrue(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 4, elapsed: 0.40))
+        XCTAssertFalse(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 5, elapsed: 0.40))
+        XCTAssertFalse(WindowFrameApplicationPolicy.shouldWrite(afterAttempt: 1, elapsed: 0.50))
+        XCTAssertEqual(WindowFrameApplicationPolicy.verificationDelay(afterAttempt: 0), 0.016)
+        XCTAssertEqual(WindowFrameApplicationPolicy.verificationDelay(afterAttempt: 1), 0.025)
+        XCTAssertEqual(WindowFrameApplicationPolicy.verificationDelay(afterAttempt: 4), 0.15)
+        XCTAssertEqual(WindowFrameApplicationPolicy.verificationDelay(afterAttempt: 20), 0.15)
+    }
+
+    func testWindowFrameApplicationUsesSizePositionSizeWhenCrossingDisplays() {
+        let current = CGRect(x: 900, y: 50, width: 400, height: 800)
+        let target = CGRect(x: -600, y: -100, width: 600, height: 900)
+
+        XCTAssertEqual(
+            WindowFrameApplicationPolicy.mutationPlan(
+                current: current,
+                target: target,
+                components: .all,
+                isInitialCrossDisplayWrite: true
+            ),
+            [.size(target.size), .position(target.origin), .size(target.size)]
+        )
+    }
+
+    func testRepeatedLeftLayoutMovesToRightEdgeOfLeftDisplay() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_200, height: 800))
+        let left = screen(id: "left", frame: CGRect(x: -1_000, y: 100, width: 1_000, height: 700))
+        let previousTarget = WindowLayoutCalculator.targetFrame(for: .leftHalf, in: current.visibleFrame)
+
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: .leftHalf,
+            currentFrame: previousTarget,
+            previousMode: .leftHalf,
+            previousTargetFrame: previousTarget,
+            currentScreen: current,
+            screens: [current, left]
+        )
+
+        XCTAssertEqual(target.screen, left)
+        XCTAssertEqual(target.mode, .rightHalf)
+        XCTAssertEqual(
+            target.frame,
+            WindowLayoutCalculator.targetFrame(for: .rightHalf, in: left.visibleFrame)
+        )
+    }
+
+    func testCrossedLeftLayoutReturnsToLeftEdgeBeforeTraversingAgain() {
+        let current = screen(id: "left", frame: CGRect(x: -1_000, y: 100, width: 1_000, height: 700))
+        let right = screen(id: "right", frame: CGRect(x: 0, y: 0, width: 1_200, height: 800))
+        let previousTarget = WindowLayoutCalculator.targetFrame(for: .rightHalf, in: current.visibleFrame)
+
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: .leftHalf,
+            currentFrame: previousTarget,
+            previousMode: .rightHalf,
+            previousTargetFrame: previousTarget,
+            currentScreen: current,
+            screens: [current, right]
+        )
+
+        XCTAssertEqual(target.screen, current)
+        XCTAssertEqual(target.mode, .leftHalf)
+    }
+
+    func testRepeatedTopLayoutMovesToBottomEdgeOfUpperDisplay() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_200, height: 800))
+        let upper = screen(id: "upper", frame: CGRect(x: 100, y: 800, width: 900, height: 700))
+        let previousTarget = WindowLayoutCalculator.targetFrame(for: .topHalf, in: current.visibleFrame)
+
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: .topHalf,
+            currentFrame: previousTarget,
+            previousMode: .topHalf,
+            previousTargetFrame: previousTarget,
+            currentScreen: current,
+            screens: [current, upper]
+        )
+
+        XCTAssertEqual(target.screen, upper)
+        XCTAssertEqual(target.mode, .bottomHalf)
+    }
+
+    func testRepeatedRightAndBottomLayoutsMoveAcrossDisplays() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_200, height: 800))
+        let right = screen(id: "right", frame: CGRect(x: 1_200, y: 50, width: 900, height: 700))
+        let lower = screen(id: "lower", frame: CGRect(x: 100, y: -700, width: 1_000, height: 700))
+        let rightTarget = WindowLayoutCalculator.targetFrame(for: .rightThird, in: current.visibleFrame)
+        let bottomTarget = WindowLayoutCalculator.targetFrame(for: .bottomHalf, in: current.visibleFrame)
+
+        let movedRight = WindowScreenNavigationPolicy.target(
+            requestedMode: .rightThird,
+            currentFrame: rightTarget,
+            previousMode: .rightThird,
+            previousTargetFrame: rightTarget,
+            currentScreen: current,
+            screens: [current, right, lower]
+        )
+        let movedDown = WindowScreenNavigationPolicy.target(
+            requestedMode: .bottomHalf,
+            currentFrame: bottomTarget,
+            previousMode: .bottomHalf,
+            previousTargetFrame: bottomTarget,
+            currentScreen: current,
+            screens: [current, right, lower]
+        )
+
+        XCTAssertEqual(movedRight.screen, right)
+        XCTAssertEqual(movedRight.mode, .leftThird)
+        XCTAssertEqual(movedDown.screen, lower)
+        XCTAssertEqual(movedDown.mode, .topHalf)
+    }
+
+    func testDirectionalTraversalCanBeDisabledForCombinationButtons() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_200, height: 800))
+        let left = screen(id: "left", frame: CGRect(x: -1_000, y: 0, width: 1_000, height: 700))
+        let previousTarget = WindowLayoutCalculator.targetFrame(for: .leftHalf, in: current.visibleFrame)
+
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: .leftHalf,
+            currentFrame: previousTarget,
+            previousMode: .leftHalf,
+            previousTargetFrame: previousTarget,
+            currentScreen: current,
+            screens: [current, left],
+            allowsTraversal: false
+        )
+
+        XCTAssertEqual(target.screen, current)
+        XCTAssertEqual(target.mode, .leftHalf)
+    }
+
+    func testManualWindowMovePreventsDirectionalTraversal() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_200, height: 800))
+        let left = screen(id: "left", frame: CGRect(x: -1_000, y: 0, width: 1_000, height: 700))
+        let previousTarget = WindowLayoutCalculator.targetFrame(for: .leftThird, in: current.visibleFrame)
+        let movedFrame = previousTarget.offsetBy(dx: 12, dy: 0)
+
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: .leftThird,
+            currentFrame: movedFrame,
+            previousMode: .leftThird,
+            previousTargetFrame: previousTarget,
+            currentScreen: current,
+            screens: [current, left]
+        )
+
+        XCTAssertEqual(target.screen, current)
+        XCTAssertEqual(target.mode, .leftThird)
+    }
+
+    func testDirectionalNavigationPrefersOrthogonallyOverlappingDisplay() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_000, height: 800))
+        let overlapping = screen(id: "overlapping", frame: CGRect(x: -1_000, y: 100, width: 1_000, height: 700))
+        let diagonal = screen(id: "diagonal", frame: CGRect(x: -500, y: 900, width: 500, height: 500))
+        let previousTarget = WindowLayoutCalculator.targetFrame(for: .leftTwoThirds, in: current.visibleFrame)
+
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: .leftTwoThirds,
+            currentFrame: previousTarget,
+            previousMode: .leftTwoThirds,
+            previousTargetFrame: previousTarget,
+            currentScreen: current,
+            screens: [current, diagonal, overlapping]
+        )
+
+        XCTAssertEqual(target.screen, overlapping)
+        XCTAssertEqual(target.mode, .rightTwoThirds)
+    }
+
+    func testDirectionalNavigationDoesNotWrapWhenDirectionHasNoDisplay() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_000, height: 800))
+        let right = screen(id: "right", frame: CGRect(x: 1_000, y: 0, width: 900, height: 700))
+        let previousTarget = WindowLayoutCalculator.targetFrame(for: .leftHalf, in: current.visibleFrame)
+
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: .leftHalf,
+            currentFrame: previousTarget,
+            previousMode: .leftHalf,
+            previousTargetFrame: previousTarget,
+            currentScreen: current,
+            screens: [current, right]
+        )
+
+        XCTAssertEqual(target.screen, current)
+        XCTAssertEqual(target.mode, .leftHalf)
     }
 
     func testCombinationButtonCyclesThroughModes() {
@@ -251,10 +441,11 @@ final class WindowLayoutCalculatorTests: XCTestCase {
     func testWindowLayoutSettingsEditorGroupsModesByMeaning() {
         XCTAssertEqual(
             WindowLayoutSettingsLayout.modeGroups.map(\.title),
-            ["半屏", "三分之一", "三分之二", "焦点"]
+            ["水平半屏", "垂直半屏", "三分之一", "三分之二", "焦点"]
         )
         XCTAssertEqual(WindowLayoutSettingsLayout.modeGroups.map(\.modes), [
             [.leftHalf, .rightHalf],
+            [.topHalf, .bottomHalf],
             [.leftThird, .rightThird],
             [.leftTwoThirds, .rightTwoThirds],
             [.centered, .maximize]
@@ -264,11 +455,17 @@ final class WindowLayoutCalculatorTests: XCTestCase {
     func testModePreviewSegmentsMatchTargetRegions() {
         XCTAssertEqual(WindowLayoutMode.leftHalf.previewSegment, .init(x: 0, y: 0, width: 0.5, height: 1))
         XCTAssertEqual(WindowLayoutMode.rightHalf.previewSegment, .init(x: 0.5, y: 0, width: 0.5, height: 1))
+        XCTAssertEqual(WindowLayoutMode.topHalf.previewSegment, .init(x: 0, y: 0, width: 1, height: 0.5))
+        XCTAssertEqual(WindowLayoutMode.bottomHalf.previewSegment, .init(x: 0, y: 0.5, width: 1, height: 0.5))
         XCTAssertEqual(WindowLayoutMode.leftThird.previewSegment, .init(x: 0, y: 0, width: 1.0 / 3.0, height: 1))
         XCTAssertEqual(WindowLayoutMode.rightThird.previewSegment, .init(x: 2.0 / 3.0, y: 0, width: 1.0 / 3.0, height: 1))
         XCTAssertEqual(WindowLayoutMode.leftTwoThirds.previewSegment, .init(x: 0, y: 0, width: 2.0 / 3.0, height: 1))
         XCTAssertEqual(WindowLayoutMode.rightTwoThirds.previewSegment, .init(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1))
         XCTAssertEqual(WindowLayoutMode.centered.previewSegment, .init(x: 0.2, y: 0.2, width: 0.6, height: 0.6))
         XCTAssertEqual(WindowLayoutMode.maximize.previewSegment, .init(x: 0, y: 0, width: 1, height: 1))
+    }
+
+    private func screen(id: String, frame: CGRect) -> WindowLayoutScreen {
+        WindowLayoutScreen(id: id, frame: frame, visibleFrame: frame)
     }
 }

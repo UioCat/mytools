@@ -13,6 +13,8 @@ private func _AXUIElementGetWindow(
     _ windowID: UnsafeMutablePointer<CGWindowID>
 ) -> AXError
 
+private let enhancedUserInterfaceAttribute = "AXEnhancedUserInterface"
+
 /// 描述 `SystemWindowLayoutError` 在应用运行时与 AppKit 集成中可取的状态、选项或错误。
 enum SystemWindowLayoutError: Error {
     case missingFrontmostApplication
@@ -29,15 +31,25 @@ final class SystemWindowLayoutService {
     private struct AppliedLayout {
         var buttonID: String
         var mode: WindowLayoutMode
+        var targetFrame: CGRect
+    }
+
+    /// 保存前台应用元素和其当前聚焦窗口。
+    private struct FocusedWindowContext {
+        var applicationElement: AXUIElement
+        var windowElement: AXUIElement
     }
 
     /// 保存单次窗口矩形应用所需的稳定上下文。
     private struct FrameApplicationRequest {
         var id: UInt
+        var applicationElement: AXUIElement
         var windowElement: AXUIElement
         var windowID: CGWindowID?
         var layout: AppliedLayout
         var targetFrame: CGRect
+        var isInitialCrossDisplayWrite: Bool
+        var shouldRestoreEnhancedUserInterface: Bool
     }
 
     /// 保存位置和尺寸的独立回读结果及错误码。
@@ -61,7 +73,8 @@ final class SystemWindowLayoutService {
 
     /// 解析前台窗口与所在屏幕，按按钮循环规则计算并写入下一个布局。
     func apply(button: WindowLayoutButton) throws {
-        let windowElement = try focusedWindowElement()
+        let context = try focusedWindowContext()
+        let windowElement = context.windowElement
         let windowID = windowID(for: windowElement)
         let pendingLayout = activeFrameApplicationRequest.flatMap { request in
             CFEqual(request.windowElement, windowElement) ? request.layout : nil
@@ -70,24 +83,50 @@ final class SystemWindowLayoutService {
         let previousMode = previousLayout?.buttonID == button.id
             ? previousLayout?.mode
             : nil
-        guard let mode = button.mode(after: previousMode) else {
+        guard let requestedMode = button.mode(after: previousMode) else {
             throw SystemWindowLayoutError.emptyLayoutButton
         }
 
         let currentAXFrame = try frame(of: windowElement)
         let currentScreenFrame = currentAXFrame.flippedAcrossPrimaryScreen
         let screen = try screen(containing: currentScreenFrame)
-        let targetFrame = WindowLayoutCalculator.targetFrame(for: mode, in: screen.visibleFrame)
-        let targetAXFrame = targetFrame.flippedAcrossPrimaryScreen
+        let currentScreen = layoutScreen(for: screen)
+        let successfulLayout = windowID.flatMap { appliedLayoutsByWindowID[$0] }
+        let successfulMode = successfulLayout?.buttonID == button.id
+            ? successfulLayout?.mode
+            : nil
+        let successfulTargetFrame = successfulLayout?.buttonID == button.id
+            ? successfulLayout?.targetFrame
+            : nil
+        let target = WindowScreenNavigationPolicy.target(
+            requestedMode: requestedMode,
+            currentFrame: currentScreenFrame,
+            previousMode: successfulMode,
+            previousTargetFrame: successfulTargetFrame,
+            currentScreen: currentScreen,
+            screens: NSScreen.screens.map(layoutScreen(for:)),
+            allowsTraversal: button.id == "mode.\(requestedMode.rawValue)"
+                && button.modes == [requestedMode]
+        )
+        let targetAXFrame = target.frame.flippedAcrossPrimaryScreen
 
         cancelActiveFrameApplication()
         nextFrameApplicationRequestID &+= 1
         let request = FrameApplicationRequest(
             id: nextFrameApplicationRequestID,
+            applicationElement: context.applicationElement,
             windowElement: windowElement,
             windowID: windowID,
-            layout: AppliedLayout(buttonID: button.id, mode: mode),
-            targetFrame: targetAXFrame
+            layout: AppliedLayout(
+                buttonID: button.id,
+                mode: target.mode,
+                targetFrame: target.frame
+            ),
+            targetFrame: targetAXFrame,
+            isInitialCrossDisplayWrite: target.screen.id != currentScreen.id,
+            shouldRestoreEnhancedUserInterface: disableEnhancedUserInterfaceIfNeeded(
+                for: context.applicationElement
+            )
         )
         activeFrameApplicationRequest = request
         activeFrameApplicationTask = Task { @MainActor [weak self] in
@@ -95,8 +134,8 @@ final class SystemWindowLayoutService {
         }
     }
 
-    /// 更新 `focusedWindowElement` 对应的交互状态，并保持当前选择或展示约束。
-    private func focusedWindowElement() throws -> AXUIElement {
+    /// 读取前台应用元素和当前聚焦窗口，供属性兼容处理与窗口写入共同使用。
+    private func focusedWindowContext() throws -> FocusedWindowContext {
         guard
             let application = NSWorkspace.shared.frontmostApplication,
             application.processIdentifier != ProcessInfo.processInfo.processIdentifier
@@ -112,7 +151,10 @@ final class SystemWindowLayoutService {
             throw SystemWindowLayoutError.missingFocusedWindow
         }
 
-        return (value as! AXUIElement)
+        return FocusedWindowContext(
+            applicationElement: appElement,
+            windowElement: value as! AXUIElement
+        )
     }
 
     /// 计算并返回 `frame` 所描述的应用运行时与 AppKit 集成结果。
@@ -193,7 +235,9 @@ final class SystemWindowLayoutService {
                 let mutations = WindowFrameApplicationPolicy.mutationPlan(
                     current: lastKnownFrame,
                     target: request.targetFrame,
-                    components: writableComponents
+                    components: writableComponents,
+                    isInitialCrossDisplayWrite: request.isInitialCrossDisplayWrite
+                        && writeAttempts == 1
                 )
                 apply(
                     mutations,
@@ -209,7 +253,10 @@ final class SystemWindowLayoutService {
             guard remaining > 0 else {
                 continue
             }
-            let delay = min(WindowFrameApplicationPolicy.verificationInterval, remaining)
+            let delay = min(
+                WindowFrameApplicationPolicy.verificationDelay(afterAttempt: writeAttempts - 1),
+                remaining
+            )
             do {
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             } catch {
@@ -283,6 +330,7 @@ final class SystemWindowLayoutService {
             return
         }
         activeFrameApplicationTask?.cancel()
+        restoreEnhancedUserInterfaceIfNeeded(for: request)
         activeFrameApplicationTask = nil
         activeFrameApplicationRequest = nil
         logger.info(
@@ -301,6 +349,7 @@ final class SystemWindowLayoutService {
         if let windowID = request.windowID {
             appliedLayoutsByWindowID[windowID] = request.layout
         }
+        restoreEnhancedUserInterfaceIfNeeded(for: request)
         activeFrameApplicationTask = nil
         activeFrameApplicationRequest = nil
         logger.info(
@@ -320,6 +369,7 @@ final class SystemWindowLayoutService {
         guard isActive(request) else {
             return
         }
+        restoreEnhancedUserInterfaceIfNeeded(for: request)
         activeFrameApplicationTask = nil
         activeFrameApplicationRequest = nil
         logger.error(
@@ -349,6 +399,53 @@ final class SystemWindowLayoutService {
         }
     }
 
+    /// Rectangle 会在布局期间临时关闭该属性，避免部分应用吞掉连续的位置/尺寸写入。
+    private func disableEnhancedUserInterfaceIfNeeded(
+        for applicationElement: AXUIElement
+    ) -> Bool {
+        let current = applicationElement.copyBoolAttribute(enhancedUserInterfaceAttribute)
+        guard current.value == true else {
+            if current.error != .success, current.error != .attributeUnsupported {
+                logger.info(
+                    "window layout AX enhanced UI read skipped error=\(current.error.rawValue)"
+                )
+            }
+            return false
+        }
+
+        let result = applicationElement.setBoolAttribute(
+            enhancedUserInterfaceAttribute,
+            false
+        )
+        guard result == .success else {
+            logger.error(
+                "window layout AX enhanced UI disable failed error=\(result.rawValue)"
+            )
+            return false
+        }
+        return true
+    }
+
+    /// 仅恢复由本次请求实际关闭的增强辅助功能属性。
+    private func restoreEnhancedUserInterfaceIfNeeded(
+        for request: FrameApplicationRequest
+    ) {
+        guard request.shouldRestoreEnhancedUserInterface else {
+            return
+        }
+        let result = request.applicationElement.setBoolAttribute(
+            enhancedUserInterfaceAttribute,
+            true
+        )
+        guard result != .success else {
+            return
+        }
+        logger.error(
+            "window layout AX enhanced UI restore failed request=\(request.id) "
+                + "error=\(result.rawValue)"
+        )
+    }
+
     /// 计算并返回 `screen` 对应的应用运行时与 AppKit 集成数据或状态结果。
     private func screen(containing rect: CGRect) throws -> NSScreen {
         guard let screen = NSScreen.screens.max(by: { lhs, rhs in
@@ -358,6 +455,19 @@ final class SystemWindowLayoutService {
         }
 
         return screen
+    }
+
+    /// 将 AppKit 屏幕转换为可测试的窗口布局屏幕模型。
+    private func layoutScreen(for screen: NSScreen) -> WindowLayoutScreen {
+        let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
+        let id: String
+        if let screenNumber = screen.deviceDescription[screenNumberKey] as? NSNumber {
+            id = screenNumber.stringValue
+        } else {
+            let frame = screen.frame.integral
+            id = "frame:\(frame.origin.x),\(frame.origin.y),\(frame.width),\(frame.height)"
+        }
+        return WindowLayoutScreen(id: id, frame: screen.frame, visibleFrame: screen.visibleFrame)
     }
 
     /// 通过私有辅助功能符号取得窗口 ID；失败时当前请求仍执行，但不写入按窗口缓存。
@@ -405,6 +515,22 @@ private extension AXUIElement {
         return success ? (pointer.pointee, .success) : (nil, .failure)
     }
 
+    /// 读取布尔型辅助功能属性并保留错误码。
+    func copyBoolAttribute(_ attribute: String) -> (value: Bool?, error: AXError) {
+        var value: AnyObject?
+        let copyResult = AXUIElementCopyAttributeValue(self, attribute as CFString, &value)
+        guard copyResult == .success else {
+            return (nil, copyResult)
+        }
+        guard
+            let value,
+            CFGetTypeID(value) == CFBooleanGetTypeID()
+        else {
+            return (nil, .illegalArgument)
+        }
+        return (CFBooleanGetValue((value as! CFBoolean)), .success)
+    }
+
     /// 应用 `setPointAttribute` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     func setPointAttribute(_ attribute: String, _ value: CGPoint) -> AXError {
         var value = value
@@ -421,6 +547,15 @@ private extension AXUIElement {
             return .illegalArgument
         }
         return AXUIElementSetAttributeValue(self, attribute as CFString, axValue)
+    }
+
+    /// 写入布尔型辅助功能属性。
+    func setBoolAttribute(_ attribute: String, _ value: Bool) -> AXError {
+        AXUIElementSetAttributeValue(
+            self,
+            attribute as CFString,
+            value ? kCFBooleanTrue : kCFBooleanFalse
+        )
     }
 }
 

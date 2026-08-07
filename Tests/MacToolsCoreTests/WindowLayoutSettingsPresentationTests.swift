@@ -19,6 +19,14 @@ final class WindowLayoutSettingsPresentationTests: XCTestCase {
             CGRect(x: 23, y: 3, width: 10, height: 18)
         )
         XCTAssertEqual(
+            WindowLayoutPreviewGeometry.targetFrame(for: WindowLayoutMode.topHalf.previewSegment, in: bounds),
+            CGRect(x: 3, y: 3, width: 30, height: 9)
+        )
+        XCTAssertEqual(
+            WindowLayoutPreviewGeometry.targetFrame(for: WindowLayoutMode.bottomHalf.previewSegment, in: bounds),
+            CGRect(x: 3, y: 12, width: 30, height: 9)
+        )
+        XCTAssertEqual(
             WindowLayoutPreviewGeometry.targetFrame(for: WindowLayoutMode.maximize.previewSegment, in: bounds),
             CGRect(x: 3, y: 3, width: 30, height: 18)
         )

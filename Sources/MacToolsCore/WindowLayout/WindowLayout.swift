@@ -24,6 +24,8 @@ public struct WindowLayoutPreviewSegment: Equatable, Sendable {
 public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable, Identifiable, Sendable {
     case leftHalf
     case rightHalf
+    case topHalf
+    case bottomHalf
     case leftThird
     case rightThird
     case leftTwoThirds
@@ -39,6 +41,10 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
             return "左半屏"
         case .rightHalf:
             return "右半屏"
+        case .topHalf:
+            return "上半屏"
+        case .bottomHalf:
+            return "下半屏"
         case .leftThird:
             return "左 1/3"
         case .rightThird:
@@ -60,6 +66,10 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
             return "rectangle.lefthalf.filled"
         case .rightHalf, .rightThird, .rightTwoThirds:
             return "rectangle.righthalf.filled"
+        case .topHalf:
+            return "rectangle.tophalf.filled"
+        case .bottomHalf:
+            return "rectangle.bottomhalf.filled"
         case .centered:
             return "rectangle.center.inset.filled"
         case .maximize:
@@ -73,6 +83,10 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
             return .init(x: 0, y: 0, width: 0.5, height: 1)
         case .rightHalf:
             return .init(x: 0.5, y: 0, width: 0.5, height: 1)
+        case .topHalf:
+            return .init(x: 0, y: 0, width: 1, height: 0.5)
+        case .bottomHalf:
+            return .init(x: 0, y: 0.5, width: 1, height: 0.5)
         case .leftThird:
             return .init(x: 0, y: 0, width: 1.0 / 3.0, height: 1)
         case .rightThird:
@@ -175,7 +189,8 @@ struct WindowLayoutModeGroup: Equatable, Identifiable, Sendable {
 /// 描述 `WindowLayoutSettingsLayout` 在窗口布局领域中可取的状态、选项或错误。
 enum WindowLayoutSettingsLayout {
     static let modeGroups: [WindowLayoutModeGroup] = [
-        WindowLayoutModeGroup(title: "半屏", modes: [.leftHalf, .rightHalf]),
+        WindowLayoutModeGroup(title: "水平半屏", modes: [.leftHalf, .rightHalf]),
+        WindowLayoutModeGroup(title: "垂直半屏", modes: [.topHalf, .bottomHalf]),
         WindowLayoutModeGroup(title: "三分之一", modes: [.leftThird, .rightThird]),
         WindowLayoutModeGroup(title: "三分之二", modes: [.leftTwoThirds, .rightTwoThirds]),
         WindowLayoutModeGroup(title: "焦点", modes: [.centered, .maximize])
@@ -197,6 +212,14 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         WindowLayoutModeShortcuts(
             mode: .rightHalf,
             shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Control", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .topHalf,
+            shortcuts: [HotKeyBinding(key: "Up", modifiers: ["Control", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .bottomHalf,
+            shortcuts: [HotKeyBinding(key: "Down", modifiers: ["Control", "Command"])]
         ),
         WindowLayoutModeShortcuts(
             mode: .leftThird,
@@ -312,12 +335,31 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
     /// 创建 `WindowLayoutSettings`，保存传入依赖并建立初始状态。
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedEnabledModes = try container.decodeIfPresent(
+            [WindowLayoutMode].self,
+            forKey: .enabledModes
+        ) ?? WindowLayoutMode.allCases
+        let decodedModeShortcuts = try container.decodeIfPresent(
+            [WindowLayoutModeShortcuts].self,
+            forKey: .modeShortcuts
+        ) ?? []
+        let decodedCustomButtons = try container.decodeIfPresent(
+            [WindowLayoutButton].self,
+            forKey: .customButtons
+        ) ?? []
+        let shouldMigrateLegacyDefaults = decodedEnabledModes == Self.legacyDefaultModes
+            && Self.normalizedModeShortcuts(decodedModeShortcuts)
+                == Self.legacyDefaultModeShortcuts
+            && decodedCustomButtons.isEmpty
         self.init(
             isEnabled: try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true,
-            enabledModes: try container.decodeIfPresent([WindowLayoutMode].self, forKey: .enabledModes)
-                ?? WindowLayoutMode.allCases,
-            customButtons: try container.decodeIfPresent([WindowLayoutButton].self, forKey: .customButtons) ?? [],
-            modeShortcuts: try container.decodeIfPresent([WindowLayoutModeShortcuts].self, forKey: .modeShortcuts) ?? []
+            enabledModes: shouldMigrateLegacyDefaults
+                ? WindowLayoutMode.allCases
+                : decodedEnabledModes,
+            customButtons: decodedCustomButtons,
+            modeShortcuts: shouldMigrateLegacyDefaults
+                ? Self.defaultModeShortcuts
+                : decodedModeShortcuts
         )
     }
 
@@ -370,6 +412,52 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
             return WindowLayoutModeShortcuts(mode: mode, shortcuts: shortcuts)
         }
     }
+
+    private static let legacyDefaultModes: [WindowLayoutMode] = [
+        .leftHalf,
+        .rightHalf,
+        .leftThird,
+        .rightThird,
+        .leftTwoThirds,
+        .rightTwoThirds,
+        .centered,
+        .maximize
+    ]
+
+    private static let legacyDefaultModeShortcuts: [WindowLayoutModeShortcuts] = [
+        WindowLayoutModeShortcuts(
+            mode: .leftHalf,
+            shortcuts: [HotKeyBinding(key: "Left", modifiers: ["Control", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .rightHalf,
+            shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Control", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .leftThird,
+            shortcuts: [HotKeyBinding(key: "Left", modifiers: ["Control", "Option"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .rightThird,
+            shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Control", "Option"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .leftTwoThirds,
+            shortcuts: [HotKeyBinding(key: "Left", modifiers: ["Option", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .rightTwoThirds,
+            shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Option", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .centered,
+            shortcuts: [HotKeyBinding(key: "0", modifiers: ["Control", "Option"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .maximize,
+            shortcuts: [HotKeyBinding(key: "0", modifiers: ["Control", "Command"])]
+        )
+    ]
 }
 
 /// 描述 `WindowLayoutCalculator` 在窗口布局领域中可取的状态、选项或错误。
@@ -383,6 +471,10 @@ public enum WindowLayoutCalculator {
             return leadingFrame(widthFraction: 0.5, in: visibleFrame)
         case .rightHalf:
             return trailingFrame(widthFraction: 0.5, in: visibleFrame)
+        case .topHalf:
+            return upperFrame(heightFraction: 0.5, in: visibleFrame)
+        case .bottomHalf:
+            return lowerFrame(heightFraction: 0.5, in: visibleFrame)
         case .leftThird:
             return leadingFrame(widthFraction: 1.0 / 3.0, in: visibleFrame)
         case .rightThird:
@@ -412,6 +504,20 @@ public enum WindowLayoutCalculator {
         return frame
     }
 
+    /// 计算并返回贴近可用区域上边缘的高度分区。
+    private static func upperFrame(heightFraction: CGFloat, in visibleFrame: CGRect) -> CGRect {
+        var frame = lowerFrame(heightFraction: heightFraction, in: visibleFrame)
+        frame.origin.y = visibleFrame.maxY - frame.height
+        return frame
+    }
+
+    /// 计算并返回贴近可用区域下边缘的高度分区。
+    private static func lowerFrame(heightFraction: CGFloat, in visibleFrame: CGRect) -> CGRect {
+        var frame = visibleFrame
+        frame.size.height = floor(visibleFrame.height * heightFraction)
+        return frame
+    }
+
     /// 计算并返回 `centeredFrame` 对应的窗口布局领域数据或状态结果。
     private static func centeredFrame(in visibleFrame: CGRect) -> CGRect {
         let width = floor(visibleFrame.width * centeredScale)
@@ -422,6 +528,216 @@ public enum WindowLayoutCalculator {
             width: width,
             height: height
         )
+    }
+}
+
+/// 描述窗口布局重复执行时可查找的物理屏幕方向。
+public enum WindowLayoutDirection: Equatable, Sendable {
+    case left
+    case right
+    case up
+    case down
+}
+
+/// 使用纯几何数据描述一个可参与窗口布局的显示器。
+public struct WindowLayoutScreen: Equatable, Sendable {
+    public var id: String
+    public var frame: CGRect
+    public var visibleFrame: CGRect
+
+    public init(id: String, frame: CGRect, visibleFrame: CGRect) {
+        self.id = id
+        self.frame = frame
+        self.visibleFrame = visibleFrame
+    }
+}
+
+/// 描述布局请求解析出的最终显示器、模式和目标矩形。
+public struct WindowLayoutTarget: Equatable, Sendable {
+    public var screen: WindowLayoutScreen
+    public var mode: WindowLayoutMode
+    public var frame: CGRect
+
+    public init(screen: WindowLayoutScreen, mode: WindowLayoutMode, frame: CGRect) {
+        self.screen = screen
+        self.mode = mode
+        self.frame = frame
+    }
+}
+
+/// 根据上次成功布局和显示器物理位置解析重复方向动作。
+public enum WindowScreenNavigationPolicy {
+    public static func target(
+        requestedMode: WindowLayoutMode,
+        currentFrame: CGRect,
+        previousMode: WindowLayoutMode?,
+        previousTargetFrame: CGRect?,
+        currentScreen: WindowLayoutScreen,
+        screens: [WindowLayoutScreen],
+        allowsTraversal: Bool = true
+    ) -> WindowLayoutTarget {
+        let currentTarget = WindowLayoutCalculator.targetFrame(
+            for: requestedMode,
+            in: currentScreen.visibleFrame
+        )
+        guard
+            allowsTraversal,
+            previousMode == requestedMode,
+            let previousTargetFrame,
+            WindowFrameApplicationPolicy.isSatisfied(
+                actual: currentFrame,
+                target: previousTargetFrame
+            ),
+            let traversal = requestedMode.directionalTraversal,
+            let destinationScreen = adjacentScreen(
+                from: currentScreen,
+                direction: traversal.direction,
+                screens: screens
+            )
+        else {
+            return WindowLayoutTarget(
+                screen: currentScreen,
+                mode: requestedMode,
+                frame: currentTarget
+            )
+        }
+
+        return WindowLayoutTarget(
+            screen: destinationScreen,
+            mode: traversal.destinationMode,
+            frame: WindowLayoutCalculator.targetFrame(
+                for: traversal.destinationMode,
+                in: destinationScreen.visibleFrame
+            )
+        )
+    }
+
+    /// 查找指定物理方向上最接近当前显示器的候选显示器。
+    public static func adjacentScreen(
+        from currentScreen: WindowLayoutScreen,
+        direction: WindowLayoutDirection,
+        screens: [WindowLayoutScreen]
+    ) -> WindowLayoutScreen? {
+        screens
+            .filter { screen in
+                screen.id != currentScreen.id
+                    && isInDirection(screen.frame, from: currentScreen.frame, direction: direction)
+            }
+            .min { lhs, rhs in
+                isPreferred(
+                    lhs,
+                    over: rhs,
+                    from: currentScreen,
+                    direction: direction
+                )
+            }
+    }
+
+    private static func isInDirection(
+        _ candidate: CGRect,
+        from current: CGRect,
+        direction: WindowLayoutDirection
+    ) -> Bool {
+        switch direction {
+        case .left:
+            return candidate.midX < current.midX
+        case .right:
+            return candidate.midX > current.midX
+        case .up:
+            return candidate.midY > current.midY
+        case .down:
+            return candidate.midY < current.midY
+        }
+    }
+
+    private static func isPreferred(
+        _ lhs: WindowLayoutScreen,
+        over rhs: WindowLayoutScreen,
+        from current: WindowLayoutScreen,
+        direction: WindowLayoutDirection
+    ) -> Bool {
+        let lhsScore = score(for: lhs, from: current, direction: direction)
+        let rhsScore = score(for: rhs, from: current, direction: direction)
+        if lhsScore.overlapRank != rhsScore.overlapRank {
+            return lhsScore.overlapRank < rhsScore.overlapRank
+        }
+        if lhsScore.forwardGap != rhsScore.forwardGap {
+            return lhsScore.forwardGap < rhsScore.forwardGap
+        }
+        if lhsScore.orthogonalCenterDistance != rhsScore.orthogonalCenterDistance {
+            return lhsScore.orthogonalCenterDistance < rhsScore.orthogonalCenterDistance
+        }
+        return lhs.id < rhs.id
+    }
+
+    private static func score(
+        for candidate: WindowLayoutScreen,
+        from current: WindowLayoutScreen,
+        direction: WindowLayoutDirection
+    ) -> (overlapRank: Int, forwardGap: CGFloat, orthogonalCenterDistance: CGFloat) {
+        switch direction {
+        case .left:
+            return (
+                intervalGap(candidate.frame.minY...candidate.frame.maxY, current.frame.minY...current.frame.maxY) == 0 ? 0 : 1,
+                max(0, current.frame.minX - candidate.frame.maxX),
+                abs(candidate.frame.midY - current.frame.midY)
+            )
+        case .right:
+            return (
+                intervalGap(candidate.frame.minY...candidate.frame.maxY, current.frame.minY...current.frame.maxY) == 0 ? 0 : 1,
+                max(0, candidate.frame.minX - current.frame.maxX),
+                abs(candidate.frame.midY - current.frame.midY)
+            )
+        case .up:
+            return (
+                intervalGap(candidate.frame.minX...candidate.frame.maxX, current.frame.minX...current.frame.maxX) == 0 ? 0 : 1,
+                max(0, candidate.frame.minY - current.frame.maxY),
+                abs(candidate.frame.midX - current.frame.midX)
+            )
+        case .down:
+            return (
+                intervalGap(candidate.frame.minX...candidate.frame.maxX, current.frame.minX...current.frame.maxX) == 0 ? 0 : 1,
+                max(0, current.frame.minY - candidate.frame.maxY),
+                abs(candidate.frame.midX - current.frame.midX)
+            )
+        }
+    }
+
+    private static func intervalGap(
+        _ lhs: ClosedRange<CGFloat>,
+        _ rhs: ClosedRange<CGFloat>
+    ) -> CGFloat {
+        if lhs.overlaps(rhs) {
+            return 0
+        }
+        return lhs.upperBound < rhs.lowerBound
+            ? rhs.lowerBound - lhs.upperBound
+            : lhs.lowerBound - rhs.upperBound
+    }
+}
+
+private extension WindowLayoutMode {
+    var directionalTraversal: (direction: WindowLayoutDirection, destinationMode: WindowLayoutMode)? {
+        switch self {
+        case .leftHalf:
+            return (.left, .rightHalf)
+        case .rightHalf:
+            return (.right, .leftHalf)
+        case .topHalf:
+            return (.up, .bottomHalf)
+        case .bottomHalf:
+            return (.down, .topHalf)
+        case .leftThird:
+            return (.left, .rightThird)
+        case .rightThird:
+            return (.right, .leftThird)
+        case .leftTwoThirds:
+            return (.left, .rightTwoThirds)
+        case .rightTwoThirds:
+            return (.right, .leftTwoThirds)
+        case .centered, .maximize:
+            return nil
+        }
     }
 }
 
@@ -446,10 +762,10 @@ public enum WindowFrameMutation: Equatable, Sendable {
 
 /// 定义窗口布局写入后的几何校验、写入顺序与有限重试策略。
 public enum WindowFrameApplicationPolicy {
-    public static let maximumWriteAttempts = 3
-    public static let verificationInterval: TimeInterval = 0.016
-    public static let verificationTimeout: TimeInterval = 0.12
+    public static let maximumWriteAttempts = 5
+    public static let verificationTimeout: TimeInterval = 0.5
     public static let frameTolerance: CGFloat = 1
+    private static let verificationDelays: [TimeInterval] = [0.016, 0.025, 0.05, 0.1, 0.15]
 
     /// 分别判断实际位置和尺寸是否达到目标；无法读取的属性保持为待处理状态。
     public static func mismatchedComponents(
@@ -489,6 +805,7 @@ public enum WindowFrameApplicationPolicy {
         current: CGRect,
         target: CGRect,
         components: WindowFrameComponents,
+        isInitialCrossDisplayWrite: Bool = false,
         tolerance: CGFloat = frameTolerance
     ) -> [WindowFrameMutation] {
         guard isValid(frame: target), tolerance >= 0, !components.isEmpty else {
@@ -499,6 +816,9 @@ public enum WindowFrameApplicationPolicy {
         }
         if components == .size {
             return [.size(target.size)]
+        }
+        if isInitialCrossDisplayWrite {
+            return [.size(target.size), .position(target.origin), .size(target.size)]
         }
         guard isValid(frame: current) else {
             return [.position(target.origin), .size(target.size)]
@@ -543,6 +863,11 @@ public enum WindowFrameApplicationPolicy {
     /// 仅在写入轮数和总时限均未耗尽时允许下一轮写入。
     public static func shouldWrite(afterAttempt attempt: Int, elapsed: TimeInterval) -> Bool {
         attempt < maximumWriteAttempts && elapsed < verificationTimeout
+    }
+
+    /// 根据已经完成的写入轮次返回下一次回读前的退避间隔。
+    public static func verificationDelay(afterAttempt attempt: Int) -> TimeInterval {
+        verificationDelays[min(max(0, attempt), verificationDelays.count - 1)]
     }
 
     private static func isValid(frame: CGRect) -> Bool {

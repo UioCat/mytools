@@ -3,7 +3,7 @@ import XCTest
 @testable import MacToolsCore
 
 final class SuperPanelLayoutTests: XCTestCase {
-    private let eightLayoutButtons = (0..<8).map {
+    private let tenLayoutButtons = (0..<10).map {
         WindowLayoutButton(id: "layout.\($0)", title: "布局 \($0)", modes: [.maximize])
     }
 
@@ -66,18 +66,18 @@ final class SuperPanelLayoutTests: XCTestCase {
         )
     }
 
-    func testStandardLayoutPanelExpandsToFitEightButtons() {
+    func testStandardLayoutPanelExpandsToFitTenButtons() {
         let content = SuperPanelContent.windowLayoutOnly(
-            windowLayoutButtons: eightLayoutButtons
+            windowLayoutButtons: tenLayoutButtons
         )
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 308)
+            CGSize(width: 320, height: 356)
         )
     }
 
-    func testSelectedItemPanelExpandsToFitEightLayoutButtons() {
+    func testSelectedItemPanelExpandsToFitTenLayoutButtons() {
         let item = ClipboardItem(
             id: UUID(),
             kind: .folder,
@@ -96,16 +96,16 @@ final class SuperPanelLayoutTests: XCTestCase {
         )
         let content = SuperPanelContent.fileSystem(
             item: item,
-            windowLayoutButtons: eightLayoutButtons
+            windowLayoutButtons: tenLayoutButtons
         )
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 412)
+            CGSize(width: 320, height: 460)
         )
     }
 
-    func testFinderDirectoryPanelExpandsToFitActionsAndEightLayoutButtons() {
+    func testFinderDirectoryPanelExpandsToFitActionsAndTenLayoutButtons() {
         let item = ClipboardItem(
             id: UUID(),
             kind: .folder,
@@ -124,13 +124,13 @@ final class SuperPanelLayoutTests: XCTestCase {
         )
         let content = SuperPanelContent.fileSystem(
             item: item,
-            windowLayoutButtons: eightLayoutButtons,
+            windowLayoutButtons: tenLayoutButtons,
             presentation: .finderCurrentDirectory
         )
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 526)
+            CGSize(width: 320, height: 574)
         )
     }
 
@@ -154,13 +154,13 @@ final class SuperPanelLayoutTests: XCTestCase {
         )
         let content = SuperPanelContent.fileSystem(
             item: item,
-            windowLayoutButtons: eightLayoutButtons,
+            windowLayoutButtons: tenLayoutButtons,
             presentation: .finderCurrentDirectory
         )
 
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 543)
+            CGSize(width: 320, height: 591)
         )
     }
 
@@ -171,7 +171,7 @@ final class SuperPanelLayoutTests: XCTestCase {
         XCTAssertLessThan(widePath.count, 30)
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 543)
+            CGSize(width: 320, height: 591)
         )
     }
 
@@ -182,7 +182,7 @@ final class SuperPanelLayoutTests: XCTestCase {
         XCTAssertGreaterThan(narrowPath.count, 30)
         XCTAssertEqual(
             SuperPanelLayout.panelSize(for: content),
-            CGSize(width: 320, height: 526)
+            CGSize(width: 320, height: 574)
         )
     }
 
@@ -246,7 +246,7 @@ final class SuperPanelLayoutTests: XCTestCase {
         )
         return SuperPanelContent.fileSystem(
             item: item,
-            windowLayoutButtons: eightLayoutButtons,
+            windowLayoutButtons: tenLayoutButtons,
             presentation: .finderCurrentDirectory
         )
     }
