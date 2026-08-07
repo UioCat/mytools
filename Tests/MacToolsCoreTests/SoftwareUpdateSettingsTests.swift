@@ -34,6 +34,8 @@ final class SoftwareUpdateSettingsTests: XCTestCase {
         XCTAssertTrue(source.contains("title: \"自动检查更新\""))
         XCTAssertTrue(source.contains("title: \"自动下载并安装更新\""))
         XCTAssertTrue(source.contains("Toggle(title, isOn: isOn)"))
+        XCTAssertTrue(source.contains(".controlSize(.small)"))
+        XCTAssertTrue(source.contains(".frame(minHeight: 50)"))
         XCTAssertTrue(source.contains(".disabled(!state.automaticallyChecksForUpdates)"))
         XCTAssertFalse(source.contains("import Sparkle"))
     }

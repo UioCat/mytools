@@ -117,6 +117,19 @@ final class SettingsNavigationTests: XCTestCase {
         )
     }
 
+    func testSettingsActionRowUsesNeutralCompactCapsule() throws {
+        let source = try sourceFile("Sources/MacToolsCore/UI/Settings/SettingsComponents.swift")
+        let actionRow = try XCTUnwrap(
+            source.components(separatedBy: "struct SettingsActionRow: View").last?
+                .components(separatedBy: "struct SettingsRow: View").first
+        )
+
+        XCTAssertTrue(actionRow.contains("MacToolsGlassTheme.textSecondary"))
+        XCTAssertTrue(actionRow.contains("MacToolsGlassTheme.fieldFill"))
+        XCTAssertTrue(actionRow.contains(".frame(height: 26)"))
+        XCTAssertFalse(actionRow.contains("MacToolsGlassTheme.activeBlue"))
+    }
+
     func testRuntimeRetainsSelectionForCurrentAppSessionAndDefaultsToGeneral() throws {
         let source = try sourceFile("Sources/MacTools/Application/RuntimeViews.swift")
 

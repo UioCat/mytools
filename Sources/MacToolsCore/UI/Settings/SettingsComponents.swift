@@ -196,8 +196,15 @@ struct SettingsActionRow: View {
                     Text(actionTitle)
                     Image(systemName: systemImage)
                 }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(MacToolsGlassTheme.activeBlue)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .background(MacToolsGlassTheme.fieldFill, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(MacToolsGlassTheme.border.opacity(0.72), lineWidth: 0.75)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)

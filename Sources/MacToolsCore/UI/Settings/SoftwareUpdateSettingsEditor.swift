@@ -138,10 +138,11 @@ struct SoftwareUpdateSettingsEditor: View {
             Toggle(title, isOn: isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .accessibilityLabel(Text(title))
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(minHeight: 58)
+        .padding(.vertical, 8)
+        .frame(minHeight: 50)
     }
 }

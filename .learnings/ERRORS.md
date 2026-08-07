@@ -32,6 +32,39 @@ possible credential literal detected
 
 ---
 
+## [ERR-20260807-014] Markdown backticks triggered shell command substitution
+
+**Logged**: 2026-08-07T15:36:49+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A documentation search passed Markdown backticks inside a double-quoted zsh argument, so zsh attempted to execute the enclosed Chinese text.
+
+### Error
+```
+zsh:1: command not found: 通用
+```
+
+### Context
+- The command used `rg` to locate a manual-verification line containing Markdown inline code.
+- Backticks inside the double-quoted pattern were interpreted as command substitution before `rg` ran.
+- The search still returned the target lines and did not modify repository or runtime state.
+
+### Suggested Fix
+Wrap literal Markdown search patterns in single quotes, or search for a backtick-free substring.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/manual-verification.md
+
+### Resolution
+- **Resolved**: 2026-08-07T15:36:49+08:00
+- **Notes**: Switched subsequent Markdown searches to single-quoted patterns.
+
+---
+
 ## [ERR-20260807-001] crates.io clipboard-master source download returned 403
 
 **Logged**: 2026-08-07T02:06:49Z
@@ -2277,5 +2310,74 @@ Invoke the installed launcher explicitly through `bash` instead of changing perm
 ### Resolution
 - **Resolved**: 2026-08-07T14:53:50+08:00
 - **Notes**: Retried the launcher through `bash`, preserving the installed bundle unchanged.
+
+---
+
+## [ERR-20260807-016] packaged UI verification launch exited transiently
+
+**Logged**: 2026-08-07T15:46:33+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The first packaged UI-verification launch returned success but the MacTools process was no longer running when the window was inspected.
+
+### Error
+```
+scripts/rebuild_and_run_app.sh: Relaunched MacTools
+pgrep: no MacTools process
+```
+
+### Context
+- The package build and code-sign verification completed successfully before launch.
+- Core Graphics found no MacTools window because the process had already exited.
+- Running the same packaged executable directly kept it alive and opened the settings window.
+- A later compact verification rebuild launched normally through the script, so the exit did not reproduce.
+
+### Suggested Fix
+When UI verification finds no packaged window, confirm the process state and run the packaged executable directly to capture startup logs before changing application code.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: scripts/rebuild_and_run_app.sh
+
+### Resolution
+- **Resolved**: 2026-08-07T15:46:33+08:00
+- **Notes**: Continued with the directly launched packaged executable; subsequent scripted launch also remained active.
+
+---
+
+## [ERR-20260807-017] cached patches used a stale shared-worktree HEAD
+
+**Logged**: 2026-08-07T15:51:04+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Two mixed-file cached patches failed because a concurrent task advanced the shared branch after this task recorded its baseline.
+
+### Error
+```
+error: patch failed: docs/manual-verification.md:95
+error: patch failed: .learnings/ERRORS.md:30
+```
+
+### Context
+- This task started from `75b1e54`, while a concurrent task later committed and pushed `dba52f9` on the same shared `main` worktree.
+- The failed patches were generated against the earlier index and included context changed by the new commit.
+- The failure did not alter either mixed file in the index; independently owned task files remained correctly staged.
+
+### Suggested Fix
+Immediately re-read `HEAD`, status, and the index before partial staging in a shared worktree, then regenerate zero-context cached patches against the current index.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/manual-verification.md, .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-08-07T15:51:04+08:00
+- **Notes**: Regenerated index-only patches against `dba52f9` and verified the cached diff contains only this task's hunks.
 
 ---
