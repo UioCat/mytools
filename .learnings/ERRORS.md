@@ -32,6 +32,140 @@ possible credential literal detected
 
 ---
 
+## [ERR-20260807-001] crates.io clipboard-master source download returned 403
+
+**Logged**: 2026-08-07T02:06:49Z
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The direct crates.io download endpoint rejected a read-only source inspection request for `clipboard-master` 3.1.3.
+
+### Error
+```
+curl: (56) The requested URL returned error: 403
+```
+
+### Context
+- The command attempted to stream the published crate archive into an isolated `/tmp` research directory.
+- No repository source or runtime data was changed.
+- The investigation already had the consuming PasteBar source and can use the crate's official repository or Cargo cache instead.
+
+### Suggested Fix
+Prefer the crate's official source repository or `cargo fetch`/the local Cargo registry cache when crates.io blocks direct archive downloads.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-08-07T02:06:49Z
+- **Notes**: Stopped retrying the rejected endpoint and continued with primary repository sources.
+
+---
+
+## [ERR-20260807-002] Cargo CLI unavailable for dependency source inspection
+
+**Logged**: 2026-08-07T02:07:30Z
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The fallback attempt to inspect `clipboard-master` through Cargo could not run because this workspace shell has no `cargo` binary.
+
+### Error
+```
+zsh:1: command not found: cargo
+```
+
+### Context
+- The command was read-only and targeted an isolated research directory.
+- The task does not otherwise require Rust tooling.
+- Primary macOS evidence is already available from AppKit, Maccy, Clipy, and CopyQ sources.
+
+### Suggested Fix
+Check tool availability before using language-specific package clients, and omit optional dependency inspection when independent primary evidence is sufficient.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+- See Also: ERR-20260807-001
+
+### Resolution
+- **Resolved**: 2026-08-07T02:07:30Z
+- **Notes**: Stopped the optional dependency-inspection branch and continued with already cloned primary sources.
+
+---
+
+## [ERR-20260807-003] Web opener rejected crates.io API URL
+
+**Logged**: 2026-08-07T02:08:07Z
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The web opener refused the direct crates.io metadata API URL as unsafe during optional dependency research.
+
+### Error
+```
+URL https://crates.io/api/v1/crates/clipboard-master/3.1.3 is not safe to open (non-retryable error)
+```
+
+### Context
+- This was a fallback after the archive endpoint returned 403 and Cargo was unavailable.
+- The rejected call made no external or local changes.
+- Three independently reviewable macOS clipboard implementations already establish the platform pattern.
+
+### Suggested Fix
+Stop after one alternate retrieval path fails when the evidence is optional; rely on accessible official repositories and clearly mark unverified transitive behavior.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: none
+- See Also: ERR-20260807-001, ERR-20260807-002
+
+### Resolution
+- **Resolved**: 2026-08-07T02:08:07Z
+- **Notes**: Abandoned the optional crate-source branch and excluded it from strong implementation claims.
+
+---
+
+## [ERR-20260807-004] Interactive partial staging editor was unavailable
+
+**Logged**: 2026-08-07T02:12:02Z
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+`git add -p` could not edit a mixed hunk because the PTY reported a dumb terminal and no editor was configured.
+
+### Error
+```
+error: Terminal is dumb, but EDITOR unset
+error: could not edit '.git/addp-hunk-edit.diff'
+```
+
+### Context
+- Partial staging was intended to isolate new research-error entries from pre-existing user changes in the same file.
+- The edit was declined after the failure; no content was staged.
+
+### Suggested Fix
+Use an explicit, reviewable `git apply --cached` patch for mixed hunks instead of relying on an interactive editor in this PTY.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-08-07T02:12:02Z
+- **Notes**: Abandoned the interactive staging path without staging user changes.
+
+---
+
 ## [ERR-20260804-001] image forwarding callback passed the array index as detail
 
 **Logged**: 2026-08-04T15:53:53+08:00
