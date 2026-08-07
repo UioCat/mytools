@@ -36,4 +36,22 @@ final class ApplicationLifecycleSourceTests: XCTestCase {
         XCTAssertTrue(delegateSource.contains("--ui-verification-check-for-updates"))
         XCTAssertTrue(environmentSource.contains("checkForUpdatesForUIVerification"))
     }
+
+    func testDarkUIVerificationAppearanceSurvivesRuntimeSettingsRefreshes() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let delegateSource = try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("Sources/MacTools/Application/AppDelegate.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(delegateSource.contains("let verificationAppearanceMode: AppAppearanceMode?"))
+        XCTAssertEqual(
+            delegateSource.components(separatedBy: "verificationAppearanceMode ??").count - 1,
+            2
+        )
+    }
 }

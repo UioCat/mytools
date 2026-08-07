@@ -28,6 +28,9 @@ final class SoftwareUpdateSettingsTests: XCTestCase {
         )
 
         XCTAssertTrue(source.contains("Button(action: checkForUpdates)"))
+        XCTAssertTrue(source.contains("Text(\"MacTools \\(state.version)\")"))
+        XCTAssertTrue(source.contains("Text(\"构建 \\(state.buildNumber) · 当前已安装版本\")"))
+        XCTAssertTrue(source.contains("SettingsSectionDivider()"))
         XCTAssertTrue(source.contains("title: \"自动检查更新\""))
         XCTAssertTrue(source.contains("title: \"自动下载并安装更新\""))
         XCTAssertTrue(source.contains("Toggle(title, isOn: isOn)"))

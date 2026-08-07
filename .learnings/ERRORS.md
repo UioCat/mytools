@@ -2246,3 +2246,36 @@ Run the apparent crash-point test alone, then rerun the complete suite to distin
 - **Notes**: The apparent crash-point test passed alone, and a fresh complete run passed all 475 tests; the signal 11 was not reproducible.
 
 ---
+
+## [ERR-20260807-011] visual companion launcher lacked execute permission
+
+**Logged**: 2026-08-07T14:53:30+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The visual brainstorming companion did not start when its shell script was invoked directly because the installed script was not executable.
+
+### Error
+```
+zsh: permission denied: .../skills/brainstorming/scripts/start-server.sh
+```
+
+### Context
+- The launcher came from the installed `superpowers:brainstorming` skill bundle.
+- The command attempted to start the local browser companion with the repository as its project directory.
+- No project files or runtime state were changed by the rejected launch.
+
+### Suggested Fix
+Invoke the installed launcher explicitly through `bash` instead of changing permissions in the plugin cache.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-08-07T14:53:50+08:00
+- **Notes**: Retried the launcher through `bash`, preserving the installed bundle unchanged.
+
+---

@@ -103,12 +103,18 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(SettingsPane.sync.sections, [.sync])
     }
 
-    func testSettingsSectionsUseFlatGroupedContentInsteadOfCards() throws {
-        let source = try sourceFile("Sources/MacToolsCore/UI/Settings/SettingsComponents.swift")
+    func testGeneralSettingsUsesGroupedCardsWithoutChangingOtherPanes() throws {
+        let components = try sourceFile("Sources/MacToolsCore/UI/Settings/SettingsComponents.swift")
+        let settingsView = try sourceFile("Sources/MacToolsCore/UI/Settings/SettingsView.swift")
 
-        XCTAssertTrue(source.contains(".liquidGlassGroup(spacing: 8)"))
-        XCTAssertFalse(source.contains("SettingsContentSurfaceModifier"))
-        XCTAssertFalse(source.contains("controlBackgroundColor"))
+        XCTAssertTrue(components.contains("enum SettingsSectionPresentation"))
+        XCTAssertTrue(components.contains("case groupedCard"))
+        XCTAssertTrue(components.contains(".liquidGlassModule("))
+        XCTAssertTrue(components.contains(".liquidGlassGroup(spacing: 8)"))
+        XCTAssertEqual(
+            settingsView.components(separatedBy: "presentation: .groupedCard").count - 1,
+            SettingsPane.general.sections.count
+        )
     }
 
     func testRuntimeRetainsSelectionForCurrentAppSessionAndDefaultsToGeneral() throws {

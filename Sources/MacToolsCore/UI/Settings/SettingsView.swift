@@ -200,16 +200,27 @@ public struct SettingsView: View {
     }
 
     private var shortcutsSection: some View {
-        SettingsSection(title: "快捷键", iconName: "keyboard") {
+        SettingsSection(
+            title: "快捷键",
+            iconName: "keyboard",
+            presentation: .groupedCard
+        ) {
             SettingsRow(title: "设置页", value: settings.mainPanelShortcut.displayValue)
+            SettingsSectionDivider()
             SettingsRow(title: "剪贴板", value: settings.clipboardShortcut.displayValue)
+            SettingsSectionDivider()
             SettingsRow(title: "翻译", value: settings.reservedTool2Shortcut.displayValue)
+            SettingsSectionDivider()
             SettingsRow(title: "截图与录屏", value: settings.reservedTool3Shortcut.displayValue)
         }
     }
 
     private var softwareUpdateSection: some View {
-        SettingsSection(title: "软件更新", iconName: "arrow.triangle.2.circlepath") {
+        SettingsSection(
+            title: "软件更新",
+            iconName: "arrow.triangle.2.circlepath",
+            presentation: .groupedCard
+        ) {
             SoftwareUpdateSettingsEditor(
                 state: softwareUpdateState,
                 checkForUpdates: checkForUpdates,
@@ -335,7 +346,11 @@ public struct SettingsView: View {
     }
 
     private var systemSection: some View {
-        SettingsSection(title: "系统", iconName: "gearshape") {
+        SettingsSection(
+            title: "系统",
+            iconName: "gearshape",
+            presentation: .groupedCard
+        ) {
             AppearanceSettingsEditor(
                 currentMode: settings.appearanceMode,
                 selectedMode: $appearanceMode,
@@ -343,20 +358,15 @@ public struct SettingsView: View {
                 saveAppearanceMode: saveAppearanceMode
             )
 
-            Divider()
-                .overlay(MacToolsGlassTheme.divider)
-                .opacity(0.9)
+            SettingsSectionDivider()
 
-            Button(action: openSystemSettings) {
-                Label("打开系统设置", systemImage: "arrow.up.forward.app")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .frame(minHeight: MacToolsControlMetrics.settingsRowButtonMinimumHeight)
-                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .foregroundStyle(MacToolsGlassTheme.textPrimary)
-            .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: false)
+            SettingsActionRow(
+                title: "系统设置",
+                detail: "管理 macOS 隐私与系统选项",
+                actionTitle: "打开",
+                systemImage: "arrow.up.forward",
+                action: openSystemSettings
+            )
         }
     }
 }

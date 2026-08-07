@@ -47,37 +47,9 @@ struct SoftwareUpdateSettingsEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SettingsRow(title: "当前版本", value: state.versionDescription)
+            updateSummaryRow
 
-            Divider()
-                .overlay(MacToolsGlassTheme.divider)
-                .opacity(0.9)
-
-            Button(action: checkForUpdates) {
-                HStack(spacing: 10) {
-                    Label("检查更新…", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 13, weight: .medium))
-
-                    Spacer(minLength: 10)
-
-                    if !state.canCheckForUpdates {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .frame(minHeight: MacToolsControlMetrics.settingsRowButtonMinimumHeight)
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .foregroundStyle(MacToolsGlassTheme.textPrimary)
-            .liquidGlassButtonStyle(cornerRadius: 14, showsIdleSurface: false)
-            .disabled(!state.canCheckForUpdates)
-
-            Divider()
-                .overlay(MacToolsGlassTheme.divider)
-                .opacity(0.9)
+            SettingsSectionDivider()
 
             updateToggleRow(
                 title: "自动检查更新",
@@ -88,9 +60,7 @@ struct SoftwareUpdateSettingsEditor: View {
                 )
             )
 
-            Divider()
-                .overlay(MacToolsGlassTheme.divider)
-                .opacity(0.9)
+            SettingsSectionDivider()
 
             updateToggleRow(
                 title: "自动下载并安装更新",
@@ -102,6 +72,49 @@ struct SoftwareUpdateSettingsEditor: View {
             )
             .disabled(!state.automaticallyChecksForUpdates)
         }
+    }
+
+    private var updateSummaryRow: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("MacTools \(state.version)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                Text("构建 \(state.buildNumber) · 当前已安装版本")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+            }
+
+            Spacer(minLength: 16)
+
+            Button(action: checkForUpdates) {
+                HStack(spacing: 6) {
+                    if !state.canCheckForUpdates {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
+                    Text("检查更新…")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 34)
+                .contentShape(RoundedRectangle(
+                    cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
+                    style: .continuous
+                ))
+            }
+            .foregroundStyle(MacToolsGlassTheme.textPrimary)
+            .liquidGlassButtonStyle(
+                cornerRadius: LiquidGlassCornerGeometry.smallControlRadius,
+                minimumSize: CGSize(width: 112, height: 34)
+            )
+            .disabled(!state.canCheckForUpdates)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(minHeight: 60)
     }
 
     private func updateToggleRow(
@@ -127,8 +140,8 @@ struct SoftwareUpdateSettingsEditor: View {
                 .toggleStyle(.switch)
                 .accessibilityLabel(Text(title))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(minHeight: MacToolsControlMetrics.settingsRowButtonMinimumHeight)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(minHeight: 58)
     }
 }

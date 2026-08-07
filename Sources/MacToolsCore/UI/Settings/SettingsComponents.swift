@@ -12,36 +12,59 @@ struct AppearanceSettingsEditor: View {
     let saveAppearanceMode: (AppAppearanceMode) throws -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 10) {
-                Text("外观")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(MacToolsGlassTheme.textPrimary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 20) {
+                appearanceLabel
 
-                Spacer(minLength: 10)
+                Spacer(minLength: 20)
 
-                if let saveMessage {
-                    Text(saveMessage)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(MacToolsGlassTheme.textSecondary)
-                        .lineLimit(1)
-                }
+                appearancePicker
+                    .frame(width: 300)
             }
 
-            Picker("外观", selection: selectionBinding) {
-                ForEach(AppAppearanceMode.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
+            VStack(alignment: .leading, spacing: 10) {
+                appearanceLabel
+                appearancePicker
+                    .frame(maxWidth: .infinity)
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .accessibilityLabel(Text("外观模式"))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(minHeight: 60)
         .onChange(of: currentMode) { _, mode in
             selectedMode = mode
         }
+    }
+
+    private var appearanceLabel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("外观")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+            HStack(spacing: 5) {
+                Text("选择 MacTools 的显示模式")
+
+                if let saveMessage {
+                    Text("·")
+                    Text(saveMessage)
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(MacToolsGlassTheme.textTertiary)
+            .lineLimit(1)
+        }
+    }
+
+    private var appearancePicker: some View {
+        Picker("外观", selection: selectionBinding) {
+            ForEach(AppAppearanceMode.allCases, id: \.self) { mode in
+                Text(mode.displayName).tag(mode)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .accessibilityLabel(Text("外观模式"))
     }
 
     private var selectionBinding: Binding<AppAppearanceMode> {
@@ -60,11 +83,31 @@ struct AppearanceSettingsEditor: View {
         )
     }
 }
+
+/// 描述设置区块内容的表面层级；通用页使用卡片，其余页面保留现有平面结构。
+enum SettingsSectionPresentation: Sendable {
+    case flat
+    case groupedCard
+}
+
 /// 封装 `SettingsSection` 在 SwiftUI 展示层中的值语义和相关操作。
 struct SettingsSection<Content: View>: View {
     let title: String
     let iconName: String
-    @ViewBuilder let content: Content
+    let presentation: SettingsSectionPresentation
+    let content: Content
+
+    init(
+        title: String,
+        iconName: String,
+        presentation: SettingsSectionPresentation = .flat,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.iconName = iconName
+        self.presentation = presentation
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -82,12 +125,96 @@ struct SettingsSection<Content: View>: View {
             }
             .padding(.horizontal, 4)
 
-            VStack(spacing: 0) {
-                content
-            }
-            .liquidGlassGroup(spacing: 8)
+            sectionContent
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var sectionContent: some View {
+        switch presentation {
+        case .flat:
+            stackedContent
+                .liquidGlassGroup(spacing: 8)
+        case .groupedCard:
+            stackedContent
+                .liquidGlassModule(
+                    cornerRadius: LiquidGlassCornerGeometry.controlRadius
+                )
+                .overlay {
+                    RoundedRectangle(
+                        cornerRadius: LiquidGlassCornerGeometry.controlRadius,
+                        style: .continuous
+                    )
+                    .stroke(MacToolsGlassTheme.border.opacity(0.46), lineWidth: 0.75)
+                }
+                .liquidGlassGroup(spacing: 8)
+        }
+    }
+
+    private var stackedContent: some View {
+        VStack(spacing: 0) {
+            content
+        }
+    }
+}
+
+/// 在设置卡片内部绘制与行内容对齐的轻量分隔线。
+struct SettingsSectionDivider: View {
+    var body: some View {
+        Divider()
+            .overlay(MacToolsGlassTheme.divider)
+            .opacity(0.8)
+            .padding(.leading, 16)
+    }
+}
+
+/// 展示带说明文字和右侧动作提示的整行设置入口。
+struct SettingsActionRow: View {
+    let title: String
+    let detail: String
+    let actionTitle: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
+
+                    Text(detail)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(MacToolsGlassTheme.textTertiary)
+                }
+
+                Spacer(minLength: 16)
+
+                HStack(spacing: 5) {
+                    Text(actionTitle)
+                    Image(systemName: systemImage)
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(MacToolsGlassTheme.activeBlue)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: MacToolsControlMetrics.settingsRowButtonMinimumHeight,
+                alignment: .leading
+            )
+            .contentShape(RoundedRectangle(
+                cornerRadius: LiquidGlassCornerGeometry.controlRadius,
+                style: .continuous
+            ))
+        }
+        .liquidGlassButtonStyle(
+            cornerRadius: LiquidGlassCornerGeometry.controlRadius,
+            showsIdleSurface: false
+        )
     }
 }
 

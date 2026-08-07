@@ -14,14 +14,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 按外观、菜单栏、环境服务和全局快捷键的顺序完成应用启动装配。
     func applicationDidFinishLaunching(_ notification: Notification) {
         let arguments = ProcessInfo.processInfo.arguments
-        let usesDarkVerificationAppearance = arguments.contains("--ui-verification-dark")
+        let verificationAppearanceMode: AppAppearanceMode? = arguments.contains("--ui-verification-dark")
+            ? .dark
+            : nil
         configureAppearance(
-            mode: usesDarkVerificationAppearance ? .dark : environment.settings.appearanceMode
+            mode: verificationAppearanceMode ?? environment.settings.appearanceMode
         )
         menuBarController.install()
         environment.onSettingsChanged = { [weak self] settings in
             self?.configureHotKeys(settings: settings)
-            self?.configureAppearance(mode: settings.appearanceMode)
+            self?.configureAppearance(
+                mode: verificationAppearanceMode ?? settings.appearanceMode
+            )
         }
         environment.start()
         configureHotKeys(settings: environment.settings)
