@@ -30,6 +30,7 @@ final class AppEnvironment {
     var syncFolderURL: URL?
     private let defaultClipboardCacheDirectory: URL
     private let pasteActionService: PasteActionService
+    private let softwareUpdateService = SystemUpdateService()
     private let permissionService = PermissionService()
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
     private let finderCurrentFolderResolver: any FinderCurrentFolderResolving = SystemFinderCurrentFolderResolver()
@@ -116,6 +117,7 @@ final class AppEnvironment {
             settings: settings,
             syncModel: syncModel,
             translationCredentialModel: translationCredentialModel,
+            softwareUpdateService: softwareUpdateService,
             speechController: translationSpeechController,
             permissionService: permissionService,
             defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
@@ -389,6 +391,11 @@ final class AppEnvironment {
         syncModel.remoteSettings = previewSettings
         openSettings()
         mainPanel.resize(to: NSSize(width: 980, height: 900))
+    }
+
+    /// 供发布验收从较低构建号启动一次真实的 Sparkle 更新检查。
+    func checkForUpdatesForUIVerification() {
+        softwareUpdateService.checkForUpdates()
     }
 
     /// 将截图录屏请求交给会话协调器；协调器负责权限和重复会话防护。

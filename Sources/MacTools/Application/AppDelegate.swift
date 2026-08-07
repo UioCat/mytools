@@ -34,6 +34,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.environment.openSettingsForUIVerification()
             }
         }
+        if arguments.contains("--ui-verification-check-for-updates") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.environment.checkForUpdatesForUIVerification()
+            }
+        }
         environment.logger.info("application did finish launching")
     }
 

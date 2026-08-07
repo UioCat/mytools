@@ -90,7 +90,10 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testEachPaneOwnsOnlyItsRelatedSections() {
-        XCTAssertEqual(SettingsPane.general.sections, [.system, .shortcuts])
+        XCTAssertEqual(
+            SettingsPane.general.sections,
+            [.system, .softwareUpdate, .shortcuts]
+        )
         XCTAssertEqual(SettingsPane.clipboard.sections, [.clipboard])
         XCTAssertEqual(SettingsPane.translation.sections, [.translation])
         XCTAssertEqual(

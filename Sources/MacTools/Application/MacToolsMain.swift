@@ -10,12 +10,14 @@ final class MacToolsMain {
     /// 创建应用运行环境并启动 AppKit 主事件循环。
     static func main() {
         let app = NSApplication.shared
-        // `run()` 在当前调用栈内持续运行，因此局部变量会在整个事件循环期间持有代理。
         let delegate = AppDelegate()
 
         app.delegate = delegate
         // 菜单栏辅助应用不显示 Dock 图标，也不主动接管前台应用焦点。
         app.setActivationPolicy(.accessory)
-        app.run()
+        // `NSApplication.delegate` 不负责强持有代理；显式延长生命周期，避免发布优化提前释放。
+        withExtendedLifetime(delegate) {
+            app.run()
+        }
     }
 }

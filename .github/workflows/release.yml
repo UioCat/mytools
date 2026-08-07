@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Build ad-hoc signed app
         env:
@@ -31,6 +33,12 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/MacTools.app/Contents/Info.plist)" = "${GITHUB_REF_NAME#v}"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' build/MacTools.app/Contents/Info.plist)" = "AppIcon.icns"
           test -f build/MacTools.app/Contents/Resources/AppIcon.icns
+          test -d build/MacTools.app/Contents/Frameworks/Sparkle.framework
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' build/MacTools.app/Contents/Info.plist)" = "true"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUAutomaticallyUpdate' build/MacTools.app/Contents/Info.plist)" = "false"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SURequireSignedFeed' build/MacTools.app/Contents/Info.plist)" = "true"
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' build/MacTools.app/Contents/Info.plist)"
+          otool -L build/MacTools.app/Contents/MacOS/MacTools | grep -q '@rpath/Sparkle.framework/'
           test "$(lipo -archs build/MacTools.app/Contents/MacOS/MacTools)" = "arm64"
 
       - name: Create and verify DMG
@@ -59,54 +67,141 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/MacTools.app"
           codesign -dv --verbose=4 "$MOUNT_DIR/MacTools.app" 2>&1 | grep -q '^Signature=adhoc$'
 
+      - name: Create release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_NAME="MacTools-v$VERSION-arm64-macos26.dmg"
+          RELEASE_NOTES_FILE="dist/${DMG_NAME%.dmg}.md"
+          PREVIOUS_TAG="$(git tag --sort=-version:refname | grep -v "^$GITHUB_REF_NAME$" | head -n 1 || true)"
+
+          {
+            printf '# MacTools %s\n\n' "$GITHUB_REF_NAME"
+            printf '## 更新内容\n\n'
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              git log --no-merges --format='- %s' "$PREVIOUS_TAG..$GITHUB_SHA"
+            else
+              git log --no-merges --format='- %s' "$GITHUB_SHA"
+            fi
+            printf '\n## 安装说明\n\n'
+            printf '1. 下载 DMG，将 MacTools.app 拖入 Applications。\n'
+            printf '2. 首次打开时按系统提示在“隐私与安全性”中确认。\n'
+            printf '3. 按功能需要授予辅助功能、输入监控、屏幕录制和 Finder Automation 权限。\n\n'
+            printf '> 此版本使用 ad-hoc 签名；更新后部分系统权限可能需要重新授权。\n'
+          } > "$RELEASE_NOTES_FILE"
+
+      - name: Generate and verify signed appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_PRIVATE_KEY"
+          swift package resolve
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_NAME="MacTools-v$VERSION-arm64-macos26.dmg"
+          RELEASE_NOTES_FILE="dist/${DMG_NAME%.dmg}.md"
+          APPCAST_INPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mactools-appcast.XXXXXX")"
+          GENERATE_APPCAST=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
+          SIGN_UPDATE=".build/artifacts/sparkle/Sparkle/bin/sign_update"
+
+          test -x "$GENERATE_APPCAST"
+          test -x "$SIGN_UPDATE"
+          cp "dist/$DMG_NAME" "$APPCAST_INPUT_DIR/$DMG_NAME"
+          cp "$RELEASE_NOTES_FILE" "$APPCAST_INPUT_DIR/${DMG_NAME%.dmg}.md"
+
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$GENERATE_APPCAST" \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" \
+            --link "https://github.com/$GITHUB_REPOSITORY" \
+            --embed-release-notes \
+            --versions "$GITHUB_RUN_NUMBER" \
+            --maximum-versions 1 \
+            --maximum-deltas 0 \
+            -o "$GITHUB_WORKSPACE/dist/appcast.xml" \
+            "$APPCAST_INPUT_DIR"
+
+          xmllint --noout dist/appcast.xml
+          grep -q "<sparkle:version>$GITHUB_RUN_NUMBER</sparkle:version>" dist/appcast.xml
+          grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" dist/appcast.xml
+          grep -q 'sparkle:edSignature=' dist/appcast.xml
+          grep -q '<!-- sparkle-signatures:' dist/appcast.xml
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" \
+            --verify \
+            --ed-key-file - \
+            dist/appcast.xml
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_NOTES: |
-            MacTools 是 macOS 26+ 的 Apple Silicon 菜单栏效率工具。
-
-            应用包包含 Finder 和 Spotlight 可识别的 MacTools 自定义图标。
-
-            安装说明：
-            1. 下载 DMG，将 MacTools.app 拖入 Applications。
-            2. 首次尝试打开后，前往“系统设置 → 隐私与安全性”，点击“仍要打开”。
-            3. 按功能需要授予辅助功能、输入监控、屏幕录制和 Finder Automation 权限。
-
-            注意：此版本使用 ad-hoc 签名，未经过 Apple Developer ID 签名或公证，仅建议可信的小范围开发者使用。更新版本后，部分系统权限可能需要重新授权。SHA-256 校验值见随附的 .sha256 文件。
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           DMG_NAME="MacTools-v$VERSION-arm64-macos26.dmg"
           CHECKSUM_NAME="$DMG_NAME.sha256"
+          RELEASE_NOTES_FILE="dist/${DMG_NAME%.dmg}.md"
 
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             IS_DRAFT="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')"
             if [[ "$IS_DRAFT" != "true" ]]; then
-              VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mactools-release-assets.XXXXXX")"
-              trap 'rm -rf "$VERIFY_DIR"' EXIT
-              gh release download "$GITHUB_REF_NAME" \
-                --dir "$VERIFY_DIR" \
-                --pattern "$DMG_NAME" \
-                --pattern "$CHECKSUM_NAME"
-              (
-                cd "$VERIFY_DIR"
-                shasum -a 256 -c "$CHECKSUM_NAME"
-              )
               exit 0
             fi
           else
             gh release create "$GITHUB_REF_NAME" \
               --draft \
               --title "MacTools $GITHUB_REF_NAME" \
-              --notes "$RELEASE_NOTES" \
+              --notes-file "$RELEASE_NOTES_FILE" \
               --verify-tag
           fi
 
           gh release upload "$GITHUB_REF_NAME" \
             dist/*.dmg \
             dist/*.sha256 \
+            dist/appcast.xml \
             --clobber
 
           gh release edit "$GITHUB_REF_NAME" \
             --title "MacTools $GITHUB_REF_NAME" \
-            --notes "$RELEASE_NOTES" \
+            --notes-file "$RELEASE_NOTES_FILE" \
             --draft=false
+
+      - name: Verify published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_NAME="MacTools-v$VERSION-arm64-macos26.dmg"
+          CHECKSUM_NAME="$DMG_NAME.sha256"
+          VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mactools-release-assets.XXXXXX")"
+
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')" = "false"
+          gh release download "$GITHUB_REF_NAME" \
+            --dir "$VERIFY_DIR" \
+            --pattern "$DMG_NAME" \
+            --pattern "$CHECKSUM_NAME" \
+            --pattern "appcast.xml"
+          (
+            cd "$VERIFY_DIR"
+            shasum -a 256 -c "$CHECKSUM_NAME"
+            xmllint --noout appcast.xml
+            grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" appcast.xml
+            grep -q 'sparkle:edSignature=' appcast.xml
+            grep -q '<!-- sparkle-signatures:' appcast.xml
+          )
+
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" | \
+            .build/artifacts/sparkle/Sparkle/bin/sign_update \
+              --verify \
+              --ed-key-file - \
+              "$VERIFY_DIR/appcast.xml"
+
+          for attempt in {1..10}; do
+            curl --fail --location --retry 3 \
+              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/appcast.xml" \
+              --output "$VERIFY_DIR/latest-appcast.xml"
+            if cmp -s "$VERIFY_DIR/appcast.xml" "$VERIFY_DIR/latest-appcast.xml"; then
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "latest appcast did not converge to $GITHUB_REF_NAME" >&2
+          exit 1

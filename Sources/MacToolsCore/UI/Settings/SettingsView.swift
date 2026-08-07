@@ -14,7 +14,11 @@ public struct SettingsView: View {
     public let syncDevices: [SyncDeviceSummary]
     public let translationCredentialUnavailable: Bool
     public let permissionSummary: PermissionSummary
+    public let softwareUpdateState: SoftwareUpdateSettingsState
     public let openSystemSettings: () -> Void
+    public let checkForUpdates: () -> Void
+    public let setAutomaticallyChecksForUpdates: (Bool) -> Void
+    public let setAutomaticallyDownloadsUpdates: (Bool) -> Void
     public let openPermissionSettings: (AppPermission) -> Void
     public let openClipboardStorageFolder: () -> Void
     public let saveClipboardSettings: (ClipboardSettings) throws -> Void
@@ -59,7 +63,11 @@ public struct SettingsView: View {
         syncDevices: [SyncDeviceSummary] = [],
         translationCredentialUnavailable: Bool = false,
         permissionSummary: PermissionSummary,
+        softwareUpdateState: SoftwareUpdateSettingsState = .unavailable,
         openSystemSettings: @escaping () -> Void,
+        checkForUpdates: @escaping () -> Void = {},
+        setAutomaticallyChecksForUpdates: @escaping (Bool) -> Void = { _ in },
+        setAutomaticallyDownloadsUpdates: @escaping (Bool) -> Void = { _ in },
         openPermissionSettings: @escaping (AppPermission) -> Void = { _ in },
         openClipboardStorageFolder: @escaping () -> Void = {},
         saveClipboardSettings: @escaping (ClipboardSettings) throws -> Void = { _ in },
@@ -84,7 +92,11 @@ public struct SettingsView: View {
         self.syncDevices = syncDevices
         self.translationCredentialUnavailable = translationCredentialUnavailable
         self.permissionSummary = permissionSummary
+        self.softwareUpdateState = softwareUpdateState
         self.openSystemSettings = openSystemSettings
+        self.checkForUpdates = checkForUpdates
+        self.setAutomaticallyChecksForUpdates = setAutomaticallyChecksForUpdates
+        self.setAutomaticallyDownloadsUpdates = setAutomaticallyDownloadsUpdates
         self.openPermissionSettings = openPermissionSettings
         self.openClipboardStorageFolder = openClipboardStorageFolder
         self.saveClipboardSettings = saveClipboardSettings
@@ -168,6 +180,8 @@ public struct SettingsView: View {
         switch destination {
         case .system:
             systemSection
+        case .softwareUpdate:
+            softwareUpdateSection
         case .shortcuts:
             shortcutsSection
         case .clipboard:
@@ -191,6 +205,17 @@ public struct SettingsView: View {
             SettingsRow(title: "剪贴板", value: settings.clipboardShortcut.displayValue)
             SettingsRow(title: "翻译", value: settings.reservedTool2Shortcut.displayValue)
             SettingsRow(title: "截图与录屏", value: settings.reservedTool3Shortcut.displayValue)
+        }
+    }
+
+    private var softwareUpdateSection: some View {
+        SettingsSection(title: "软件更新", iconName: "arrow.triangle.2.circlepath") {
+            SoftwareUpdateSettingsEditor(
+                state: softwareUpdateState,
+                checkForUpdates: checkForUpdates,
+                setAutomaticallyChecksForUpdates: setAutomaticallyChecksForUpdates,
+                setAutomaticallyDownloadsUpdates: setAutomaticallyDownloadsUpdates
+            )
         }
     }
 

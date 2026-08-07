@@ -46,7 +46,7 @@ public enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     var sections: [SettingsSectionDestination] {
         switch self {
         case .general:
-            return [.system, .shortcuts]
+            return [.system, .softwareUpdate, .shortcuts]
         case .clipboard:
             return [.clipboard]
         case .translation:
@@ -85,6 +85,7 @@ enum SettingsPaneNavigator {
 /// 描述每个设置分类中展示的内容区块。
 enum SettingsSectionDestination: String, Identifiable, Sendable {
     case system
+    case softwareUpdate
     case shortcuts
     case clipboard
     case translation

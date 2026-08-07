@@ -8,7 +8,7 @@ MacTools 是一个使用 Swift Package Manager 构建、面向 macOS 26 及以�
 
 | 路径 | 职责 |
 | --- | --- |
-| `Package.swift` | `MacTools` 可执行程序和 `MacToolsCore` 库的 SwiftPM 定义；外部依赖为 GRDB.swift |
+| `Package.swift` | `MacTools` 可执行程序和 `MacToolsCore` 库的 SwiftPM 定义；外部依赖为 GRDB.swift 和 Sparkle |
 | `Sources/MacTools/Application` | AppKit 入口、生命周期、运行时依赖装配、菜单栏和 SwiftUI 运行时接线 |
 | `Sources/MacTools/Features` | 剪贴板面板状态和超级右键等可执行层功能协调 |
 | `Sources/MacTools/Platform` | ScreenCaptureKit、iCloud Drive、系统语音、Accessibility 和旧 Keychain 等 macOS 适配 |
@@ -41,6 +41,7 @@ MacTools 是一个使用 Swift Package Manager 构建、面向 macOS 26 及以�
 | 超级右键 | 短按保留系统菜单；长按阈值可配置为 250、300 或 350 毫秒 |
 | 截图录制 | 仅支持用户拖动选择区域；截图会将标注后的 PNG 复制到剪贴板；录屏会将仅含视频的 H.264 MP4 写入“下载”目录 |
 | 窗口布局 | 八种内置模式均可显示或隐藏，并可分配一个或多个快捷键；移动其他应用窗口需要辅助功能权限 |
+| 软件更新 | “设置 > 通用 > 软件更新”提供手动检查；默认每日自动检查、默认不自动下载并安装；稳定版通过 GitHub Release 的 EdDSA 签名 appcast 分发 |
 
 ## 命令
 
@@ -82,6 +83,15 @@ scripts/diagnose_super_right_click.sh
 - 提交和推送前必须核对改动范围、验证结果与目标分支，只暂存和提交本次任务涉及的文件，不得夹带无关的用户改动。
 - 如果 commit 或 push 失败，必须说明失败原因、当前分支和未推送的 commit，不得宣称任务已经完成。
 
+## 版本发布
+
+- 用户可感知的 Bug 修复默认递增补丁版本，较大功能或行为变更默认递增次版本；仅文档、测试或内部重构不单独发版。
+- 发版前必须完成适用的聚焦测试、完整 `swift test`、打包与运行时验证、敏感信息扫描，并将经过验证的代码提交和推送到目标分支。
+- 使用带注释的 `vX.Y.Z` 标签触发 `.github/workflows/release.yml`；标签必须指向已经推送的发布提交，不得使用未提交或未验证的工作树产物。
+- 工作流必须生成非草稿 GitHub Release，并发布 DMG、SHA-256 校验文件和经 EdDSA 签名的 `appcast.xml`；结束任务前必须检查工作流成功、资产可下载、校验和与 appcast 签名有效，并确认 `releases/latest/download/appcast.xml` 指向本次稳定版。
+- Sparkle 私钥只允许存放在 GitHub Actions Secret `SPARKLE_PRIVATE_KEY` 和本机 Keychain，不得写入仓库、构建日志、Release 说明或普通文件；仓库只保存公开 EdDSA 公钥。
+- 首次支持应用内更新的版本为 `v0.2.0`；此前版本需要手动安装一次，之后才可从应用内检查并安装更新。
+
 ## 编码指南
 
 - 行为变更需要在 `Tests/MacToolsCoreTests` 中添加或更新聚焦测试。优先使用确定性的辅助工具，不要编写依赖实时 TCC 状态或当前桌面的测试。
@@ -109,6 +119,7 @@ scripts/diagnose_super_right_click.sh
 | 窗口布局 | 通过面板操作和已配置快捷键，在当前显示器上移动聚焦窗口 |
 | 截图或录屏 | 验证屏幕录制权限流程、区域选择、取消路径、带标注的剪贴板 PNG、可播放的 MP4 和重复会话防护 |
 | 打包或签名 | 运行 `scripts/package_app.sh`，按需检查签名，并启动 `build/MacTools.app` |
+| 软件更新或发布 | 使用打包应用检查“通用 > 软件更新”状态和偏好；验证 Release 资产、校验和、签名 appcast，并至少用一个较低构建号确认真实更新可被发现 |
 
 ## 隐私与密钥
 

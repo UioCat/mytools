@@ -60,6 +60,36 @@ final class PackageAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("--sign -"))
     }
 
+    func testPackageScriptEmbedsAndSignsSparkleComponents() throws {
+        let script = try packageScript()
+
+        XCTAssertTrue(script.contains("FRAMEWORKS_DIR=\"$CONTENTS_DIR/Frameworks\""))
+        XCTAssertTrue(script.contains("release/Sparkle.framework"))
+        XCTAssertTrue(
+            script.contains("install_name_tool -add_rpath '@executable_path/../Frameworks'")
+        )
+        XCTAssertTrue(
+            script.contains("SPARKLE_VERSION_DIR=\"$SPARKLE_FRAMEWORK/Versions/Current\"")
+        )
+        XCTAssertTrue(script.contains("$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc"))
+        XCTAssertTrue(script.contains("$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc"))
+        XCTAssertTrue(script.contains("$SPARKLE_VERSION_DIR/Autoupdate"))
+        XCTAssertTrue(script.contains("$SPARKLE_VERSION_DIR/Updater.app"))
+        XCTAssertFalse(script.contains("codesign --force --deep"))
+    }
+
+    func testPackageScriptDeclaresSecureSparkleDefaults() throws {
+        let script = try packageScript()
+
+        XCTAssertTrue(script.contains("<key>SUFeedURL</key>"))
+        XCTAssertTrue(script.contains("<key>SUPublicEDKey</key>"))
+        XCTAssertTrue(script.contains("<key>SUEnableAutomaticChecks</key>"))
+        XCTAssertTrue(script.contains("<key>SUAutomaticallyUpdate</key>"))
+        XCTAssertTrue(script.contains("<key>SUVerifyUpdateBeforeExtraction</key>"))
+        XCTAssertTrue(script.contains("<key>SURequireSignedFeed</key>"))
+        XCTAssertFalse(script.contains("SPARKLE_PRIVATE_KEY"))
+    }
+
     func testPackageScriptRemovesPersonalBuildPathsFromReleaseBinary() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -74,5 +104,16 @@ final class PackageAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("-debug-prefix-map"))
         XCTAssertTrue(script.contains("\"$ROOT_DIR=.\""))
         XCTAssertFalse(script.contains("BUILD_DIR=\"$ROOT_DIR/.build/release\""))
+    }
+
+    private func packageScript() throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repositoryRoot.appendingPathComponent("scripts/package_app.sh"),
+            encoding: .utf8
+        )
     }
 }

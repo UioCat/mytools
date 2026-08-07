@@ -65,6 +65,7 @@ struct RuntimeMainWorkspaceView: View {
     @ObservedObject var model: ClipboardPanelModel
     @ObservedObject var syncModel: SyncViewModel
     @ObservedObject var translationCredentialModel: TranslationCredentialViewModel
+    @ObservedObject var softwareUpdateService: SystemUpdateService
     let speechController: TranslationSpeechController
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
@@ -95,6 +96,7 @@ struct RuntimeMainWorkspaceView: View {
         settings: AppSettings,
         syncModel: SyncViewModel,
         translationCredentialModel: TranslationCredentialViewModel,
+        softwareUpdateService: SystemUpdateService,
         speechController: TranslationSpeechController,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
@@ -120,6 +122,7 @@ struct RuntimeMainWorkspaceView: View {
         self.permissionService = permissionService
         self.syncModel = syncModel
         self.translationCredentialModel = translationCredentialModel
+        self.softwareUpdateService = softwareUpdateService
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
         self.onSaveTranslationSettings = onSaveTranslationSettings
@@ -152,6 +155,7 @@ struct RuntimeMainWorkspaceView: View {
                 settings: currentSettings,
                 syncModel: syncModel,
                 translationCredentialUnavailable: translationCredentialUnavailable,
+                softwareUpdateService: softwareUpdateService,
                 permissionService: permissionService,
                 defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
                 onSaveClipboardSettings: { clipboardSettings in
@@ -280,6 +284,7 @@ struct RuntimeSettingsView: View {
     @Binding var selectedPane: SettingsPane
     let settings: AppSettings
     @ObservedObject var syncModel: SyncViewModel
+    @ObservedObject var softwareUpdateService: SystemUpdateService
     let translationCredentialUnavailable: Bool
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
@@ -304,6 +309,7 @@ struct RuntimeSettingsView: View {
         settings: AppSettings,
         syncModel: SyncViewModel,
         translationCredentialUnavailable: Bool,
+        softwareUpdateService: SystemUpdateService,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> Void,
@@ -324,6 +330,7 @@ struct RuntimeSettingsView: View {
         self.settings = settings
         self.permissionService = permissionService
         self.syncModel = syncModel
+        self.softwareUpdateService = softwareUpdateService
         self.translationCredentialUnavailable = translationCredentialUnavailable
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
@@ -352,7 +359,11 @@ struct RuntimeSettingsView: View {
             syncDevices: syncModel.devices,
             translationCredentialUnavailable: translationCredentialUnavailable,
             permissionSummary: permissionSummary,
+            softwareUpdateState: softwareUpdateService.state,
             openSystemSettings: permissionService.openSystemSettings,
+            checkForUpdates: softwareUpdateService.checkForUpdates,
+            setAutomaticallyChecksForUpdates: softwareUpdateService.setAutomaticallyChecksForUpdates,
+            setAutomaticallyDownloadsUpdates: softwareUpdateService.setAutomaticallyDownloadsUpdates,
             openPermissionSettings: permissionService.requestPermissionAndOpenSystemSettings(for:),
             openClipboardStorageFolder: onOpenClipboardStorageFolder,
             saveClipboardSettings: onSaveClipboardSettings,
