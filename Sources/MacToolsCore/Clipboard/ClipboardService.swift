@@ -101,6 +101,24 @@ public final class ClipboardService {
         self.settings = settings
     }
 
+    /// 对已在采样阶段复制完成的快照执行图片规范化、分类和持久化。
+    @discardableResult
+    public func record(_ snapshot: ClipboardSnapshot) throws -> Bool {
+        let payload = Self.normalizedPayload(snapshot.payload)
+        let item = classifier.classify(
+            payload: payload,
+            sourceApp: snapshot.sourceApp,
+            capturedAt: snapshot.capturedAt
+        )
+        guard item.kind != .unknown else {
+            return false
+        }
+
+        let imageData = item.kind == .imageData ? payload.imageData : nil
+        try persist(item, imageData, settings)
+        return true
+    }
+
     /// 安排或刷新 `pollOnce` 对应的剪贴板领域工作。
     @discardableResult
     public func pollOnce(sourceApp: String?) throws -> Bool {
@@ -115,16 +133,28 @@ public final class ClipboardService {
             return false
         }
 
-        let payload = pasteboard.readPayload()
-        let item = classifier.classify(payload: payload, sourceApp: sourceApp)
-        guard item.kind != .unknown else {
-            lastChangeCount = currentChangeCount
-            return false
+        let snapshot = ClipboardSnapshot(
+            payload: pasteboard.readPayload(),
+            sourceApp: sourceApp,
+            capturedAt: Date(),
+            changeCount: currentChangeCount,
+            skippedChangeCount: max(0, currentChangeCount - lastChangeCount - 1)
+        )
+        let recorded = try record(snapshot)
+        lastChangeCount = currentChangeCount
+        return recorded
+    }
+
+    private static func normalizedPayload(_ payload: ClipboardPayload) -> ClipboardPayload {
+        let hasText = !(payload.text?.isEmpty ?? true)
+        guard payload.fileURLs.isEmpty, !hasText else {
+            return ClipboardPayload(text: payload.text, fileURLs: payload.fileURLs)
         }
 
-        let imageData = item.kind == .imageData ? payload.imageData : nil
-        try persist(item, imageData, settings)
-        lastChangeCount = currentChangeCount
-        return true
+        return ClipboardPayload(
+            text: payload.text,
+            fileURLs: payload.fileURLs,
+            imageData: payload.imageData.flatMap(ImageDataNormalizer.pngData)
+        )
     }
 }

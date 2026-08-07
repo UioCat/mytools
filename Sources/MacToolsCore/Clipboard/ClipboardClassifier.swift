@@ -11,12 +11,20 @@ public final class ClipboardClassifier {
     public init() {}
 
     /// 根据输入特征判定 `classify` 对应的剪贴板领域分类或处理决策。
-    public func classify(payload: ClipboardPayload, sourceApp: String?) -> ClipboardItem {
-        let now = Date()
+    public func classify(
+        payload: ClipboardPayload,
+        sourceApp: String?,
+        capturedAt: Date = Date()
+    ) -> ClipboardItem {
         let contentHash = ClipboardContentHasher.sha256(for: payload)
 
         if let firstURL = payload.fileURLs.first {
-            return classifyFileURL(firstURL, sourceApp: sourceApp, contentHash: contentHash, now: now)
+            return classifyFileURL(
+                firstURL,
+                sourceApp: sourceApp,
+                contentHash: contentHash,
+                now: capturedAt
+            )
         }
 
         if let text = payload.text, !text.isEmpty {
@@ -29,7 +37,7 @@ public final class ClipboardClassifier {
                 originalPath: nil,
                 sourceApp: sourceApp,
                 contentHash: contentHash,
-                now: now
+                now: capturedAt
             )
         }
 
@@ -43,7 +51,7 @@ public final class ClipboardClassifier {
                 originalPath: nil,
                 sourceApp: sourceApp,
                 contentHash: contentHash,
-                now: now
+                now: capturedAt
             )
         }
 
@@ -55,7 +63,7 @@ public final class ClipboardClassifier {
             originalPath: nil,
             sourceApp: sourceApp,
             contentHash: contentHash,
-            now: now
+            now: capturedAt
         )
     }
 

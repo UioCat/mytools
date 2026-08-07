@@ -2180,3 +2180,69 @@ Use a non-special iterator such as `referenced_path` in zsh loops and start the 
 - **Notes**: Replaced the iterator with `referenced_path`; no source or index state needed recovery.
 
 ---
+
+## [ERR-20260807-006] ClipboardService image fixture failed after deferred normalization
+
+**Logged**: 2026-08-07T02:46:24Z
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A clipboard settings test used arbitrary bytes as image data and failed once image normalization moved from sampling to persistence.
+
+### Error
+```
+XCTAssertEqual failed: ("[]") is not equal to ("[\"/tmp/updated-cache\"]")
+```
+
+### Context
+- Command: `swift test --filter ClipboardServiceTests`
+- The fixture used `Data([4, 5, 6])`, which is not decodable PNG or TIFF data.
+- The production change intentionally validates and normalizes raw image bytes in the asynchronous persistence stage.
+
+### Suggested Fix
+Use a minimal valid PNG fixture so the test continues to verify updated settings propagation without bypassing production image validation.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/ClipboardServiceTests.swift, Sources/MacToolsCore/Clipboard/ClipboardService.swift
+
+### Resolution
+- **Resolved**: 2026-08-07T02:46:50Z
+- **Notes**: Replaced the arbitrary bytes with a valid minimal PNG and reran the focused test successfully.
+
+---
+
+## [ERR-20260807-007] Full Swift test process exited with signal 11
+
+**Logged**: 2026-08-07T02:51:46Z
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The complete test suite crashed in `xctest` after the clipboard-focused suites had passed.
+
+### Error
+```
+error: Process '.../MacToolsPackageTests.xctest' exited with unexpected signal code 11
+```
+
+### Context
+- Command: `swift test`
+- The crash appeared while entering `TranslationServiceTests.testBailianProviderWithoutAPIKeyReturnsProviderNotConfigured`.
+- The focused clipboard, pasteboard, application source, and organization suites had already completed with 35 tests and zero failures.
+
+### Suggested Fix
+Run the apparent crash-point test alone, then rerun the complete suite to distinguish a deterministic regression from an intermittent test-process failure.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: Tests/MacToolsCoreTests/TranslationServiceTests.swift
+
+### Resolution
+- **Resolved**: 2026-08-07T02:52:17Z
+- **Notes**: The apparent crash-point test passed alone, and a fresh complete run passed all 475 tests; the signal 11 was not reproducible.
+
+---

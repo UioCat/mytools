@@ -9,6 +9,15 @@ public protocol PasteboardClient {
     var changeCount: Int { get }
     /// 读取并返回 `readPayload` 对应的剪贴板领域数据。
     func readPayload() -> ClipboardPayload
+    /// 读取适合立即排队的原始载荷，避免在高频采样阶段执行图片转码。
+    func readSnapshotPayload() -> ClipboardPayload
+}
+
+public extension PasteboardClient {
+    /// 自定义客户端默认复用完整读取；系统客户端覆盖此方法以延后图片转码。
+    func readSnapshotPayload() -> ClipboardPayload {
+        readPayload()
+    }
 }
 
 /// 管理 `SystemPasteboardClient` 在剪贴板领域中的生命周期、依赖和可变状态。
@@ -26,9 +35,21 @@ public final class SystemPasteboardClient: PasteboardClient {
 
     /// 读取并返回 `readPayload` 对应的剪贴板领域数据。
     public func readPayload() -> ClipboardPayload {
+        let payload = readSnapshotPayload()
+        let imageData = payload.imageData.flatMap(ImageDataNormalizer.pngData)
+        return ClipboardPayload(
+            text: payload.text,
+            fileURLs: payload.fileURLs,
+            imageData: imageData
+        )
+    }
+
+    /// 只复制分类所需的原始数据；文本或文件存在时不再读取不会参与分类的图片表示。
+    public func readSnapshotPayload() -> ClipboardPayload {
         let text = pasteboard.string(forType: .string)
         let fileURLs = readFileURLs()
-        let imageData = readImageData()
+        let hasPreferredContent = !fileURLs.isEmpty || !(text?.isEmpty ?? true)
+        let imageData = hasPreferredContent ? nil : readRawImageData()
 
         return ClipboardPayload(text: text, fileURLs: fileURLs, imageData: imageData)
     }
@@ -61,17 +82,17 @@ public final class SystemPasteboardClient: PasteboardClient {
         return Self.fileURLs(from: objects)
     }
 
-    /// 读取并返回 `readImageData` 对应的剪贴板领域数据。
-    private func readImageData() -> Data? {
+    /// 优先复制剪贴板已有的图片字节；只有缺少 PNG/TIFF 表示时才读取 `NSImage`。
+    private func readRawImageData() -> Data? {
         if let pngData = pasteboard.data(forType: .png) {
-            return ImageDataNormalizer.pngData(from: pngData)
+            return pngData
         }
 
         if let tiffData = pasteboard.data(forType: .tiff) {
-            return ImageDataNormalizer.pngData(from: tiffData)
+            return tiffData
         }
 
         let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage] ?? []
-        return images.first.flatMap(ImageDataNormalizer.pngData)
+        return images.first?.tiffRepresentation
     }
 }

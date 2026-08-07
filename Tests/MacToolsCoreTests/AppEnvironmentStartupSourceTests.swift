@@ -20,6 +20,21 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
         XCTAssertTrue(startBody.contains("await maintenanceWorker.run()"))
     }
 
+    func testClipboardSamplingIsIndependentFromPersistenceAndMainRunLoop() throws {
+        let environmentSource = try sourceFile("Sources/MacTools/Application/AppEnvironment.swift")
+        let workersSource = try sourceFile(
+            "Sources/MacTools/Application/AppEnvironmentWorkers.swift"
+        )
+
+        XCTAssertTrue(workersSource.contains("final class ClipboardSamplingWorker"))
+        XCTAssertTrue(workersSource.contains("DispatchSource.makeTimerSource"))
+        XCTAssertTrue(workersSource.contains("repeating: .milliseconds(100)"))
+        XCTAssertTrue(workersSource.contains("AsyncStream<ClipboardSnapshot>"))
+        XCTAssertTrue(workersSource.contains("service.record(snapshot)"))
+        XCTAssertFalse(environmentSource.contains("Timer.scheduledTimer"))
+        XCTAssertFalse(environmentSource.contains("withTimeInterval: 0.75"))
+    }
+
     func testMaintenanceWorkerPreservesCleanupOrderAndSingleRunGuard() throws {
         let source = try sourceFile("Sources/MacTools/Application/AppEnvironmentWorkers.swift")
         let workerStart = try XCTUnwrap(source.range(of: "actor AppMaintenanceWorker"))

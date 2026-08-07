@@ -41,6 +41,8 @@
 - While recording, press `Option + 3` again and confirm the existing recording remains active without opening a second selector.
 - Place the selection overlay, editor, and recording control over both light and dark content; confirm no titlebar residue, rectangular system shadow, gray outline, or backing layer appears outside the intended rounded surfaces.
 - Copy text and confirm it appears in clipboard search.
+- Copy `MacTools rapid check A` and then `MacTools rapid check B` in rapid succession; repeat at least 20 times and confirm both values appear in clipboard history in the same order every time.
+- Copy a large TIFF-backed image and immediately copy text; confirm the text is captured without waiting for image conversion or storage, and the earlier image preview remains usable after background persistence completes.
 - Copy a multi-cell range from Excel and confirm clipboard history records editable text rather than an image; paste it into a spreadsheet and confirm the Tab- and newline-separated row/column structure is preserved.
 - Copy a file and confirm filename/path appears.
 - Copy a folder and confirm folder actions show Copy Path and Open in Terminal.

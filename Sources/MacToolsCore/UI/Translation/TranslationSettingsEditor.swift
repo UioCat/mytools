@@ -440,8 +440,7 @@ final class TranslationAPIKeyNativeInputView: NSView, NSTextFieldDelegate {
                 return true
             }
 
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(copyableString, forType: .string)
+            SystemWritablePasteboard().writeText(copyableString)
             onCopy(true)
             return true
 

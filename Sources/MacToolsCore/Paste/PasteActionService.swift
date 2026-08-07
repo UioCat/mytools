@@ -5,6 +5,13 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+public extension Notification.Name {
+    /// MacTools 自己完成系统剪贴板写入后发送，供采样器立即读取而无需等待周期定时器。
+    static let macToolsPasteboardDidWrite = Notification.Name(
+        "com.mactools.pasteboard.did-write"
+    )
+}
+
 /// 定义 `WritablePasteboard` 在自动粘贴领域中需要满足的能力边界。
 public protocol WritablePasteboard {
     /// 保存 `writeText` 接收的自动粘贴领域数据，并保持既有持久化约束。
@@ -77,22 +84,31 @@ public enum PasteActionError: Error, Equatable {
 /// 管理 `SystemWritablePasteboard` 在自动粘贴领域中的生命周期、依赖和可变状态。
 public final class SystemWritablePasteboard: WritablePasteboard {
     private let pasteboard: NSPasteboard
+    private let notificationCenter: NotificationCenter
 
     /// 创建 `SystemWritablePasteboard`，保存传入依赖并建立初始状态。
-    public init(pasteboard: NSPasteboard = .general) {
+    public init(
+        pasteboard: NSPasteboard = .general,
+        notificationCenter: NotificationCenter = .default
+    ) {
         self.pasteboard = pasteboard
+        self.notificationCenter = notificationCenter
     }
 
     /// 保存 `writeText` 接收的自动粘贴领域数据，并保持既有持久化约束。
     public func writeText(_ text: String) {
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        if pasteboard.setString(text, forType: .string) {
+            notifySuccessfulWrite()
+        }
     }
 
     /// 保存 `writeFileURL` 接收的自动粘贴领域数据，并保持既有持久化约束。
     public func writeFileURL(_ url: URL) {
         pasteboard.clearContents()
-        pasteboard.writeObjects([url as NSURL])
+        if pasteboard.writeObjects([url as NSURL]) {
+            notifySuccessfulWrite()
+        }
     }
 
     /// 保存 `writeImageData` 接收的自动粘贴领域数据，并保持既有持久化约束。
@@ -102,7 +118,16 @@ public final class SystemWritablePasteboard: WritablePasteboard {
         }
 
         pasteboard.clearContents()
-        pasteboard.setData(pngData, forType: .png)
+        if pasteboard.setData(pngData, forType: .png) {
+            notifySuccessfulWrite()
+        }
+    }
+
+    private func notifySuccessfulWrite() {
+        notificationCenter.post(
+            name: .macToolsPasteboardDidWrite,
+            object: pasteboard
+        )
     }
 }
 

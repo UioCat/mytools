@@ -636,8 +636,7 @@ struct RuntimeTranslationModuleView: View {
             return
         }
 
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(outputText, forType: .string)
+        SystemWritablePasteboard().writeText(outputText)
     }
 
     /// 提交当前输入并将异步翻译结果写回工作区状态。

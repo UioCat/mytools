@@ -22,6 +22,7 @@ final class AppEnvironment {
     let translationCredentialModel: TranslationCredentialViewModel
     var settings: AppSettings
     private let repository: ClipboardRepository
+    private let clipboardSamplingWorker: ClipboardSamplingWorker
     private let clipboardPollingWorker: ClipboardPollingWorker
     private let maintenanceWorker: AppMaintenanceWorker
     private let syncFolderPreparationWorker: SyncFolderPreparationWorker
@@ -81,7 +82,6 @@ final class AppEnvironment {
             self?.saveScreenCaptureSettings(screenCaptureSettings) ?? false
         }
     )
-    private var clipboardTimer: Timer?
     private var superRightClickMonitor: SuperRightClickMonitor?
     private var appBeforePanel: NSRunningApplication?
     private var pasteActivationAttempt: PasteActivationAttempt?
@@ -292,13 +292,20 @@ final class AppEnvironment {
         )
         let defaultClipboardCacheDirectory = payloadDirectory
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
+        let clipboardPasteboard = SystemPasteboardClient()
+        self.clipboardSamplingWorker = ClipboardSamplingWorker(
+            sampler: ClipboardSnapshotSampler(
+                pasteboard: clipboardPasteboard,
+                isRecordingEnabled: loadedSettings.clipboard.isRecordingEnabled
+            )
+        )
         self.clipboardPollingWorker = ClipboardPollingWorker(service: ClipboardService(
-            pasteboard: SystemPasteboardClient(),
+            pasteboard: clipboardPasteboard,
             classifier: ClipboardClassifier(),
             repository: repository,
             settings: loadedSettings,
             payloadStore: payloadStore
-        ))
+        ), logger: logger)
         self.syncModel.folderPath = try? deviceOverrideRepository.syncFolderDisplayPath()
         self.syncModel.folderIsUbiquitous = syncFolderURL.map {
             FileManager.default.isUbiquitousItem(at: $0)
@@ -324,6 +331,12 @@ final class AppEnvironment {
         Task {
             await maintenanceWorker.run()
         }
+    }
+
+    /// 停止进程级采样和待处理重试，供应用退出时释放运行时资源。
+    func stop() {
+        clipboardSamplingWorker.stop()
+        Task { await clipboardPollingWorker.stop() }
     }
 
     /// 记住原前台应用并把主工作台切到设置页，供稍后的自动粘贴恢复目标。
@@ -462,6 +475,9 @@ final class AppEnvironment {
         try preferenceRepository.save(updated)
         settings = updated
         onSettingsChanged(updated)
+        clipboardSamplingWorker.updateRecordingEnabled(
+            updated.clipboard.isRecordingEnabled
+        )
         Task { await clipboardPollingWorker.updateSettings(updated) }
         clipboardModel.refresh()
         syncCoordinator.updateConfiguration(
@@ -580,6 +596,9 @@ final class AppEnvironment {
                 || merged.translation != settings.translation
             settings = merged
             syncModel.remoteSettings = merged
+            clipboardSamplingWorker.updateRecordingEnabled(
+                merged.clipboard.isRecordingEnabled
+            )
             Task { await clipboardPollingWorker.updateSettings(merged) }
             syncCoordinator.updateConfiguration(
                 historyLimit: merged.clipboard.maxHistoryCount,
@@ -648,29 +667,21 @@ final class AppEnvironment {
         superRightClickMonitor = monitor
     }
 
-    /// 以固定间隔触发串行剪贴板轮询，实际读取和持久化由 Actor 隔离。
+    /// 配置持久化回调后启动独立采样队列；快照立即送往后台 Actor 顺序消费。
     private func startClipboardPolling() {
-        clipboardTimer?.invalidate()
-        clipboardTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.pollClipboardOnce()
-            }
-        }
-    }
-
-    /// 在 Actor 中串行读取一次系统剪贴板；新增记录后刷新面板并触发同步。
-    private func pollClipboardOnce() {
-        let sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName
-        Task { [weak self] in
+        let samplingWorker = clipboardSamplingWorker
+        let pollingWorker = clipboardPollingWorker
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            do {
-                let recorded = try await clipboardPollingWorker.pollOnce(sourceApp: sourceApp)
-                if recorded {
+            await pollingWorker.start { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
                     clipboardModel.refresh()
                     scheduleSync()
                 }
-            } catch {
-                logger.error("clipboard poll failed: \(error)")
+            }
+            samplingWorker.start { snapshot in
+                pollingWorker.enqueue(snapshot)
             }
         }
     }

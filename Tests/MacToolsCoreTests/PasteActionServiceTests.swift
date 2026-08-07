@@ -1,8 +1,30 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import MacToolsCore
 
 final class PasteActionServiceTests: XCTestCase {
+    func testSystemPasteboardPostsWriteNotificationAfterTextWrite() {
+        let notificationCenter = NotificationCenter()
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        let notificationExpectation = expectation(description: "pasteboard write notification")
+        let observer = notificationCenter.addObserver(
+            forName: .macToolsPasteboardDidWrite,
+            object: pasteboard,
+            queue: nil
+        ) { _ in
+            notificationExpectation.fulfill()
+        }
+        defer { notificationCenter.removeObserver(observer) }
+
+        SystemWritablePasteboard(
+            pasteboard: pasteboard,
+            notificationCenter: notificationCenter
+        ).writeText("captured immediately")
+
+        wait(for: [notificationExpectation], timeout: 0.1)
+    }
+
     func testCopyOnlyWritesTextToPasteboard() throws {
         let pasteboard = FakeWritablePasteboard()
         let sender = FakePasteEventSender()

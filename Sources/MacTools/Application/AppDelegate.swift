@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 响应 `applicationWillTerminate` 对应的应用生命周期事件，并同步运行时服务状态。
     func applicationWillTerminate(_ notification: Notification) {
+        environment.stop()
         environment.logger.flush()
     }
 

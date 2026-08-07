@@ -92,23 +92,170 @@ final class SyncFolderPreparationWorker: @unchecked Sendable {
     }
 }
 
-/// 串行管理 `ClipboardPollingWorker` 在应用运行时与 AppKit 集成中的可变状态和异步操作。
-actor ClipboardPollingWorker {
-    private let service: ClipboardService
+/// 在独立高优先级串行队列每 100ms 读取轻量快照，不等待图片转码和数据库写入。
+final class ClipboardSamplingWorker: @unchecked Sendable {
+    private let sampler: ClipboardSnapshotSampler
+    private let notificationCenter: NotificationCenter
+    private let queue = DispatchQueue(
+        label: "com.mactools.clipboard-sampling",
+        qos: .userInitiated
+    )
+    private var timer: DispatchSourceTimer?
+    private var pasteboardWriteObserver: NSObjectProtocol?
 
-    /// 创建 `ClipboardPollingWorker`，保存传入依赖并建立初始状态。
-    init(service: ClipboardService) {
-        self.service = service
+    init(
+        sampler: ClipboardSnapshotSampler,
+        notificationCenter: NotificationCenter = .default
+    ) {
+        self.sampler = sampler
+        self.notificationCenter = notificationCenter
     }
 
-    /// 安排或刷新 `pollOnce` 对应的应用运行时与 AppKit 集成工作。
-    func pollOnce(sourceApp: String?) throws -> Bool {
-        try service.pollOnce(sourceApp: sourceApp)
+    /// 启动独立于主 RunLoop 的高频采样，并监听应用自身的剪贴板写入作为即时触发信号。
+    func start(onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void) {
+        queue.async { [weak self] in
+            guard let self, timer == nil else { return }
+
+            pasteboardWriteObserver = notificationCenter.addObserver(
+                forName: .macToolsPasteboardDidWrite,
+                object: nil,
+                queue: nil
+            ) { [weak self] _ in
+                self?.captureSoon(sourceApp: "MacTools", onSnapshot: onSnapshot)
+            }
+
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(
+                deadline: .now(),
+                repeating: .milliseconds(100),
+                leeway: .milliseconds(10)
+            )
+            timer.setEventHandler { [weak self] in
+                let sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName
+                self?.capture(sourceApp: sourceApp, onSnapshot: onSnapshot)
+            }
+            self.timer = timer
+            timer.resume()
+        }
+    }
+
+    /// 热更新录制开关；其余设置由持久化 Actor 在自己的串行边界内应用。
+    func updateRecordingEnabled(_ isRecordingEnabled: Bool) {
+        queue.async { [weak self] in
+            self?.sampler.updateRecordingEnabled(isRecordingEnabled)
+        }
+    }
+
+    /// 停止定时器和应用内写入观察者。
+    func stop() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            timer?.setEventHandler {}
+            timer?.cancel()
+            timer = nil
+            if let pasteboardWriteObserver {
+                notificationCenter.removeObserver(pasteboardWriteObserver)
+                self.pasteboardWriteObserver = nil
+            }
+        }
+    }
+
+    private func captureSoon(
+        sourceApp: String?,
+        onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void
+    ) {
+        queue.async { [weak self] in
+            self?.capture(sourceApp: sourceApp, onSnapshot: onSnapshot)
+        }
+    }
+
+    private func capture(
+        sourceApp: String?,
+        onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void
+    ) {
+        guard let snapshot = sampler.captureOnce(sourceApp: sourceApp) else {
+            return
+        }
+        onSnapshot(snapshot)
+    }
+}
+
+/// 串行消费不可变剪贴板快照；持久化失败时保留队首并延迟重试。
+actor ClipboardPollingWorker {
+    private let service: ClipboardService
+    private let logger: Logger
+    private let snapshots: AsyncStream<ClipboardSnapshot>
+    nonisolated private let snapshotContinuation: AsyncStream<ClipboardSnapshot>.Continuation
+    private var consumptionTask: Task<Void, Never>?
+    private var onRecorded: (@Sendable (ClipboardSnapshot) -> Void)?
+
+    /// 创建 `ClipboardPollingWorker`，保存传入依赖并建立初始状态。
+    init(service: ClipboardService, logger: Logger) {
+        let (snapshots, snapshotContinuation) = AsyncStream<ClipboardSnapshot>.makeStream(
+            bufferingPolicy: .unbounded
+        )
+        self.service = service
+        self.logger = logger
+        self.snapshots = snapshots
+        self.snapshotContinuation = snapshotContinuation
+    }
+
+    /// 配置成功持久化通知并启动唯一消费任务，保证快照严格按采样顺序落盘。
+    func start(onRecorded: @escaping @Sendable (ClipboardSnapshot) -> Void) {
+        self.onRecorded = onRecorded
+        guard consumptionTask == nil else { return }
+        consumptionTask = Task { [weak self] in
+            await self?.consumeSnapshots()
+        }
+    }
+
+    /// `AsyncStream.Continuation` 可跨线程同步入队，采样队列无需等待 Actor 或持久化。
+    nonisolated func enqueue(_ snapshot: ClipboardSnapshot) {
+        snapshotContinuation.yield(snapshot)
     }
 
     /// 应用 `updateSettings` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     func updateSettings(_ settings: AppSettings) {
         service.updateSettings(settings)
+    }
+
+    /// 结束快照流并取消当前消费或重试等待。
+    func stop() {
+        snapshotContinuation.finish()
+        consumptionTask?.cancel()
+        consumptionTask = nil
+    }
+
+    private func consumeSnapshots() async {
+        for await snapshot in snapshots {
+            guard !Task.isCancelled else { return }
+            if snapshot.skippedChangeCount > 0 {
+                logger.error(
+                    "clipboard sampler observed skipped changes: count="
+                        + "\(snapshot.skippedChangeCount), changeCount=\(snapshot.changeCount)"
+                )
+            }
+            await persistWithRetry(snapshot)
+        }
+    }
+
+    private func persistWithRetry(_ snapshot: ClipboardSnapshot) async {
+        while !Task.isCancelled {
+            do {
+                let recorded = try service.record(snapshot)
+                if recorded {
+                    onRecorded?(snapshot)
+                }
+                return
+            } catch {
+                logger.error(
+                    "clipboard snapshot persistence failed; retrying: changeCount="
+                        + "\(snapshot.changeCount), error="
+                        + String(reflecting: type(of: error))
+                )
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
     }
 }
 
