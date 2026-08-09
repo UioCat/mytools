@@ -14,9 +14,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve release version
         run: |
@@ -25,15 +26,29 @@ jobs:
           printf 'MACOS_APP_VERSION=%s\n' "$VERSION" >> "$GITHUB_ENV"
           printf 'MACOS_BUILD_NUMBER=%s\n' "$BUILD_NUMBER" >> "$GITHUB_ENV"
 
-      - name: Build ad-hoc signed app
+      - name: Import anonymous signing identity
         env:
-          MACOS_FORCE_ADHOC_SIGNING: "1"
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: scripts/ci/import_anonymous_signing_identity.sh
+
+      - name: Build stable signed app
+        env:
+          MACOS_SIGNING_MODE: stable
         run: scripts/package_app.sh
+
+      - name: Retire anonymous signing identity after build
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh
 
       - name: Verify app bundle
         run: |
           codesign --verify --deep --strict --verbose=2 build/MacTools.app
-          codesign -dv --verbose=4 build/MacTools.app 2>&1 | grep -q '^Signature=adhoc$'
+          SIGNATURE_DETAILS="$(codesign -dv --verbose=4 build/MacTools.app 2>&1)"
+          DESIGNATED_REQUIREMENT="$(codesign -d -r- build/MacTools.app 2>&1)"
+          NORMALIZED_REQUIREMENT="$(tr '[:upper:]' '[:lower:]' <<<"$DESIGNATED_REQUIREMENT")"
+          grep -Fqx 'Authority=MacTools Release Signing' <<<"$SIGNATURE_DETAILS"
+          grep -Fq 'identifier "local.mactools.mvp" and certificate leaf = h"25a3263958804c6d9429eb51b97ba2b16ca1fb67"' <<<"$NORMALIZED_REQUIREMENT"
+          ! grep -q '^Signature=adhoc$' <<<"$SIGNATURE_DETAILS"
+          ! grep -Eqi '@|Apple Development|Developer ID' <<<"$SIGNATURE_DETAILS"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/MacTools.app/Contents/Info.plist)" = "$MACOS_APP_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/MacTools.app/Contents/Info.plist)" = "$MACOS_BUILD_NUMBER"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' build/MacTools.app/Contents/Info.plist)" = "AppIcon.icns"
@@ -43,7 +58,8 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :SUAutomaticallyUpdate' build/MacTools.app/Contents/Info.plist)" = "false"
           test "$(/usr/libexec/PlistBuddy -c 'Print :SURequireSignedFeed' build/MacTools.app/Contents/Info.plist)" = "true"
           test -n "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' build/MacTools.app/Contents/Info.plist)"
-          otool -L build/MacTools.app/Contents/MacOS/MacTools | grep -q '@rpath/Sparkle.framework/'
+          LINKED_LIBRARIES="$(otool -L build/MacTools.app/Contents/MacOS/MacTools)"
+          grep -F '@rpath/Sparkle.framework/' <<<"$LINKED_LIBRARIES" >/dev/null
           test "$(lipo -archs build/MacTools.app/Contents/MacOS/MacTools)" = "arm64"
 
       - name: Create and verify DMG
@@ -70,7 +86,12 @@ jobs:
           test -d "$MOUNT_DIR/MacTools.app"
           test -L "$MOUNT_DIR/Applications"
           codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/MacTools.app"
-          codesign -dv --verbose=4 "$MOUNT_DIR/MacTools.app" 2>&1 | grep -q '^Signature=adhoc$'
+          SIGNATURE_DETAILS="$(codesign -dv --verbose=4 "$MOUNT_DIR/MacTools.app" 2>&1)"
+          DESIGNATED_REQUIREMENT="$(codesign -d -r- "$MOUNT_DIR/MacTools.app" 2>&1)"
+          NORMALIZED_REQUIREMENT="$(tr '[:upper:]' '[:lower:]' <<<"$DESIGNATED_REQUIREMENT")"
+          grep -Fqx 'Authority=MacTools Release Signing' <<<"$SIGNATURE_DETAILS"
+          grep -Fq 'identifier "local.mactools.mvp" and certificate leaf = h"25a3263958804c6d9429eb51b97ba2b16ca1fb67"' <<<"$NORMALIZED_REQUIREMENT"
+          ! grep -q '^Signature=adhoc$' <<<"$SIGNATURE_DETAILS"
 
       - name: Create release notes
         run: |
@@ -91,7 +112,7 @@ jobs:
             printf '1. 下载 DMG，将 MacTools.app 拖入 Applications。\n'
             printf '2. 首次打开时按系统提示在“隐私与安全性”中确认。\n'
             printf '3. 按功能需要授予辅助功能、输入监控、屏幕录制和 Finder Automation 权限。\n\n'
-            printf '> 此版本使用 ad-hoc 签名；更新后部分系统权限可能需要重新授权。\n'
+            printf '> 此版本开始使用固定匿名签名。首次从旧版迁移需要整理并重新授予一次权限；后续同签名更新会保持稳定应用身份。\n'
           } > "$RELEASE_NOTES_FILE"
 
       - name: Generate and verify signed appcast
@@ -211,3 +232,7 @@ jobs:
 
           echo "latest appcast did not converge to $GITHUB_REF_NAME" >&2
           exit 1
+
+      - name: Clean up anonymous signing identity
+        if: always()
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh

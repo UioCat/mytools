@@ -50,9 +50,10 @@
 
 ## Current Recommendation
 
-- 生成一张带 Code Signing EKU、主题仅为 `MacTools Release Signing` 的长期匿名自签名证书。
+- 仅保留现有 GitHub Secret `SPARKLE_PRIVATE_KEY`，使用 HKDF-SHA256 和固定用途标签派生 P-256 代码签名子密钥；不复用 Sparkle Ed25519 密钥字节，不新增 P12 和密码 Secret。
+- 生成一张带 Code Signing EKU、主题仅为 `MacTools Release Signing` 的长期匿名自签名证书；仓库只保存公开证书和指纹。
 - 主应用 DR 固定为 Bundle ID 与证书 SHA-1 指纹的组合，并额外记录 SHA-256 指纹用于审计；发布门禁拒绝 ad-hoc、Apple Development 和未知身份。
-- 证书私钥只保存在主签名 Mac、第二台恢复 Mac 的 Keychain 和 GitHub Actions Secret；GitHub 托管 macOS Runner 使用 passwordless `sudo` 添加临时系统级 Code Signing 信任，任务结束即移除信任并销毁临时钥匙串。
+- GitHub 托管 macOS Runner 仅在任务内派生子私钥并导入临时 Keychain；PEM 与 PKCS#12 在身份验证后立即删除，Keychain 在稳定 App 签名完成后立即删除。签名环境先复用已有 Code Signing 信任，全新 Runner 才用 passwordless `sudo` 添加临时系统信任，并在 App 签名完成时只清理本次添加的信任。
 - 所有 Mac 只运行 `/Applications/MacTools.app` 中的同一个 Release 产物；开发目录的 ad-hoc 包使用不同 Bundle ID 和显示名，不申请正式权限。
 - 迁移版本提供一次性旧权限清理说明；仅对 `local.mactools.mvp` 执行 `tccutil reset All`，覆盖 Finder Automation 和屏幕录制等旧身份决定，但不触碰其他应用。
 - 设置页在应用重新激活时刷新权限状态，避免用户已授权但界面仍显示“检查设置”。
@@ -63,12 +64,21 @@
 - `certtool c x=a` 生成的旧式自签名证书即使添加 `codeSign` 信任，也没有被 `codesign` 识别为有效身份。
 - 两次失败原型均已删除临时钥匙串；第二次产生的临时用户信任也已移除。
 - 实现必须先用带 `extendedKeyUsage=codeSigning` 的证书完成隔离签名原型，验证 `codesign --verify`、显式 DR 和移除签名机信任后的静态校验，再创建正式身份。
+- 公开测试种子原型已证明：通过 HMAC-SHA256 实现的 HKDF 可重复派生同一 P-256 标量，标准 SEC1 DER 可被 macOS 内置 OpenSSL 解析，重复派生公钥指纹一致。
 
 ## Review Decisions
 
 - 签名机和 GitHub Runner 必须临时信任自签名证书的 Code Signing 用途，否则身份可能无法被 `codesign` 选中；该信任只属于签名环境，安装机不导入证书。
 - 签名身份变化影响所有按 DR 记录的 TCC 决定。迁移操作必须覆盖 Finder Automation 和屏幕录制，使用 `All + 精确 Bundle ID` 避免遗漏，同时限制影响范围。
-- GitHub Actions Secret 不可回读，不能作为唯一恢复副本。发布前必须把同一身份导入第二台个人 Mac 的 Keychain，并用其签名测试产物验证可恢复性。
-- 现有 Sparkle EdDSA 私钥在本机未找到，且没有 Developer ID 可供丢失后的安全轮换。实现阶段需用一次性 RSA 公钥在 Runner 内加密现有 Secret，下载密文后仅在本机临时解密并导入两台个人 Mac 的 Keychain；恢复公钥和 SHA-256 指纹固定在受审提交中，禁止由 dispatch 输入替换，任务只允许仓库所有者经受保护 Environment 审批后执行。
-- GitHub 官方说明托管的 macOS Runner 支持 passwordless `sudo`。证书信任采用临时系统级 Code Signing trust，并先通过不发布产物的 `workflow_dispatch` 预检；用户级信任方案不采用。
-- 恢复完成后删除密文 artifact、受保护 Environment 的临时配置、固定公钥和一次性 workflow；提交历史只保留无秘密的公开恢复公钥，不保留任何明文私钥。
+- GitHub Actions Secret 不可回读，不能作为唯一恢复副本。发布前必须把 Sparkle 根私钥导入第二台个人 Mac 的 Keychain，并在两台 Mac 上验证派生的公钥、证书和 DR 一致。
+- 本机无 `gh` 且不使用 GitHub 页面时，一次性恢复工作流由仓库所有者 push 专用分支触发；Runner 核对固定 RSA 收件公钥指纹，仅将 RSA-OAEP-SHA256 密文写入临时输出分支，本机通过已有 SSH 读取。
+- GitHub 官方说明托管的 macOS Runner 支持 passwordless `sudo`。导入脚本优先复用签名环境已有的 Code Signing trust；全新 Runner 才添加临时系统级信任并对称清理。维护者本机可保留一次性确认的用户级信任，普通安装 Mac 不导入证书。
+- 一次性恢复提交 `7d5bedb` 已由 Git Push 成功生成密文输出分支；本机 RSA 私钥解密后得到 44 字符、32 字节的 Sparkle 种子，导入 Keychain 后公钥与现有 `SUPublicEDKey` 一致。
+- 正式 P-256 公开证书主题/签发者均仅为 `CN=MacTools Release Signing`；SHA-1 为 `25A3263958804C6D9429EB51B97BA2B16CA1FB67`，SHA-256 为 `D098182A8CFA254D9834F5E0E7911C39418080D38B1AC921E8F90E90DDE3E157`，派生公钥 SHA-256 为 `D5B6541A61CE08813F5FA2C36862B40AC0CD992F8D6352FDFB1EDF23231FACFE`。
+- 恢复完成后删除远程密文分支、固定恢复公钥、一次性 workflow 和本机临时 RSA 私钥；提交历史不保留任何明文私钥。
+- 本机已对固定公开证书完成一次用户级 Code Signing 信任，稳定包以固定 SHA-1 精确选择身份后成功签名、验证 DR、安装到 `/Applications/MacTools.app` 并启动；临时派生私钥、PKCS#12 和 Keychain 均已删除。
+- 应用内“整理旧权限记录”已对 `local.mactools.mvp` 完成真实 `tccutil reset All`；重启后四类权限均回到未授权，其他应用的辅助功能授权未受影响。系统设置仍需人工删掉旧裸可执行文件条目并启用新的正式 `MacTools.app` 条目。
+- 无 Apple Team ID 时，Hardened Runtime 的 Library Validation 会拒绝主程序加载已随包签名的 Sparkle Framework；主应用必须声明 `com.apple.security.cs.disable-library-validation`，其他 Hardened Runtime 保护和嵌套组件签名继续保留。
+- 开发身份不能与正式身份并发运行：两者仍会访问同一应用数据并注册相同快捷键。重建脚本按精确可执行路径管理目标进程，并在发现任一其他 MacTools 进程时失败，不静默终止另一身份。
+- 开发包固定为 `build/MacTools Dev.app` / `local.mactools.development`，删除正式 `SUFeedURL` 与 `SUPublicEDKey`；运行时在无 feed 时不启动 Sparkle，避免开发包被正式 Release 原地替换后从开发路径产生新的正式 TCC 条目。
+- 最终独立代码 Review 已清零 P0-P3；发布判断为 `minor`，建议版本 `v0.4.0`，但 TCC 单条目、低版本更新、第二台 Mac、preflight 和公开资产证据未完成前不得打标签。

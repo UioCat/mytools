@@ -1,0 +1,14 @@
+[req]
+distinguished_name = distinguished_name
+prompt = no
+x509_extensions = code_signing
+
+[distinguished_name]
+CN = MacTools Release Signing
+
+[code_signing]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+basicConstraints = critical,CA:TRUE,pathlen:0
+keyUsage = critical,digitalSignature,keyCertSign
+extendedKeyUsage = critical,codeSigning

@@ -11,10 +11,24 @@ import Sparkle
 final class SystemUpdateService: ObservableObject {
     @Published private(set) var state: SoftwareUpdateSettingsState
 
-    private let updaterController: SPUStandardUpdaterController
+    private let updaterController: SPUStandardUpdaterController?
     private var canCheckForUpdatesObservation: NSKeyValueObservation?
 
     init(bundle: Bundle = .main) {
+        let feedURL = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String
+        guard let feedURL, !feedURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            self.updaterController = nil
+            self.state = SoftwareUpdateSettingsState(
+                version: bundle.object(
+                    forInfoDictionaryKey: "CFBundleShortVersionString"
+                ) as? String ?? "—",
+                canCheckForUpdates: false,
+                automaticallyChecksForUpdates: false,
+                automaticallyDownloadsUpdates: false
+            )
+            return
+        }
+
         let updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
@@ -36,17 +50,20 @@ final class SystemUpdateService: ObservableObject {
 
     /// 启动带标准界面的用户主动更新检查。
     func checkForUpdates() {
+        guard let updaterController else { return }
         updaterController.checkForUpdates(nil)
     }
 
     /// 只在用户切换开关时更新 Sparkle 自带偏好，避免覆盖既有设备选择。
     func setAutomaticallyChecksForUpdates(_ isEnabled: Bool) {
+        guard let updaterController else { return }
         updaterController.updater.automaticallyChecksForUpdates = isEnabled
         refreshState(bundle: .main, updater: updaterController.updater)
     }
 
     /// 只在用户切换开关时允许或禁止 Sparkle 后台准备与安装更新。
     func setAutomaticallyDownloadsUpdates(_ isEnabled: Bool) {
+        guard let updaterController else { return }
         updaterController.updater.automaticallyDownloadsUpdates = isEnabled
         refreshState(bundle: .main, updater: updaterController.updater)
     }

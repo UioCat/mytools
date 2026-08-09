@@ -124,6 +124,38 @@ public protocol PermissionChecking {
     func requestScreenRecordingPermission() -> Bool
 }
 
+/// 描述清理当前应用 TCC 授权决定时可能发生的错误。
+public enum PermissionDecisionResetError: LocalizedError, Equatable, Sendable {
+    case missingBundleIdentifier
+    case unavailable
+    case commandFailed(exitCode: Int32, message: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingBundleIdentifier:
+            return "无法识别当前 MacTools 应用标识。"
+        case .unavailable:
+            return "当前环境不支持清理系统权限记录。"
+        case let .commandFailed(_, message):
+            return message.isEmpty ? "系统未能清理 MacTools 的权限记录。" : message
+        }
+    }
+}
+
+/// 隔离 TCC 命令执行，使权限领域不直接依赖系统进程 API。
+public protocol PermissionDecisionResetting: Sendable {
+    func resetAllDecisions(for bundleIdentifier: String) async throws
+}
+
+/// 在未注入 macOS 平台实现时提供明确失败，而不是静默假装清理成功。
+public struct UnavailablePermissionDecisionResetter: PermissionDecisionResetting {
+    public init() {}
+
+    public func resetAllDecisions(for bundleIdentifier: String) async throws {
+        throw PermissionDecisionResetError.unavailable
+    }
+}
+
 /// 扩展 `PermissionChecking`，补充本文件所需的权限领域能力。
 public extension PermissionChecking {
     /// 未提供请求实现时退化为只读辅助功能状态检查。
@@ -150,14 +182,20 @@ public extension PermissionChecking {
 /// 管理 `PermissionService` 在权限领域中的生命周期、依赖和可变状态。
 public final class PermissionService {
     private let checker: PermissionChecking
+    private let decisionResetter: any PermissionDecisionResetting
+    private let bundleIdentifierProvider: () -> String?
     private let openSystemSettingsURL: (URL) -> Void
 
     /// 创建 `PermissionService`，保存传入依赖并建立初始状态。
     public init(
         checker: PermissionChecking = SystemPermissionChecker(),
+        decisionResetter: any PermissionDecisionResetting = UnavailablePermissionDecisionResetter(),
+        bundleIdentifierProvider: @escaping () -> String? = { Bundle.main.bundleIdentifier },
         openSystemSettingsURL: ((URL) -> Void)? = nil
     ) {
         self.checker = checker
+        self.decisionResetter = decisionResetter
+        self.bundleIdentifierProvider = bundleIdentifierProvider
         self.openSystemSettingsURL = openSystemSettingsURL ?? { url in
             #if canImport(AppKit)
             _ = NSWorkspace.shared.open(url)
@@ -183,6 +221,18 @@ public final class PermissionService {
     /// 请求截图录屏所需的屏幕读取权限。
     public func requestScreenRecordingPermission() -> Bool {
         checker.requestScreenRecordingPermission()
+    }
+
+    /// 只清理当前 Bundle ID 的 TCC 决定，供签名身份迁移后一次性重新授权。
+    public func resetPermissionDecisions() async throws {
+        guard let bundleIdentifier = bundleIdentifierProvider()?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !bundleIdentifier.isEmpty
+        else {
+            throw PermissionDecisionResetError.missingBundleIdentifier
+        }
+
+        try await decisionResetter.resetAllDecisions(for: bundleIdentifier)
     }
 
     /// 为兼容旧调用默认打开辅助功能隐私设置。

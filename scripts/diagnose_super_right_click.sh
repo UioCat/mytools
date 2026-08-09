@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="$ROOT_DIR/build/MacTools.app"
+APP_DIR="${MACTOOLS_APP_DIR:-/Applications/MacTools.app}"
 LOG_FILE="$HOME/Library/Application Support/MacTools/debug.log"
 CLEAR_LOG=0
 PROBE=0
@@ -46,7 +46,7 @@ if [[ -d "$APP_DIR" ]]; then
     | sed 's/^/identity: /' || true
   echo
 else
-  echo "app bundle missing; run scripts/package_app.sh first"
+  echo "app bundle missing; run scripts/rebuild_and_run_app.sh first"
   echo
 fi
 

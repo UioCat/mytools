@@ -32,7 +32,9 @@ final class AppEnvironment {
     private let defaultClipboardCacheDirectory: URL
     private let pasteActionService: PasteActionService
     private let softwareUpdateService = SystemUpdateService()
-    private let permissionService = PermissionService()
+    private let permissionService = PermissionService(
+        decisionResetter: TCCPermissionDecisionResetter()
+    )
     private let fileActionService = FileActionService(workspace: SystemWorkspaceOpening())
     private let finderCurrentFolderResolver: any FinderCurrentFolderResolving = SystemFinderCurrentFolderResolver()
     private let finderFolderResolutionCoordinator = FinderFolderResolutionCoordinator()

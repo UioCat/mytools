@@ -3,16 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_NUMBER_SCRIPT="$ROOT_DIR/scripts/macos_build_number.sh"
-APP_DIR="$ROOT_DIR/build/MacTools.app"
-CONTENTS_DIR="$APP_DIR/Contents"
-MACOS_DIR="$CONTENTS_DIR/MacOS"
-RESOURCES_DIR="$CONTENTS_DIR/Resources"
-FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
-BUNDLE_ID="${MACOS_BUNDLE_ID:-local.mactools.mvp}"
+SIGNING_MODE="${MACOS_SIGNING_MODE:-development}"
 APP_VERSION="${MACOS_APP_VERSION:-0.3.0}"
 BUILD_NUMBER="${MACOS_BUILD_NUMBER:-$("$BUILD_NUMBER_SCRIPT" "$APP_VERSION")}"
-FORCE_ADHOC_SIGNING="${MACOS_FORCE_ADHOC_SIGNING:-0}"
 SPARKLE_PUBLIC_KEY="${MACOS_SPARKLE_PUBLIC_KEY:-yLe/vkXicHCaK5ckGlBofZee559tbU22/q8Q8FWmDWc=}"
+STABLE_SIGNING_IDENTITY="MacTools Release Signing"
+STABLE_CERTIFICATE_PATH="$ROOT_DIR/scripts/signing/MacToolsReleaseSigning.pem"
+MAIN_APP_ENTITLEMENTS="$ROOT_DIR/scripts/signing/MacToolsNoTeamID.entitlements"
+EXPECTED_CERTIFICATE_SHA1="25A3263958804C6D9429EB51B97BA2B16CA1FB67"
+EXPECTED_CERTIFICATE_SHA256="D098182A8CFA254D9834F5E0E7911C39418080D38B1AC921E8F90E90DDE3E157"
+CODESIGN_KEYCHAIN="${MACOS_CODESIGN_KEYCHAIN:-}"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/MacTools-release.XXXXXX")"
 
 cleanup_build_directory() {
@@ -30,20 +30,92 @@ if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
   exit 1
 fi
 
-if [[ "$FORCE_ADHOC_SIGNING" != "0" && "$FORCE_ADHOC_SIGNING" != "1" ]]; then
-  echo "error: MACOS_FORCE_ADHOC_SIGNING must be 0 or 1." >&2
+case "$SIGNING_MODE" in
+  stable)
+    BUNDLE_ID="local.mactools.mvp"
+    APP_DISPLAY_NAME="MacTools"
+    APP_BUNDLE_NAME="MacTools.app"
+    ;;
+  development)
+    BUNDLE_ID="local.mactools.development"
+    APP_DISPLAY_NAME="MacTools Dev"
+    APP_BUNDLE_NAME="MacTools Dev.app"
+    ;;
+  *)
+    echo "error: MACOS_SIGNING_MODE must be stable or development." >&2
+    exit 1
+    ;;
+esac
+
+APP_DIR="$ROOT_DIR/build/$APP_BUNDLE_NAME"
+CONTENTS_DIR="$APP_DIR/Contents"
+MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
+FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
+
+CODESIGN_ARGUMENTS=(--force --options runtime)
+
+if [[ ! -f "$MAIN_APP_ENTITLEMENTS" ]]; then
+  echo "error: no-Team-ID main app entitlements are missing: $MAIN_APP_ENTITLEMENTS" >&2
   exit 1
 fi
 
-CODESIGN_IDENTITY=""
-if [[ "$FORCE_ADHOC_SIGNING" == "0" ]]; then
-  CODESIGN_IDENTITY="${MACOS_CODESIGN_IDENTITY:-}"
-  if [[ -z "$CODESIGN_IDENTITY" ]]; then
-    CODESIGN_IDENTITY="$(
-      security find-identity -v -p codesigning 2>/dev/null \
-        | awk -F '"' '/Developer ID Application|Apple Development|Mac Developer/ { print $2; exit }'
-    )"
+if [[ "$SIGNING_MODE" == "stable" ]]; then
+  if [[ ! -f "$STABLE_CERTIFICATE_PATH" ]]; then
+    echo "error: pinned stable certificate is missing: $STABLE_CERTIFICATE_PATH" >&2
+    exit 1
   fi
+
+  CERTIFICATE_SUBJECT="$(
+    openssl x509 -in "$STABLE_CERTIFICATE_PATH" -noout -subject -nameopt RFC2253 \
+      | sed -E 's/^subject=[[:space:]]*/subject=/'
+  )"
+  if [[ "$CERTIFICATE_SUBJECT" != "subject=CN=$STABLE_SIGNING_IDENTITY" ]]; then
+    echo "error: pinned stable certificate contains an unexpected subject." >&2
+    exit 1
+  fi
+
+  CERTIFICATE_SHA1="$(
+    openssl x509 -in "$STABLE_CERTIFICATE_PATH" -noout -fingerprint -sha1 \
+      | cut -d= -f2 \
+      | tr -d ':'
+  )"
+  CERTIFICATE_SHA256="$(
+    openssl x509 -in "$STABLE_CERTIFICATE_PATH" -noout -fingerprint -sha256 \
+      | cut -d= -f2 \
+      | tr -d ':'
+  )"
+  if [[ "$CERTIFICATE_SHA1" != "$EXPECTED_CERTIFICATE_SHA1" \
+    || "$CERTIFICATE_SHA256" != "$EXPECTED_CERTIFICATE_SHA256" ]]; then
+    echo "error: pinned stable certificate fingerprint does not match the fixed identity." >&2
+    exit 1
+  fi
+
+  if [[ -n "$CODESIGN_KEYCHAIN" ]]; then
+    if [[ ! -f "$CODESIGN_KEYCHAIN" ]]; then
+      echo "error: MACOS_CODESIGN_KEYCHAIN does not exist: $CODESIGN_KEYCHAIN" >&2
+      exit 1
+    fi
+    CODESIGN_ARGUMENTS+=(--keychain "$CODESIGN_KEYCHAIN")
+    VALID_SIGNING_IDENTITIES="$(
+      security find-identity -v -p codesigning "$CODESIGN_KEYCHAIN"
+    )"
+  else
+    VALID_SIGNING_IDENTITIES="$(security find-identity -v -p codesigning)"
+  fi
+
+  if ! grep -F "$EXPECTED_CERTIFICATE_SHA1" <<<"$VALID_SIGNING_IDENTITIES" \
+    | grep -F "\"$STABLE_SIGNING_IDENTITY\"" >/dev/null; then
+    echo "error: stable signing identity is unavailable or not trusted for code signing." >&2
+    echo "error: expected $STABLE_SIGNING_IDENTITY ($EXPECTED_CERTIFICATE_SHA1)." >&2
+    exit 1
+  fi
+
+  CODESIGN_ARGUMENTS+=(--sign "$EXPECTED_CERTIFICATE_SHA1")
+else
+  echo "warning: development signing uses an isolated ad-hoc identity." >&2
+  echo "warning: do not grant production TCC permissions to MacTools Dev." >&2
+  CODESIGN_ARGUMENTS+=(--sign -)
 fi
 
 swift build \
@@ -78,6 +150,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key>
   <string>AppIcon.icns</string>
   <key>CFBundleName</key>
+  <string>MacTools</string>
+  <key>CFBundleDisplayName</key>
   <string>MacTools</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
@@ -114,7 +188,16 @@ PLIST
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$CONTENTS_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$CONTENTS_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$CONTENTS_DIR/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBLIC_KEY" "$CONTENTS_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_DISPLAY_NAME" "$CONTENTS_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_DISPLAY_NAME" "$CONTENTS_DIR/Info.plist"
+if [[ "$SIGNING_MODE" == "stable" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBLIC_KEY" "$CONTENTS_DIR/Info.plist"
+else
+  /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$CONTENTS_DIR/Info.plist"
+  /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$CONTENTS_DIR/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$CONTENTS_DIR/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$CONTENTS_DIR/Info.plist"
+fi
 
 SPARKLE_FRAMEWORK="$FRAMEWORKS_DIR/Sparkle.framework"
 SPARKLE_VERSION_DIR="$SPARKLE_FRAMEWORK/Versions/Current"
@@ -123,11 +206,18 @@ sign_sparkle_component() {
   local component="$1"
   shift
 
-  if [[ -n "$CODESIGN_IDENTITY" ]]; then
-    codesign --force --sign "$CODESIGN_IDENTITY" --options runtime "$@" "$component"
-  else
-    codesign --force --sign - --options runtime "$@" "$component"
-  fi
+  codesign "${CODESIGN_ARGUMENTS[@]}" "$@" "$component"
+}
+
+verify_stable_component_signature() {
+  local component="$1"
+
+  codesign \
+    --verify \
+    --strict \
+    --test-requirement "=certificate leaf = H\"$EXPECTED_CERTIFICATE_SHA1\"" \
+    --verbose=2 \
+    "$component"
 }
 
 sign_sparkle_component "$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc"
@@ -138,25 +228,85 @@ sign_sparkle_component "$SPARKLE_VERSION_DIR/Autoupdate"
 sign_sparkle_component "$SPARKLE_VERSION_DIR/Updater.app"
 sign_sparkle_component "$SPARKLE_FRAMEWORK"
 
-if [[ -n "$CODESIGN_IDENTITY" ]]; then
-  echo "Signing with identity: $CODESIGN_IDENTITY" >&2
-  SIGN_ARGUMENTS=(--force --sign "$CODESIGN_IDENTITY" --options runtime)
-  SIGN_ARGUMENTS+=(--requirements "=designated => identifier \"$BUNDLE_ID\" and anchor trusted" "$APP_DIR")
-  codesign "${SIGN_ARGUMENTS[@]}"
-else
-  echo "warning: no trusted code signing identity found; using ad-hoc signing." >&2
-  echo "warning: macOS TCC may not reliably match Accessibility/Input Monitoring grants for this build." >&2
+if [[ "$SIGNING_MODE" == "stable" ]]; then
+  verify_stable_component_signature "$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc"
+  verify_stable_component_signature "$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc"
+  verify_stable_component_signature "$SPARKLE_VERSION_DIR/Autoupdate"
+  verify_stable_component_signature "$SPARKLE_VERSION_DIR/Updater.app"
+  verify_stable_component_signature "$SPARKLE_FRAMEWORK"
+fi
+
+if [[ "$SIGNING_MODE" == "stable" ]]; then
+  echo "Signing stable app with identity: $STABLE_SIGNING_IDENTITY" >&2
+  STABLE_REQUIREMENT="identifier \"$BUNDLE_ID\" and certificate leaf = H\"$EXPECTED_CERTIFICATE_SHA1\""
   codesign \
-    --force \
-    --sign - \
+    "${CODESIGN_ARGUMENTS[@]}" \
+    --entitlements "$MAIN_APP_ENTITLEMENTS" \
+    --requirements "=designated => $STABLE_REQUIREMENT" \
+    "$APP_DIR"
+else
+  codesign \
+    "${CODESIGN_ARGUMENTS[@]}" \
+    --entitlements "$MAIN_APP_ENTITLEMENTS" \
     --requirements "=designated => identifier \"$BUNDLE_ID\"" \
     "$APP_DIR"
 fi
 
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
-otool -L "$MACOS_DIR/MacTools" | grep -q '@rpath/Sparkle.framework/'
-otool -l "$MACOS_DIR/MacTools" \
-  | grep -A2 'LC_RPATH' \
-  | grep -q '@executable_path/../Frameworks'
+
+if [[ "$SIGNING_MODE" == "stable" ]]; then
+  EMBEDDED_CERTIFICATE_PREFIX="$BUILD_DIR/embedded-stable-certificate-"
+  codesign \
+    --display \
+    --extract-certificates="$EMBEDDED_CERTIFICATE_PREFIX" \
+    "$APP_DIR" \
+    2>/dev/null
+  EMBEDDED_CERTIFICATE_SHA1="$(
+    openssl x509 \
+      -inform DER \
+      -in "${EMBEDDED_CERTIFICATE_PREFIX}0" \
+      -noout \
+      -fingerprint \
+      -sha1 \
+      | cut -d= -f2 \
+      | tr -d ':'
+  )"
+  if [[ "$EMBEDDED_CERTIFICATE_SHA1" != "$EXPECTED_CERTIFICATE_SHA1" ]]; then
+    echo "error: signed app certificate does not match the pinned certificate." >&2
+    exit 1
+  fi
+
+  codesign \
+    --verify \
+    --strict \
+    --test-requirement "=$STABLE_REQUIREMENT" \
+    --verbose=2 \
+    "$APP_DIR"
+  SIGNATURE_DETAILS="$(codesign --display --verbose=4 "$APP_DIR" 2>&1)"
+  grep -Fqx "Authority=$STABLE_SIGNING_IDENTITY" <<<"$SIGNATURE_DETAILS"
+  if grep -Eqi '@|Apple Development|Developer ID' <<<"$SIGNATURE_DETAILS"; then
+    echo "error: stable signature exposes an unexpected personal or Apple identity." >&2
+    exit 1
+  fi
+  TEAM_IDENTIFIER_LINE="$(grep '^TeamIdentifier=' <<<"$SIGNATURE_DETAILS" || true)"
+  if [[ -n "$TEAM_IDENTIFIER_LINE" && "$TEAM_IDENTIFIER_LINE" != "TeamIdentifier=not set" ]]; then
+    echo "error: stable signature unexpectedly contains a TeamIdentifier." >&2
+    exit 1
+  fi
+  printf 'Stable certificate SHA-256: %s\n' "$EXPECTED_CERTIFICATE_SHA256" >&2
+else
+  SIGNATURE_DETAILS="$(codesign --display --verbose=4 "$APP_DIR" 2>&1)"
+  grep -F 'Signature=adhoc' <<<"$SIGNATURE_DETAILS" >/dev/null
+fi
+
+LINKED_LIBRARIES="$(otool -L "$MACOS_DIR/MacTools")"
+LOAD_COMMANDS="$(otool -l "$MACOS_DIR/MacTools")"
+grep -F '@rpath/Sparkle.framework/' <<<"$LINKED_LIBRARIES" >/dev/null
+grep -A2 'LC_RPATH' <<<"$LOAD_COMMANDS" \
+  | grep -F '@executable_path/../Frameworks' >/dev/null
+
+MAIN_APP_ENTITLEMENTS_DETAILS="$(codesign --display --entitlements :- "$APP_DIR" 2>/dev/null)"
+grep -F '<key>com.apple.security.cs.disable-library-validation</key>' \
+  <<<"$MAIN_APP_ENTITLEMENTS_DETAILS" >/dev/null
 
 echo "$APP_DIR"

@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Design
+Implementation
 
 ## Phases
 
@@ -16,25 +16,26 @@ Design
 - [x] 比较 Apple Development、固定匿名自签名和继续 ad-hoc 三种方案
 - [x] 确认公开 Release 不接受暴露姓名与邮箱
 - [x] 写入并完成独立设计 Review，自审无未解决 P0-P2
-- [ ] 用户确认书面设计规格
-- **Status:** in_progress
+- [x] 用户确认书面设计规格并授权开始实现
+- **Status:** complete
 
 ### Phase 2: Implementation
-- [ ] 收紧打包脚本，稳定渠道禁止静默回退 ad-hoc
-- [ ] 建立固定匿名代码签名身份并安全写入本机 Keychain 与 GitHub Actions Secret
-- [ ] 在第二台个人 Mac 的 Keychain 导入恢复身份并完成签名演练
-- [ ] 加密恢复现有 Sparkle EdDSA 私钥并在两台个人 Mac 的 Keychain 完成恢复演练
-- [ ] 调整远程工作流为导入匿名身份、构建并验证唯一发布产物
-- [ ] 统一正式运行路径并提供一次性旧权限清理引导
-- [ ] 权限设置页在应用重新激活时刷新真实状态
-- [ ] 更新自动化测试、README 和人工验收清单
-- **Status:** pending
+- [x] 收紧打包脚本，稳定渠道禁止静默回退 ad-hoc
+- [x] 通过 Git Push 触发的一次性工作流，加密恢复现有 Sparkle EdDSA 根私钥
+- [x] 从 Sparkle 根私钥按用途派生固定匿名代码签名身份，不新增 GitHub Secret
+- [ ] 在第二台个人 Mac 的 Keychain 完成 Sparkle 私钥恢复与签名演练
+- [x] 调整远程工作流为导入匿名身份、构建并验证唯一发布产物
+- [x] 统一正式运行路径并提供一次性旧权限清理引导
+- [x] 权限设置页在应用重新激活时刷新真实状态
+- [x] 隔离开发包路径、运行进程和 Sparkle 更新渠道
+- [x] 更新自动化测试、README 和人工验收清单
+- **Status:** in_progress
 
 ### Phase 3: Verification & Review
-- [ ] 聚焦测试、完整 `swift test`、严格并发检查和打包验证
+- [x] 聚焦测试、完整 `swift test`、严格并发检查和打包验证
 - [ ] 多路径、签名 requirement、DMG、SHA-256、appcast 与敏感信息扫描
-- [ ] 独立代码 Review 清零 P0-P2
-- [ ] 独立发布判断确认版本级别、完整发布范围和门禁
+- [x] 独立代码 Review 清零 P0-P2
+- [x] 独立发布判断确认版本级别、完整发布范围和门禁
 - **Status:** pending
 
 ### Phase 4: Commit, Push & Release
@@ -55,6 +56,8 @@ Design
 | 多台 Mac 安装同一个 Release 产物 | 避免不同机器或路径产生新的代码身份 |
 | 每台 Mac 单独授予 TCC 权限 | 系统权限不跨设备同步 |
 | 私钥不写入仓库或普通文件 | 签名身份属于敏感资产 |
+| 不新增 GitHub Actions Secret | 已有 `SPARKLE_PRIVATE_KEY` 经 HKDF 用途隔离后派生 P-256 代码签名子密钥，发布仍只需 push 标签 |
+| 恢复流程不使用网页 | 仓库所有者 push 专用分支触发，Runner 仅向固定 RSA 收件公钥输出密文分支 |
 
 ## Errors Encountered
 
@@ -70,6 +73,13 @@ Design
 | 独立 Review 指出 Runner 信任、Finder Automation 迁移和密钥恢复缺口 | 1 | 将临时 codeSign 信任、Bundle ID 级 `All` 重置及第二台 Mac Keychain 恢复演练加入发布门禁 |
 | 复审指出用户级信任不可无人值守、迁移步骤不一致且 Sparkle 私钥无恢复副本 | 2 | 改为 passwordless `sudo` 系统级临时信任；补齐全部权限恢复；增加公钥加密的 Secret 恢复流程和双机演练 |
 | 第三次复审指出可变恢复公钥会形成 Secret 导出接口 | 3 | 将一次性公钥和指纹固定到受审提交，限定仓库所有者和受保护 Environment 审批，不接受 dispatch 公钥输入 |
+| 本机无 `gh` 且用户不希望打开 GitHub 页面 | 1 | 改为 owner-only 的 push 触发恢复；密文经 GitHub Token 写入临时输出分支，本机通过现有 SSH 获取 |
+| 含 `rm -rf` 的原型清理命令被执行策略拒绝 | 1 | 重试时保留 `mktemp` 精确路径，验证后通过 `unlink` 和 `rmdir` 逐项清理 |
+| 恢复 workflow 首轮 Review 发现 checkout 可变标签 | 1 | 固定官方 checkout 完整 SHA，禁止持久凭据，写 token 只注入最后密文分支步骤；同一 Agent 复审无 P0-P3 |
+| 分开导入 EC 私钥与证书未组成 Keychain identity | 1 | 改用临时加密 PKCS#12 成对导入，`security export -t identities` 证明身份可导出 |
+| 清理脚本无法证明临时系统信任归属与实际移除状态 | 4 | 改为写前 ownership marker；任何移除、证书查询或信任验证不确定性均保留标记并非零退出，故障回归覆盖重试边界 |
+| 导入后的 PEM、PKCS#12 和临时 Keychain 暴露时间过长 | 1 | PEM/PKCS#12 在 identity 验证后立即删除，Keychain 与任务信任在 App 签名后立即清理，末尾 `always()` 幂等兜底 |
+| 原用户 Keychain 搜索列表读取失败仍可能被覆盖 | 1 | 独立助手先完整读取并原子快照，成功后才 prepend；cleanup 按快照精确恢复，失败保留状态 |
 
 ## Notes
 

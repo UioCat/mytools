@@ -365,6 +365,10 @@ struct RuntimeSettingsView: View {
             setAutomaticallyChecksForUpdates: softwareUpdateService.setAutomaticallyChecksForUpdates,
             setAutomaticallyDownloadsUpdates: softwareUpdateService.setAutomaticallyDownloadsUpdates,
             openPermissionSettings: permissionService.requestPermissionAndOpenSystemSettings(for:),
+            resetPermissionDecisions: {
+                try await permissionService.resetPermissionDecisions()
+                permissionSummary = permissionService.summary()
+            },
             openClipboardStorageFolder: onOpenClipboardStorageFolder,
             saveClipboardSettings: onSaveClipboardSettings,
             saveTranslationSettings: onSaveTranslationSettings,
@@ -381,6 +385,9 @@ struct RuntimeSettingsView: View {
             presentation: presentation
         )
         .onAppear {
+            permissionSummary = permissionService.summary()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             permissionSummary = permissionService.summary()
         }
     }

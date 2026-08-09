@@ -27,6 +27,17 @@ final class SystemUpdateServiceSourceTests: XCTestCase {
         )
     }
 
+    func testDevelopmentBundleWithoutFeedDoesNotStartSparkleUpdater() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/Platform/Updates/SystemUpdateService.swift"
+        )
+
+        XCTAssertTrue(source.contains("object(forInfoDictionaryKey: \"SUFeedURL\")"))
+        XCTAssertTrue(source.contains("updaterController: SPUStandardUpdaterController?"))
+        XCTAssertTrue(source.contains("canCheckForUpdates: false"))
+        XCTAssertTrue(source.contains("guard let updaterController else { return }"))
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

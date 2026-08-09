@@ -1,0 +1,53 @@
+name: Anonymous signing preflight
+
+on:
+  push:
+    branches:
+      - codex/anonymous-signing-preflight
+
+permissions:
+  contents: read
+
+jobs:
+  signing-preflight:
+    if: >-
+      github.actor == github.repository_owner &&
+      github.ref == 'refs/heads/codex/anonymous-signing-preflight'
+    runs-on: macos-26
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Import anonymous signing identity
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: scripts/ci/import_anonymous_signing_identity.sh
+
+      - name: Build stable signed app
+        env:
+          MACOS_SIGNING_MODE: stable
+          MACOS_APP_VERSION: 0.0.1
+          MACOS_BUILD_NUMBER: 1
+        run: scripts/package_app.sh
+
+      - name: Retire anonymous signing identity after build
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh
+
+      - name: Verify stable signed app without signing trust
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/MacTools.app
+          SIGNATURE_DETAILS="$(codesign -dv --verbose=4 build/MacTools.app 2>&1)"
+          DESIGNATED_REQUIREMENT="$(codesign -d -r- build/MacTools.app 2>&1)"
+          NORMALIZED_REQUIREMENT="$(tr '[:upper:]' '[:lower:]' <<<"$DESIGNATED_REQUIREMENT")"
+          grep -Fqx 'Authority=MacTools Release Signing' <<<"$SIGNATURE_DETAILS"
+          grep -Fq 'identifier "local.mactools.mvp" and certificate leaf = h"25a3263958804c6d9429eb51b97ba2b16ca1fb67"' <<<"$NORMALIZED_REQUIREMENT"
+          ! grep -q '^Signature=adhoc$' <<<"$SIGNATURE_DETAILS"
+          ! grep -Eqi '@|Apple Development|Developer ID' <<<"$SIGNATURE_DETAILS"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/MacTools.app/Contents/Info.plist)" = 'local.mactools.mvp'
+
+      - name: Clean up anonymous signing identity
+        if: always()
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh

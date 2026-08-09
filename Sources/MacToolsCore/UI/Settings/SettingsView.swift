@@ -20,6 +20,7 @@ public struct SettingsView: View {
     public let setAutomaticallyChecksForUpdates: (Bool) -> Void
     public let setAutomaticallyDownloadsUpdates: (Bool) -> Void
     public let openPermissionSettings: (AppPermission) -> Void
+    public let resetPermissionDecisions: () async throws -> Void
     public let openClipboardStorageFolder: () -> Void
     public let saveClipboardSettings: (ClipboardSettings) throws -> Void
     public let saveTranslationSettings: (TranslationSettings, Bool) async throws -> Void
@@ -69,6 +70,7 @@ public struct SettingsView: View {
         setAutomaticallyChecksForUpdates: @escaping (Bool) -> Void = { _ in },
         setAutomaticallyDownloadsUpdates: @escaping (Bool) -> Void = { _ in },
         openPermissionSettings: @escaping (AppPermission) -> Void = { _ in },
+        resetPermissionDecisions: @escaping () async throws -> Void = {},
         openClipboardStorageFolder: @escaping () -> Void = {},
         saveClipboardSettings: @escaping (ClipboardSettings) throws -> Void = { _ in },
         saveTranslationSettings: @escaping (TranslationSettings, Bool) async throws -> Void = { _, _ in },
@@ -98,6 +100,7 @@ public struct SettingsView: View {
         self.setAutomaticallyChecksForUpdates = setAutomaticallyChecksForUpdates
         self.setAutomaticallyDownloadsUpdates = setAutomaticallyDownloadsUpdates
         self.openPermissionSettings = openPermissionSettings
+        self.resetPermissionDecisions = resetPermissionDecisions
         self.openClipboardStorageFolder = openClipboardStorageFolder
         self.saveClipboardSettings = saveClipboardSettings
         self.saveTranslationSettings = saveTranslationSettings
@@ -340,6 +343,11 @@ public struct SettingsView: View {
                 title: "屏幕与系统音频录制",
                 isEnabled: permissionSummary.canCaptureScreen,
                 permission: .screenRecording,
+                openPermissionSettings: openPermissionSettings
+            )
+
+            PermissionResetActionView(
+                resetPermissionDecisions: resetPermissionDecisions,
                 openPermissionSettings: openPermissionSettings
             )
         }

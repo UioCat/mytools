@@ -80,8 +80,7 @@ Logs should avoid writing selected text, API keys, or clipboard contents.
 1. Build and launch:
 
    ```sh
-   scripts/package_app.sh
-   open build/MacTools.app
+   scripts/rebuild_and_run_app.sh
    ```
 
 2. Inspect app identity and logs:
@@ -148,33 +147,31 @@ from uTools Super Panel before adding a configurable plugin marketplace.
 
 ## TCC Handling
 
-For local macOS builds, Accessibility and Input Monitoring are tied to the app's
-code signing identity. If the app is ad-hoc signed, macOS can show MacTools in
-System Settings while `AXIsProcessTrusted()` and input-monitoring preflight still
-return false for the current build.
+Accessibility and Input Monitoring are tied to the app's code identity. Stable
+MacTools releases therefore use the pinned anonymous `MacTools Release Signing`
+certificate and the canonical `/Applications/MacTools.app` path. Development
+builds use a separate `local.mactools.development` identity.
 
 Recommended handling:
 
-1. Sign the app with a stable trusted certificate.
-   `scripts/package_app.sh` will use `MACOS_CODESIGN_IDENTITY` when set, or the
-   first available Apple/Developer code-signing identity in the keychain.
+1. Maintainers run `scripts/rebuild_and_run_app.sh`. Stable mode accepts only the
+   pinned certificate and installs `/Applications/MacTools.app`; it fails closed
+   if the identity is missing or not trusted for code signing.
 
-2. If no trusted identity is available, the script falls back to ad-hoc signing
-   and prints a warning. In that mode, TCC grants are not reliable enough for
-   super right-click development.
+2. Contributors without that identity use
+   `MACOS_SIGNING_MODE=development scripts/rebuild_and_run_app.sh`. The separate
+   name and Bundle ID prevent development grants from becoming formal MacTools
+   entries.
 
-3. After switching signing identity, reset and re-grant the affected services:
-
-   ```sh
-   tccutil reset Accessibility local.mactools.mvp
-   tccutil reset ListenEvent local.mactools.mvp
-   scripts/package_app.sh
-   open build/MacTools.app
-   ```
+3. After migrating from an old ad-hoc identity, use Settings > Permissions >
+   `整理旧权限记录`. The confirmed action scopes `tccutil reset All` to
+   `local.mactools.mvp`; it never resets other applications.
 
 4. Re-enable MacTools in:
    - System Settings > Privacy & Security > Accessibility
    - System Settings > Privacy & Security > Input Monitoring
+   - Screen & System Audio Recording
+   - Finder Automation when first requested
 
 5. Run:
 

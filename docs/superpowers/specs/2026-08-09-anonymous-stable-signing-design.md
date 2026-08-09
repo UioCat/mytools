@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-- 状态：待用户确认。
+- 状态：已确认，实施中。
 - 适用平台：macOS 26+，用户自己的多台 Mac。
 - 约束：没有付费 Apple Developer Program，不使用 Developer ID，不公开个人 Apple Development 证书。
 - 目标版本：由发布判断在实现和完整验证后确定，预计为补丁版本。
@@ -51,14 +51,24 @@ Common Name = MacTools Release Signing
 
 证书要求：
 
-- RSA 3072 或更高；
+- P-256 椭圆曲线公钥；
 - SHA-256 签名；
-- Key Usage 仅包含 Digital Signature；
+- Basic Constraints 为自签名根 `CA:TRUE, pathlen:0`；
+- Key Usage 仅包含 Digital Signature 与 Certificate Sign，后者只用于让该固定自签名证书在签名环境中作为信任根；
 - Extended Key Usage 包含 Code Signing；
 - 长期固定有效期，目标为 20 年；
 - 不填写姓名、邮箱、组织、组织单元、地区或 Apple Team 标识。
 
 公开应用必然包含证书、公钥、序列号、有效期和指纹。这些字段只描述 MacTools 的匿名发布身份，不映射到用户个人资料。私钥不得进入仓库、日志、Release 资产或普通持久文件。
+
+固定公开元数据：
+
+| 字段 | 值 |
+| --- | --- |
+| 有效期 | 2026-08-09 至 2046-08-09（UTC） |
+| SHA-1 | `25A3263958804C6D9429EB51B97BA2B16CA1FB67` |
+| SHA-256 | `D098182A8CFA254D9834F5E0E7911C39418080D38B1AC921E8F90E90DDE3E157` |
+| P-256 公钥 SHA-256 | `D5B6541A61CE08813F5FA2C36862B40AC0CD992F8D6352FDFB1EDF23231FACFE` |
 
 ### Designated Requirement
 
@@ -66,12 +76,14 @@ Common Name = MacTools Release Signing
 
 ```text
 identifier "local.mactools.mvp"
-and certificate leaf = H"<固定证书 SHA-1>"
+and certificate leaf = H"25A3263958804C6D9429EB51B97BA2B16CA1FB67"
 ```
 
 证书指纹是公开的身份锚点，不是秘密。该 requirement 不使用 `anchor trusted`，因此目标机器无需额外安装或信任自签名根证书即可判断更新是否由同一固定证书签署。实现阶段必须以未安装该证书的隔离环境验证这一行为，未通过时停止发布。
 
 所有 Sparkle framework、XPC service、Updater 和主应用都由同一匿名身份按由内到外的顺序签名。发布门禁同时检查：
+
+匿名自签名和开发 ad-hoc 签名都没有 Apple Team ID。主应用为加载随包分发且已单独验签的 Sparkle Framework，仅声明 `com.apple.security.cs.disable-library-validation`；Hardened Runtime 及其他保护保持启用，Sparkle 嵌套组件不继承该例外。
 
 - 主应用不是 ad-hoc；
 - `Authority` 仅为 `MacTools Release Signing`；
@@ -80,6 +92,17 @@ and certificate leaf = H"<固定证书 SHA-1>"
 - 嵌套组件与主应用签名完整且满足各自 DR。
 
 ## 密钥生命周期
+
+### 用途隔离派生
+
+现有 `SPARKLE_PRIVATE_KEY` 作为唯一发布根密钥。代码签名不直接复用 Ed25519 私钥字节，而是使用 HKDF-SHA256 和固定的版本化用途标签派生独立 P-256 标量。派生脚本必须：
+
+- 拒绝空根密钥、零标量以及不在 P-256 群阶内的值；
+- 只将私钥写入权限为 `0700` 的临时目录，文件权限为 `0600`；
+- 导入 Keychain 前校验派生公钥与仓库固定证书完全一致；
+- 绝不输出根密钥、派生标量、私钥 PEM 或临时 Keychain 密码。
+
+此方案不新增 GitHub Secret，标签发布仍只使用现有 `SPARKLE_PRIVATE_KEY`。代价是该根密钥泄露时 Sparkle 更新签名和代码签名会同时受影响；两个子用途在密码学上相互隔离，但共享同一根密钥的运维风险边界。
 
 ### 本机
 
@@ -90,43 +113,42 @@ and certificate leaf = H"<固定证书 SHA-1>"
 3. 在签名机移除临时证书信任后仍满足显式 DR；
 4. 不包含任何个人字段。
 
-原型通过后，正式私钥直接导入主签名 Mac 的登录 Keychain。若证书工具必须经过临时 PKCS#12，文件只能位于权限为 `0700` 的 `mktemp` 目录、文件权限为 `0600`，上传或导入后立即安全删除；它不作为备份或长期存储。
+原型通过后，Sparkle 根私钥只导入主签名 Mac 和第二台恢复 Mac 的登录 Keychain。代码签名子私钥每次按需派生，导入临时 Keychain 后即销毁普通文件，不作为独立备份或 GitHub Secret。正式发布前必须在第二台 Mac 重复派生公钥、证书和 DR 检查，未完成该恢复演练时不得创建版本标签。
 
-GitHub Actions Secret 不可回读，不能承担恢复备份。正式发布前必须通过一次加密 PKCS#12 临时传输，把同一身份导入第二台用户自有 Mac 的登录 Keychain。第二台 Mac 需要独立完成测试二进制签名、DR 和公开字段检查；验证后删除两端临时 PKCS#12，只在两台 Mac 的 Keychain 中保留可恢复身份。未完成该恢复演练时不得创建版本标签。
-
-现有 Sparkle EdDSA 私钥只确认存在于不可回读的 GitHub Secret，本机 Keychain 尚未找到恢复副本。实现阶段增加一次性、仅手动触发的密钥恢复工作流：
+现有 Sparkle EdDSA 私钥只确认存在于不可回读的 GitHub Secret，本机 Keychain 尚未找到恢复副本。实现阶段增加一次性、由 Git Push 触发的密钥恢复工作流：
 
 1. 本机在权限为 `0700` 的临时目录生成一次性 RSA 4096 恢复密钥；私钥不离开本机，公钥和其 SHA-256 指纹写入一次性 workflow 所在的受审提交；
-2. workflow 不接受恢复公钥、指纹或收件人作为 dispatch 输入，运行时先对仓库内固定公钥重新计算并比对固定指纹；
-3. 恢复 job 只允许 `github.actor == github.repository_owner`，使用权限最小的受保护 Environment，并要求进入 Secret 步骤前人工批准；
-4. 工作流将 `SPARKLE_PRIVATE_KEY` 通过标准输入交给 RSA-OAEP-SHA256 加密，日志只记录公钥指纹，不得打印明文，并只上传保留期一天的密文 artifact；
-5. 本机下载密文，在临时目录解密后立即用 Sparkle 工具导入登录 Keychain；
-6. 确认导入私钥派生的公钥与应用现有 `SUPublicEDKey` 完全一致，再完成 DMG 和 appcast 的签名、验证；
-7. 通过加密临时传输把同一 EdDSA 私钥导入第二台恢复 Mac 的 Keychain，并重复公钥匹配和签名验证；
-8. 删除两台 Mac 的临时明文、一次性 RSA 私钥、密文 artifact、Environment 临时配置、固定公钥和一次性恢复 workflow。
+2. workflow 不接受恢复公钥、指纹或收件人输入，运行时先对仓库内固定公钥重新计算并比对固定指纹；
+3. workflow 只监听 `codex/sparkle-key-recovery` 分支，恢复 job 只允许 `github.actor == github.repository_owner`；
+4. 工作流将 `SPARKLE_PRIVATE_KEY` 通过标准输入交给 RSA-OAEP-SHA256 加密，日志只记录公钥指纹，不得打印明文；
+5. Runner 使用当次 `GITHUB_TOKEN` 将密文提交到以源提交 SHA 命名的临时输出分支，该分支只增加 RSA 密文；
+6. 本机使用现有 Git SSH 获取精确输出分支，在临时目录解密后立即用 Sparkle 工具导入登录 Keychain；
+7. 确认导入私钥派生的公钥与应用现有 `SUPublicEDKey` 完全一致，再完成 DMG 和 appcast 的签名、验证；
+8. 通过加密临时传输把同一 EdDSA 私钥导入第二台恢复 Mac 的 Keychain，并重复公钥匹配和签名验证；
+9. 删除两台 Mac 的临时明文、一次性 RSA 私钥、远程密文分支、固定恢复公钥和一次性 workflow。
 
 该流程只恢复仓库原有 Secret，不生成或轮换 Sparkle 密钥。对 workflow、公钥或 actor 限制的任何未审修改都必须阻断执行；任一步无法验证时停止发布。没有 Developer ID 时不得假设能够安全轮换丢失的 EdDSA 密钥。
 
+恢复 workflow 的第三方 Action 必须固定到已核验的完整提交 SHA，checkout 不持久化凭据；只有最后发布密文分支的步骤才获得 `GITHUB_TOKEN` 环境变量。
+
 ### GitHub Actions
 
-GitHub Actions Secrets 保存：
+GitHub Actions Secrets 仅保留：
 
 | Secret | 内容 |
 | --- | --- |
-| `MACOS_SIGNING_CERTIFICATE_P12` | 加密 PKCS#12 的 Base64 内容 |
-| `MACOS_SIGNING_CERTIFICATE_PASSWORD` | 独立随机导出密码 |
 | `SPARKLE_PRIVATE_KEY` | 现有 EdDSA 私钥 |
 
-Runner 只在任务级临时钥匙串中导入代码签名身份。GitHub 官方说明托管的 macOS 虚拟机支持 passwordless `sudo`，因此工作流使用以下系统级、仅限 Code Signing 的临时信任，不采用可能弹出认证框的用户级信任：
+Runner 从 `SPARKLE_PRIVATE_KEY` 派生代码签名子私钥，校验公钥后只导入任务级临时 Keychain。导入脚本先检查签名环境是否已有该固定证书的 Code Signing 信任：维护者本机可以只确认一次登录 Keychain 的用户级信任；全新的 GitHub Runner 没有该信任时，再利用托管 macOS 虚拟机的 passwordless `sudo` 添加以下系统级临时信任：
 
 ```text
 sudo security add-trusted-cert -d -r trustRoot -p codeSign \
   -k /Library/Keychains/System.keychain <public-certificate>
 ```
 
-工作流必须先用 `security find-identity -v -p codesigning` 证明身份有效，再限制钥匙串搜索范围并开始构建。清理 trap 使用证书文件执行 `sudo security remove-trusted-cert -d` 并删除临时钥匙串，即使构建或发布中途失败也必须执行。首次接入先由 `workflow_dispatch` 运行不创建标签、不上传 Release 的签名预检；只有实际 Runner 证明整个添加、签名、验证和清理过程无交互通过后，才允许合入标签发布路径。工作流不得打印 Secret、证书导出密码或私钥内容。
+工作流必须先用 `security find-identity -v -p codesigning` 证明身份有效，随即删除普通文件中的派生私钥和临时 PKCS#12，再限制钥匙串搜索范围并开始构建。稳定 App 签名完成后立即删除临时 Keychain，并且只在本次任务实际添加系统信任时执行 `sudo security remove-trusted-cert -d`；不得删除维护者已有的用户级信任。工作流末尾仍以 `always()` 重复执行幂等清理，覆盖构建中途失败。首次接入先由 owner-only 的 `codex/anonymous-signing-preflight` push 分支运行不创建标签、不上传 Release 的签名预检；只有实际 Runner 证明整个派生、信任、签名、验证和清理过程无交互通过后，才允许合入标签发布路径。工作流不得打印 Secret、证书导出密码或私钥内容。
 
-签名环境的临时信任只用于让 `codesign` 选择并使用自签名身份，不得混同为安装要求。普通安装 Mac 不导入或信任证书；其首次运行仍由 Gatekeeper 的“仍要打开”流程确认，后续代码身份由应用内固定 DR 校验。
+签名环境的临时信任只用于让 `codesign` 选择并使用自签名身份，不得混同为安装要求。普通安装 Mac 不导入或信任证书；其首次运行仍由 Gatekeeper 的“仍要打开”流程确认，后续代码身份由固定 DR 供 macOS/TCC 匹配，Sparkle 更新完整性另由 EdDSA 签名校验。
 
 私钥泄露会允许攻击者制作满足同一 DR 的恶意 MacTools，因此代码签名私钥与 Sparkle EdDSA 私钥均按发布密钥处理。任何疑似泄露都阻断发布；匿名证书轮换需要独立迁移设计，不能直接替换。
 
@@ -151,21 +173,21 @@ sudo security add-trusted-cert -d -r trustRoot -p codeSign \
 /Applications/MacTools.app
 ```
 
-`scripts/rebuild_and_run_app.sh` 在稳定模式下先完成签名验证，再替换该固定路径并启动；不再从 `build/MacTools.app` 申请正式权限。开发模式保持独立名称和 Bundle ID，避免在系统设置中显示成另一个正式 MacTools。
+`scripts/rebuild_and_run_app.sh` 在稳定模式下先完成签名验证，再替换该固定路径并启动；不再从 `build/MacTools.app` 申请正式权限。开发模式使用独立的 `build/MacTools Dev.app`、名称和 Bundle ID，并移除正式 Sparkle feed 与公钥；脚本发现另一身份仍在运行时会明确失败，避免两个身份并发访问同一份本地数据或注册相同快捷键。
 
 ### GitHub Release
 
 标签触发的发布工作流改为：
 
-1. 从 Secrets 创建临时钥匙串并导入匿名身份；
-2. 使用 passwordless `sudo` 添加仅限 Code Signing 的临时系统信任并验证身份有效；
-3. 以 `stable` 模式构建、签名和验证应用；
-4. 检查签名主体不含邮箱、姓名、Apple Development 或未知字段；
+1. 从现有 `SPARKLE_PRIVATE_KEY` 派生并验证匿名身份，导入临时 Keychain；
+2. 复用已有 Code Signing 信任，或使用 passwordless `sudo` 添加仅限本次任务的临时系统信任，并验证身份有效；
+3. 以 `stable` 模式构建并签名应用，随后立即销毁临时签名 Keychain 和任务所加系统信任；
+4. 在不保留临时签名身份的条件下验证应用，并检查签名主体不含邮箱、姓名、Apple Development 或未知字段；
 5. 创建 DMG 和 SHA-256；
 6. 使用现有 Sparkle EdDSA 私钥生成并验证签名 appcast；
 7. 发布非草稿 GitHub Release；
 8. 回读 DMG、校验和、appcast 与 latest 地址并再次验证；
-9. 无论成功或失败均移除临时证书信任并删除临时钥匙串。
+9. 无论成功或失败均执行幂等兜底清理，并且只移除本次任务添加的临时系统信任。
 
 Release 说明不再声称“ad-hoc 更新后可能重复授权”，改为说明首次从旧签名迁移需要一次权限整理，后续同一签名更新应保留授权。
 
@@ -232,7 +254,7 @@ Finder Automation 没有加入现有四行常驻状态，因为系统没有与�
 | 场景 | 处理 |
 | --- | --- |
 | 稳定身份缺失或指纹不符 | 打包立即失败，不回退 ad-hoc 或 Apple Development |
-| GitHub Secret 缺失 | 工作流在构建前失败，不创建 Release |
+| `SPARKLE_PRIVATE_KEY` 缺失或派生公钥不匹配 | 工作流在构建前失败，不创建 Release |
 | 证书包含个人字段 | 隐私扫描失败，禁止打包和发布 |
 | 证书过期或签名无法验证 | 阻断发布，先设计兼容迁移；不自动换证 |
 | 用户没有清理历史裸可执行文件 | 新版本仍只产生一个稳定身份；旧条目由用户一次性用减号删除 |
@@ -247,8 +269,8 @@ Finder Automation 没有加入现有四行常驻状态，因为系统没有与�
 ### 自动化
 
 - 打包脚本测试覆盖稳定模式拒绝缺失身份、拒绝 ad-hoc、拒绝 Apple Development、匹配固定指纹和正确 DR。
-- 工作流源码测试覆盖临时钥匙串、Secret 缺失门禁、隐私字段扫描、稳定签名验证和清理步骤。
-- 非发布 `workflow_dispatch` 预检覆盖 Runner 系统级信任的添加、有效身份发现、签名验证、对称清理以及无 Release 副作用。
+- 工作流源码测试覆盖 HKDF 用途隔离、临时 Keychain、根 Secret 缺失门禁、公钥匹配、隐私字段扫描、稳定签名验证和清理步骤。
+- owner-only 的非发布 push 预检覆盖 Runner 系统级信任的添加、有效身份发现、签名验证、对称清理以及无 Release 副作用。
 - 权限服务测试覆盖 `All + local.mactools.mvp` 的精确命令，不允许缺少 Bundle ID 的全局重置。
 - 权限 UI/运行时测试覆盖应用重新激活时刷新和整理后的状态变化。
 - 运行聚焦测试、完整 `swift test`、严格并发构建和 `git diff --check`。

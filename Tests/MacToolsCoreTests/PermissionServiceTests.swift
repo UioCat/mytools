@@ -151,6 +151,47 @@ final class PermissionServiceTests: XCTestCase {
                 "openPermissionSettings: permissionService.openSystemSettings(for:)"
             )
         )
+        XCTAssertTrue(
+            runtimeSource.contains("NSApplication.didBecomeActiveNotification")
+        )
+        XCTAssertTrue(
+            runtimeSource.contains("resetPermissionDecisions:")
+        )
+    }
+
+    func testPermissionResetImplementationIsScopedToCurrentBundleIdentifier() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resetterSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sources/MacTools/Platform/Permissions/TCCPermissionDecisionResetter.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(resetterSource.contains("/usr/bin/tccutil"))
+        XCTAssertTrue(resetterSource.contains("[\"reset\", \"All\", bundleIdentifier]"))
+        XCTAssertFalse(resetterSource.contains("[\"reset\", \"All\"]"))
+    }
+
+    func testPermissionSettingsExplainResetAndRestartFlow() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resetActionSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sources/MacToolsCore/UI/Settings/PermissionResetActionView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(resetActionSource.contains("整理旧权限记录"))
+        XCTAssertTrue(resetActionSource.contains("不影响其他应用"))
+        XCTAssertTrue(resetActionSource.contains("访达自动化"))
+        XCTAssertTrue(resetActionSource.contains("退出并重新打开 MacTools"))
     }
 
     func testPermissionSpecificSystemSettingsURLs() throws {
@@ -168,6 +209,47 @@ final class PermissionServiceTests: XCTestCase {
         )
     }
 
+    func testPermissionResetUsesOnlyCurrentBundleIdentifier() async throws {
+        let resetter = RecordingPermissionDecisionResetter()
+        let service = PermissionService(
+            checker: FakePermissionChecker(
+                hasAccessibility: true,
+                hasInputMonitoring: true,
+                hasPostEvent: true
+            ),
+            decisionResetter: resetter,
+            bundleIdentifierProvider: { "local.mactools.mvp" }
+        )
+
+        try await service.resetPermissionDecisions()
+
+        let recordedBundleIdentifiers = await resetter.recordedBundleIdentifiers()
+        XCTAssertEqual(recordedBundleIdentifiers, ["local.mactools.mvp"])
+    }
+
+    func testPermissionResetRejectsMissingBundleIdentifier() async {
+        let resetter = RecordingPermissionDecisionResetter()
+        let service = PermissionService(
+            checker: FakePermissionChecker(
+                hasAccessibility: true,
+                hasInputMonitoring: true,
+                hasPostEvent: true
+            ),
+            decisionResetter: resetter,
+            bundleIdentifierProvider: { nil }
+        )
+
+        do {
+            try await service.resetPermissionDecisions()
+            XCTFail("Expected a missing bundle identifier error")
+        } catch {
+            XCTAssertEqual(error as? PermissionDecisionResetError, .missingBundleIdentifier)
+        }
+
+        let recordedBundleIdentifiers = await resetter.recordedBundleIdentifiers()
+        XCTAssertEqual(recordedBundleIdentifiers, [])
+    }
+
     func testScreenRecordingPermissionIsIncludedInSummaryAndSettingsURL() {
         let summary = PermissionService(
             checker: FakePermissionChecker(
@@ -182,6 +264,18 @@ final class PermissionServiceTests: XCTestCase {
             PermissionService.systemSettingsURL(for: .screenRecording),
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
         )
+    }
+}
+
+private actor RecordingPermissionDecisionResetter: PermissionDecisionResetting {
+    private var bundleIdentifiers: [String] = []
+
+    func resetAllDecisions(for bundleIdentifier: String) async throws {
+        bundleIdentifiers.append(bundleIdentifier)
+    }
+
+    func recordedBundleIdentifiers() -> [String] {
+        bundleIdentifiers
     }
 }
 

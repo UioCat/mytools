@@ -127,17 +127,19 @@ MacTools 默认不显示 Dock 图标，需要时通过菜单栏或全局快捷�
 
 - macOS 26 或更高版本。
 - Xcode 或 Xcode Command Line Tools。
-- 首次构建需要联网下载 [GRDB.swift](https://github.com/groue/GRDB.swift) 依赖。
+- 首次构建需要联网下载 [GRDB.swift](https://github.com/groue/GRDB.swift) 和 [Sparkle](https://github.com/sparkle-project/Sparkle) 依赖。
+
+普通使用请从 [GitHub Releases](https://github.com/UioCat/mytools/releases) 下载 DMG，将 `MacTools.app` 拖入 `/Applications`。每台 Mac 首次打开自签名版本时仍需在“隐私与安全性”选择“仍要打开”；固定匿名签名只用于保持后续版本身份，不会绕过 Gatekeeper。
 
 ### 从源码构建
 
 ```sh
 git clone https://github.com/UioCat/mytools.git
 cd mytools
-scripts/rebuild_and_run_app.sh
+MACOS_SIGNING_MODE=development scripts/rebuild_and_run_app.sh
 ```
 
-脚本会构建、签名并启动 `build/MacTools.app`。如果本机没有可用的 Apple 开发签名，会回退到临时签名；此时系统权限可能无法在后续构建中稳定继承。
+开发模式会以 `MacTools Dev` / `local.mactools.development` 构建并启动 `build/MacTools Dev.app`，不连接正式更新源，也不会与正式版同时运行，避免占用正式版本的系统权限身份或并发访问同一份本地数据。维护者已在 Keychain 配置固定匿名身份后，可直接运行 `scripts/rebuild_and_run_app.sh`；稳定模式会验证签名、原子替换并只启动 `/Applications/MacTools.app`，缺少或不信任固定身份时立即失败。
 
 ## 系统权限
 
@@ -150,7 +152,7 @@ MacTools 只在使用对应功能时需要以下权限：
 | 屏幕与系统音频录制 | 获取用户框选的截图或录屏区域 |
 | Finder 自动化 | 在辅助功能信息不足时读取 Finder 当前文件夹 |
 
-首次运行时，请根据应用内权限状态前往“系统设置 → 隐私与安全性”完成授权。Finder、超级右键、截图录屏和窗口布局应使用打包后的 `build/MacTools.app` 验证，`swift run MacTools` 不适合作为这些系统权限行为的最终运行方式。
+首次运行时，请根据应用内权限状态前往“系统设置 → 隐私与安全性”完成授权。从旧 ad-hoc 版本迁移时，可在权限页使用“整理旧权限记录”，然后重新允许四项权限并重启 MacTools；它只清理当前 MacTools Bundle ID，不影响其他应用。无法按 Bundle ID 清理的旧裸可执行文件条目需在系统设置中用减号删除一次。Finder、超级右键、截图录屏和窗口布局应使用 `/Applications/MacTools.app` 验证，`swift run MacTools` 不适合作为正式系统权限行为的最终运行方式。
 
 ## 数据与隐私
 
@@ -176,14 +178,18 @@ swift test
 # SwiftPM 开发运行
 swift run MacTools
 
-# 仅构建和签名 App Bundle
+# 构建隔离的开发 App Bundle
 scripts/package_app.sh
+
+# 构建、安装并启动稳定 App（仅限已配置发布身份的维护者）
+scripts/rebuild_and_run_app.sh
 ```
 
-`package_app.sh` 优先使用 `MACOS_CODESIGN_IDENTITY`，否则尝试从钥匙串选择 Apple/Developer 签名身份；找不到时退回 ad-hoc 签名。ad-hoc 签名可能导致辅助功能、输入监控和屏幕录制授权无法稳定继承。
+`package_app.sh` 默认生成隔离 Bundle ID 的 ad-hoc `MacTools Dev`。稳定包必须显式使用 `MACOS_SIGNING_MODE=stable`，并且只接受仓库固定的 `MacTools Release Signing` 证书及指纹；不会自动选择 Apple Development，也不会回退到 ad-hoc。公开证书只包含项目通用名、公钥和密码学元数据，不包含姓名、邮箱或 Apple Team 标识。发布只使用现有 `SPARKLE_PRIVATE_KEY`：GitHub Runner 通过 HKDF-SHA256 用途隔离派生临时 P-256 代码签名子私钥，不需新增证书或密码 Secret，标签发布仍只需 Git Push。
 
 ```sh
-MACOS_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/package_app.sh
+MACOS_SIGNING_MODE=development scripts/package_app.sh
+MACOS_SIGNING_MODE=stable scripts/package_app.sh
 ```
 
 ## 排障与验收
