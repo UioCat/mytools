@@ -5,15 +5,21 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  release:
+  build-signed-app:
+    permissions:
+      contents: read
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
+      - name: Require GitHub-hosted runner
+        run: |
+          test "${GITHUB_ACTIONS:-}" = 'true'
+          test "${RUNNER_ENVIRONMENT:-}" = 'github-hosted'
+
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -37,14 +43,74 @@ jobs:
           MACOS_SIGNING_MODE: stable
         run: scripts/package_app.sh
 
-      - name: Retire anonymous signing system trust after build
-        run: scripts/ci/cleanup_anonymous_signing_identity.sh trust
+      - name: Retire local signing identity
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh ephemeral
 
-      - name: Retire anonymous signing keychain after build
-        run: scripts/ci/cleanup_anonymous_signing_identity.sh local
+      - name: Archive signed app
+        run: tar -czf "$RUNNER_TEMP/MacTools-signed-app.tar.gz" -C build MacTools.app
 
-      - name: Verify app bundle
+      - name: Upload signed app
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mactools-signed-app
+          path: ${{ runner.temp }}/MacTools-signed-app.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+      - name: Clean up local signing identity
+        if: always()
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh ephemeral
+
+  release:
+    needs: build-signed-app
+    permissions:
+      contents: write
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve release version
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_NUMBER="$(scripts/macos_build_number.sh "$VERSION")"
+          printf 'MACOS_APP_VERSION=%s\n' "$VERSION" >> "$GITHUB_ENV"
+          printf 'MACOS_BUILD_NUMBER=%s\n' "$BUILD_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Download signed app
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: mactools-signed-app
+          path: ${{ runner.temp }}/mactools-signed-app
+          digest-mismatch: error
+
+      - name: Restore signed app
+        run: |
+          mkdir build
+          tar -xzf "$RUNNER_TEMP/mactools-signed-app/MacTools-signed-app.tar.gz" -C build
+
+      - name: Verify app bundle on fresh runner
+        run: |
+          APP_PATH="$GITHUB_WORKSPACE/build/MacTools.app"
+          CERTIFICATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mactools-signing-cert.XXXXXX")"
+          (
+            cd "$CERTIFICATE_DIR"
+            codesign -d --extract-certificates "$APP_PATH"
+          )
+          set +e
+          TRUST_OUTPUT="$(LC_ALL=C security verify-cert -p codeSign -c "$CERTIFICATE_DIR/codesign0" 2>&1)"
+          TRUST_STATUS=$?
+          set -e
+          test "$TRUST_STATUS" -eq 1
+          grep -Fqx 'Cert Verify Result: CSSMERR_TP_NOT_TRUSTED' <<<"$TRUST_OUTPUT"
+
           codesign --verify --deep --strict --verbose=2 build/MacTools.app
           SIGNATURE_DETAILS="$(codesign -dv --verbose=4 build/MacTools.app 2>&1)"
           DESIGNATED_REQUIREMENT="$(codesign -d -r- build/MacTools.app 2>&1)"
@@ -236,7 +302,3 @@ jobs:
 
           echo "latest appcast did not converge to $GITHUB_REF_NAME" >&2
           exit 1
-
-      - name: Clean up anonymous signing identity
-        if: always()
-        run: scripts/ci/cleanup_anonymous_signing_identity.sh

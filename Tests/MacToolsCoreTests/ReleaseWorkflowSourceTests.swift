@@ -37,7 +37,7 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(workflow.contains("--draft=false"))
     }
 
-    func testReleaseWorkflowUsesStableAnonymousSigningAndAlwaysCleansUp() throws {
+    func testReleaseWorkflowBuildsAndVerifiesStableSigningOnSeparateRunners() throws {
         let workflow = try sourceFile(".github/workflows/release.yml")
 
         XCTAssertTrue(workflow.contains("SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}"))
@@ -47,18 +47,54 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(workflow.contains("25a3263958804c6d9429eb51b97ba2b16ca1fb67"))
         XCTAssertTrue(workflow.contains("Signature=adhoc"))
         XCTAssertTrue(workflow.contains("if: always()"))
-        XCTAssertTrue(workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh"))
+        XCTAssertTrue(
+            workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh ephemeral")
+        )
+        XCTAssertFalse(
+            workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh trust")
+        )
+        XCTAssertTrue(
+            workflow.contains(
+                "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+            )
+        )
+        XCTAssertTrue(
+            workflow.contains(
+                "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+            )
+        )
+        XCTAssertTrue(workflow.contains("tar -czf \"$RUNNER_TEMP/MacTools-signed-app.tar.gz\""))
+        XCTAssertTrue(workflow.contains("compression-level: 0"))
+        XCTAssertTrue(workflow.contains("overwrite: true"))
+        XCTAssertTrue(workflow.contains("digest-mismatch: error"))
+        XCTAssertTrue(workflow.contains("codesign -d --extract-certificates"))
+        XCTAssertTrue(workflow.contains("CSSMERR_TP_NOT_TRUSTED"))
+        XCTAssertTrue(workflow.contains("needs: build-signed-app"))
+        let runnerGuardStep = try XCTUnwrap(
+            workflow.range(of: "- name: Require GitHub-hosted runner")
+        )
+        let checkoutStep = try XCTUnwrap(workflow.range(of: "- name: Check out repository"))
+        let importStep = try XCTUnwrap(
+            workflow.range(of: "- name: Import anonymous signing identity")
+        )
         let buildStep = try XCTUnwrap(workflow.range(of: "- name: Build stable signed app"))
-        let trustCleanupStep = try XCTUnwrap(
-            workflow.range(of: "- name: Retire anonymous signing system trust after build")
+        let localCleanupStep = try XCTUnwrap(
+            workflow.range(of: "- name: Retire local signing identity")
         )
-        let keychainCleanupStep = try XCTUnwrap(
-            workflow.range(of: "- name: Retire anonymous signing keychain after build")
+        let uploadStep = try XCTUnwrap(workflow.range(of: "- name: Upload signed app"))
+        let downloadStep = try XCTUnwrap(workflow.range(of: "- name: Download signed app"))
+        let verificationStep = try XCTUnwrap(
+            workflow.range(of: "- name: Verify app bundle on fresh runner")
         )
-        let verificationStep = try XCTUnwrap(workflow.range(of: "- name: Verify app bundle"))
-        XCTAssertLessThan(buildStep.lowerBound, trustCleanupStep.lowerBound)
-        XCTAssertLessThan(trustCleanupStep.lowerBound, keychainCleanupStep.lowerBound)
-        XCTAssertLessThan(keychainCleanupStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertLessThan(runnerGuardStep.lowerBound, checkoutStep.lowerBound)
+        XCTAssertLessThan(runnerGuardStep.lowerBound, importStep.lowerBound)
+        XCTAssertLessThan(importStep.lowerBound, buildStep.lowerBound)
+        XCTAssertLessThan(buildStep.lowerBound, localCleanupStep.lowerBound)
+        XCTAssertLessThan(localCleanupStep.lowerBound, uploadStep.lowerBound)
+        XCTAssertLessThan(uploadStep.lowerBound, downloadStep.lowerBound)
+        XCTAssertLessThan(downloadStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertEqual(workflow.components(separatedBy: "runs-on: macos-26").count - 1, 2)
+        XCTAssertTrue(workflow.contains("timeout-minutes: 10"))
         XCTAssertTrue(workflow.contains("timeout-minutes: 20"))
         XCTAssertTrue(
             workflow.contains(
@@ -72,7 +108,7 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertFalse(workflow.contains("Build ad-hoc signed app"))
     }
 
-    func testSigningPreflightCannotPublishRelease() throws {
+    func testSigningPreflightCannotPublishAndVerifiesOnFreshRunner() throws {
         let workflow = try sourceFile(".github/workflows/signing-preflight.yml")
 
         XCTAssertTrue(workflow.contains("push:"))
@@ -82,21 +118,54 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(workflow.contains("scripts/ci/import_anonymous_signing_identity.sh"))
         XCTAssertTrue(workflow.contains("SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}"))
         XCTAssertTrue(workflow.contains("MACOS_SIGNING_MODE: stable"))
-        XCTAssertTrue(workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh"))
+        XCTAssertTrue(
+            workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh ephemeral")
+        )
+        XCTAssertFalse(
+            workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh trust")
+        )
+        XCTAssertTrue(
+            workflow.contains(
+                "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+            )
+        )
+        XCTAssertTrue(
+            workflow.contains(
+                "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+            )
+        )
+        XCTAssertTrue(workflow.contains("needs: build-signed-app"))
+        XCTAssertTrue(workflow.contains("compression-level: 0"))
+        XCTAssertTrue(workflow.contains("overwrite: true"))
+        XCTAssertTrue(workflow.contains("digest-mismatch: error"))
+        XCTAssertTrue(workflow.contains("codesign -d --extract-certificates"))
+        XCTAssertTrue(workflow.contains("CSSMERR_TP_NOT_TRUSTED"))
+        let runnerGuardStep = try XCTUnwrap(
+            workflow.range(of: "- name: Require GitHub-hosted runner")
+        )
+        let checkoutStep = try XCTUnwrap(workflow.range(of: "- name: Check out repository"))
+        let importStep = try XCTUnwrap(
+            workflow.range(of: "- name: Import anonymous signing identity")
+        )
         let buildStep = try XCTUnwrap(workflow.range(of: "- name: Build stable signed app"))
-        let trustCleanupStep = try XCTUnwrap(
-            workflow.range(of: "- name: Retire anonymous signing system trust after build")
+        let localCleanupStep = try XCTUnwrap(
+            workflow.range(of: "- name: Retire local signing identity")
         )
-        let keychainCleanupStep = try XCTUnwrap(
-            workflow.range(of: "- name: Retire anonymous signing keychain after build")
-        )
+        let uploadStep = try XCTUnwrap(workflow.range(of: "- name: Upload signed app"))
+        let downloadStep = try XCTUnwrap(workflow.range(of: "- name: Download signed app"))
         let verificationStep = try XCTUnwrap(
-            workflow.range(of: "- name: Verify stable signed app without signing trust")
+            workflow.range(of: "- name: Verify stable signed app on fresh runner")
         )
-        XCTAssertLessThan(buildStep.lowerBound, trustCleanupStep.lowerBound)
-        XCTAssertLessThan(trustCleanupStep.lowerBound, keychainCleanupStep.lowerBound)
-        XCTAssertLessThan(keychainCleanupStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertLessThan(runnerGuardStep.lowerBound, checkoutStep.lowerBound)
+        XCTAssertLessThan(runnerGuardStep.lowerBound, importStep.lowerBound)
+        XCTAssertLessThan(importStep.lowerBound, buildStep.lowerBound)
+        XCTAssertLessThan(buildStep.lowerBound, localCleanupStep.lowerBound)
+        XCTAssertLessThan(localCleanupStep.lowerBound, uploadStep.lowerBound)
+        XCTAssertLessThan(uploadStep.lowerBound, downloadStep.lowerBound)
+        XCTAssertLessThan(downloadStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertEqual(workflow.components(separatedBy: "runs-on: macos-26").count - 1, 2)
         XCTAssertTrue(workflow.contains("timeout-minutes: 10"))
+        XCTAssertTrue(workflow.contains("timeout-minutes: 5"))
         XCTAssertFalse(workflow.contains("workflow_dispatch"))
         XCTAssertFalse(workflow.contains("gh release"))
         XCTAssertFalse(workflow.contains("contents: write"))
@@ -184,6 +253,10 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
                 "\"$TIMEOUT_SCRIPT\" \"$SECURITY_TIMEOUT_SECONDS\" sudo -n security"
             )
         )
+        XCTAssertTrue(cleanupScript.contains("RUNNER_ENVIRONMENT:-}"))
+        XCTAssertTrue(cleanupScript.contains("github-hosted"))
+        XCTAssertTrue(cleanupScript.contains("fresh, untrusted VM"))
+        XCTAssertTrue(cleanupScript.contains("actions/runner-images/issues/12116"))
         XCTAssertTrue(cleanupScript.contains("SIGNING_PRIVATE_KEY"))
     }
 
@@ -560,6 +633,65 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: marker.path))
     }
 
+    func testEphemeralCleanupRejectsNonGitHubHostedRunner() throws {
+        let fileManager = FileManager.default
+        let temporaryDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MacToolsEphemeralCleanupGuardTests-\(UUID().uuidString)")
+        let signingDirectory = temporaryDirectory.appendingPathComponent("signing")
+        try fileManager.createDirectory(
+            at: signingDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? fileManager.removeItem(at: temporaryDirectory) }
+
+        let marker = signingDirectory.appendingPathComponent("system-trust-owned")
+        try Data().write(to: marker)
+        let cleanup = try runSigningCleanup(
+            temporaryDirectory: temporaryDirectory,
+            signingDirectory: signingDirectory,
+            sudoLog: temporaryDirectory.appendingPathComponent("sudo.log"),
+            phase: "ephemeral",
+            environmentOverrides: [
+                "GITHUB_ACTIONS": "false",
+                "RUNNER_ENVIRONMENT": "self-hosted",
+            ]
+        )
+
+        XCTAssertNotEqual(cleanup.terminationStatus, 0)
+        XCTAssertTrue(fileManager.fileExists(atPath: marker.path))
+    }
+
+    func testEphemeralCleanupRetiresLocalStateWithoutMutatingSystemTrust() throws {
+        let fileManager = FileManager.default
+        let temporaryDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MacToolsEphemeralCleanupTests-\(UUID().uuidString)")
+        let signingDirectory = temporaryDirectory.appendingPathComponent("signing")
+        try fileManager.createDirectory(
+            at: signingDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? fileManager.removeItem(at: temporaryDirectory) }
+
+        let marker = signingDirectory.appendingPathComponent("system-trust-owned")
+        try Data().write(to: marker)
+        let sudoLog = temporaryDirectory.appendingPathComponent("sudo.log")
+        let cleanup = try runSigningCleanup(
+            temporaryDirectory: temporaryDirectory,
+            signingDirectory: signingDirectory,
+            sudoLog: sudoLog,
+            phase: "ephemeral",
+            environmentOverrides: [
+                "GITHUB_ACTIONS": "true",
+                "RUNNER_ENVIRONMENT": "github-hosted",
+            ]
+        )
+
+        XCTAssertEqual(cleanup.terminationStatus, 0)
+        XCTAssertFalse(fileManager.fileExists(atPath: marker.path))
+        XCTAssertFalse(fileManager.fileExists(atPath: signingDirectory.path))
+        XCTAssertFalse(fileManager.fileExists(atPath: sudoLog.path))
+    }
+
     private func installFakeSecurityTools(
         in directory: URL,
         sudoLog: URL,
@@ -610,7 +742,9 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
     private func runSigningCleanup(
         temporaryDirectory: URL,
         signingDirectory: URL,
-        sudoLog: URL
+        sudoLog: URL,
+        phase: String? = nil,
+        environmentOverrides: [String: String] = [:]
     ) throws -> Process {
         let cleanup = Process()
         cleanup.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -619,11 +753,17 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
                 .appendingPathComponent("scripts/ci/cleanup_anonymous_signing_identity.sh")
                 .path,
         ]
+        if let phase {
+            cleanup.arguments?.append(phase)
+        }
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(temporaryDirectory.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["RUNNER_TEMP"] = temporaryDirectory.path
         environment["MACTOOLS_CI_SIGNING_DIRECTORY"] = signingDirectory.path
         environment["MACTOOLS_TEST_SUDO_LOG"] = sudoLog.path
+        for (key, value) in environmentOverrides {
+            environment[key] = value
+        }
         cleanup.environment = environment
         try cleanup.run()
         cleanup.waitUntilExit()

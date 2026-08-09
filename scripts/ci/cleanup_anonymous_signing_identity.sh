@@ -5,12 +5,19 @@ CLEANUP_STATUS=0
 
 CLEANUP_PHASE="${1:-all}"
 case "$CLEANUP_PHASE" in
-  all | trust | local) ;;
+  all | trust | local | ephemeral) ;;
   *)
-    echo "usage: $0 [all|trust|local]" >&2
+    echo "usage: $0 [all|trust|local|ephemeral]" >&2
     exit 64
     ;;
 esac
+
+if [[ "$CLEANUP_PHASE" == "ephemeral" \
+  && ("${GITHUB_ACTIONS:-}" != "true" \
+    || "${RUNNER_ENVIRONMENT:-}" != "github-hosted") ]]; then
+  echo "error: ephemeral cleanup requires a GitHub-hosted Actions runner." >&2
+  exit 1
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PINNED_CERTIFICATE="$ROOT_DIR/scripts/signing/MacToolsReleaseSigning.pem"
@@ -33,7 +40,7 @@ run_sudo_security() {
   sudo -n "$TIMEOUT_SCRIPT" "$SECURITY_TIMEOUT_SECONDS" security "$@"
 }
 
-if [[ "$CLEANUP_PHASE" != "local" \
+if [[ ("$CLEANUP_PHASE" == "all" || "$CLEANUP_PHASE" == "trust") \
   && -f "$SYSTEM_TRUST_OWNERSHIP_MARKER" \
   && -f "$PINNED_CERTIFICATE" ]]; then
   PINNED_SHA1="$(
@@ -84,6 +91,18 @@ if [[ "$CLEANUP_PHASE" != "local" \
       echo "error: unable to remove system trust ownership marker." >&2
       CLEANUP_STATUS=1
     fi
+  fi
+fi
+
+# GitHub-hosted macOS jobs run on a fresh VM that is decommissioned after the
+# job. The explicit ephemeral phase avoids the known remove-trusted-cert hang;
+# a following job verifies the artifact on another fresh, untrusted VM.
+# See https://github.com/actions/runner-images/issues/12116.
+if [[ "$CLEANUP_PHASE" == "ephemeral" \
+  && -f "$SYSTEM_TRUST_OWNERSHIP_MARKER" ]]; then
+  if ! unlink "$SYSTEM_TRUST_OWNERSHIP_MARKER"; then
+    echo "error: unable to retire ephemeral system trust ownership marker." >&2
+    CLEANUP_STATUS=1
   fi
 fi
 
