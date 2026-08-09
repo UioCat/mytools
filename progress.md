@@ -1,84 +1,60 @@
 # Progress Log
 
-## Session: 2026-07-20
+## Session: 2026-08-09
 
-### Phase 1: Baseline & Approved Design
-- **Status:** complete
+### Phase 1: Baseline & Design
+
+- **Status:** in_progress
 - Actions taken:
-  - 核对现有统一存储、CloudKit、Core 同步模型、设置入口和打包脚本。
-  - 比较事件日志、每记录分片、每设备紧凑快照三种方案。
-  - 与用户确认每设备紧凑快照、全局普通历史 500、默认 512 MiB。
-  - 写入并自审 iCloud Drive 同步设计，提交为 `03f8bb8`。
-- Files created/modified:
-  - `docs/superpowers/specs/2026-07-20-icloud-drive-sync-design.md`
-  - `docs/superpowers/specs/2026-07-16-storage-and-icloud-sync-design.md`
+  - 确认用户无付费开发者计划、需要多台自有 Mac 使用并要求发布到 GitHub Release。
+  - 记录 Git 基线：`main@c4b637a`、`v0.3.0`、`origin/main`、工作树干净。
+  - 核对现有发布工作流强制 ad-hoc，确定其与 TCC 身份失配根因一致。
+  - 比较固定 Mac 本机签名、CI 导入开发证书和继续 ad-hoc 三种方向。
+  - 通过 GitHub REST 确认仓库公开、`v0.3.0` Release 与发布工作流成功。
+  - 确认 Apple Development 证书主体含邮箱；公开 Release 存在可识别的隐私暴露。
+  - 只读解析证书，确认还包含真实姓名、UID/OU、序列号、有效期、指纹、公钥和 Apple 签发链；不包含私钥或账号密码。
+  - 确认本机没有按约定名称保存的 Sparkle 私钥，远程 Secret 仍是已验证签名源。
+  - 用户确认不公开姓名与邮箱，方案切换为固定匿名自签名身份。
+  - 查阅 Apple Code Signing requirement 与 Sparkle EdDSA 文档，确认 TCC 身份依赖稳定 DR，首次 Gatekeeper 确认无法在免费方案下消除。
+  - 在临时钥匙串验证 `security create-keypair` 和 `certtool`；二者均不能直接生成 `codesign` 可用身份，相关临时钥匙串和信任已清理。
+  - 独立设计 Review 发现 Runner 信任、Finder Automation 迁移和私钥恢复三项缺口；设计补充签名环境临时信任、Bundle ID 级全部 TCC 重置和第二台 Mac Keychain 恢复演练。
+  - 同一 Agent 复审发现用户级信任不能保证无人值守、迁移步骤仍写“三项权限”、Sparkle 私钥只有不可回读 Secret；设计改用临时系统级 trust，并增加加密恢复和双机 Keychain 演练。
+  - 第三次复审发现可变恢复公钥会把工作流变成 Secret 导出接口；设计改为公钥和指纹固定、仓库所有者限定、受保护 Environment 审批及完成后清理。
+  - 同一独立 Review Agent 第四轮确认无未解决 P0-P2；独立发布判断确认本次仅文档提交为 `none`，不创建标签或 Release。
 
-### Phase 2: Transport-neutral Core
-- **Status:** complete
-- Actions taken:
-  - 创建可恢复实施计划。
-  - 增加稳定快照模型、默认 512 MiB 容量策略和 stale eviction 失效规则。
-  - 增加文件同步本机覆盖项、V7 receipt/GC 状态和传输无关本地快照仓库。
-  - 聚焦编译确认旧 `SettingsView` 仍引用 CloudKit 账号状态，下一步整体替换为文件夹状态。
-  - 完成全局 500、512 MiB、64 MiB 单图、stale eviction、24 小时 GC 和 tombstone 确认压缩。
-- Files created/modified:
-  - `task_plan.md`
-  - `findings.md`
-  - `progress.md`
-  - `Sources/MacToolsCore/Sync/DriveSyncModels.swift`
-  - `Sources/MacToolsCore/Sync/SyncLocalRepository.swift`
-  - `Tests/MacToolsCoreTests/DriveSyncModelsTests.swift`
+## Verification Log
 
-### Phase 3-5: File Transport, Runtime, Settings & Packaging
-- **Status:** complete
-- Actions taken:
-  - 实现协议目录、共享内容对象、每设备快照、manifest 最后提交与摘要读回。
-  - 使用 `NSFileCoordinator`、security-scoped bookmark 和 30 秒周期扫描接入 App。
-  - 设置卡片增加目录选择、用量、容量档位、打开目录、立即同步和 reset。
-  - 删除 CloudKit coordinator/mapper、远程通知、entitlement 和签名门禁。
-  - 更新 README、打包测试和手工验收清单。
-
-### Phase 6: Verification
-- **Status:** complete
-- Actions taken:
-  - 聚焦验证覆盖双数据库收敛、快照原子提交、损坏副本隔离、共享对象修复、本地图片缺失、容量/GC、代次 tombstone 和 Keychain 并发。
-  - 最终全量 `swift test`：327 项通过。
-  - ad-hoc 打包、严格签名校验和启动通过；成品不含 CloudKit/iCloud/APNs entitlement 或 Provisioning Profile。
-  - 真实统一数据库只读校验通过：完整性正常、9 个迁移、普通历史稳定为 500、数据库权限为 `0600`，Payload 行数与文件数一致。
-  - 设置窗口浅色/深色状态已检查；真实双 Mac 的 iCloud Drive 传播保留为人工验收边界。
-
-## Test Results
-| Test | Input | Expected | Actual | Status |
-| --- | --- | --- | --- | --- |
-| 设计文档占位扫描 | `rg TBD/TODO/...` | 无占位 | 无匹配 | 通过 |
-| 设计文档格式 | fence/尾随空格检查 | 平衡且无尾随空格 | 8 个 fence，检查通过 | 通过 |
-| Core 快照与容量策略 | `swift test --filter DriveSyncModelsTests` | 6 项通过 | 6 项通过 | 通过 |
-| 文件协议、损坏隔离与容量聚焦测试 | Drive/Sync filters | 全部通过 | 全部通过 | 通过 |
-| Keychain 阻塞读取与保存顺序 | `swift test --filter CredentialAccessCoordinatorTests` | 新保存最终胜出 | 2 项通过 | 通过 |
-| 全量单元测试 | `swift test` | 全部通过 | 327 项通过 | 通过 |
-| ad-hoc 成品 | `MACOS_FORCE_ADHOC_SIGNING=1 scripts/rebuild_and_run_app.sh` | 可构建并启动 | 通过 | 通过 |
-| 真实统一数据库 | SQLite 只读聚合与 integrity check | 无损且普通历史为 500 | 通过 | 通过 |
+| Check | Result |
+| --- | --- |
+| Git baseline | `main@c4b637a`, clean |
+| Current stable tag | `v0.3.0` |
+| Current release signing | GitHub Actions forces ad-hoc |
+| Local signing identity | Valid Apple Development identity available |
+| GitHub repository | Public |
+| Latest stable release | `v0.3.0`, published, expected three assets |
+| Local Sparkle signing key | Not found under `SPARKLE_PRIVATE_KEY` service/label |
+| Anonymous identity privacy | Subject limited to `MacTools Release Signing`; no personal fields planned |
+| `security create-keypair` prototype | No valid code-signing identity produced; rejected |
+| `certtool` prototype | Certificate not accepted as a code-signing identity; rejected and cleaned up |
+| Independent design review | Four rounds complete; no unresolved P0-P2 |
+| Design-only release judgment | `none`; no tag or GitHub Release |
 
 ## Error Log
+
 | Timestamp | Error | Attempt | Resolution |
 | --- | --- | --- | --- |
-| 2026-07-20 | zsh unmatched quote（只读检索） | 1 | 拆分命令后成功 |
-| 2026-07-20 | 文档 patch 预期行未命中 | 1 | 检查实际内容，确认无需修改 |
-| 2026-07-20 | `writing-plans` skill 不可用 | 1 | 使用 `planning-with-files` 替代 |
-| 2026-07-20 | 旧 CloudKit UI 状态枚举导致编译失败 | 1 | 根因已确认，更新为文件夹同步状态模型 |
-| 2026-07-20 | 进度日志 patch 预期段落未命中 | 1 | 读取实际文件后按现有分节更新 |
-| 2026-07-20 | 设置页组合 patch 上下文未命中 | 1 | 拆为小范围 patch 继续 |
-| 2026-07-20 | 文件存储测试编译被旧 CloudKit Coordinator 阻断 | 1 | 新 Core 已编译；下一步新增 Drive Coordinator 并移除 CloudKit 文件 |
-| 2026-07-20 | Drive Coordinator 淘汰 ID 集合无法推断泛型 | 1 | 明确 `Set<String>`；其余新 App 接线已通过编译 |
-| 2026-07-20 | 打包测试转义字符串 patch 首次未命中 | 1 | 按实际源文件单行内容替换为简单断言 |
-| 2026-07-20 | tombstone export 闭包返回类型错误 | 1 | 在 UPDATE 后的 Row 查询增加显式 `return` |
-| 2026-07-20 | `osascript` 不允许发送按键 | 1 | 不扩大权限；设置页真实打开改为人工验收，继续做离屏/源码检查 |
+| 2026-08-09 | 规划文件属于上一项已完成任务 | 1 | 重新初始化为本次签名与发布任务 |
+| 2026-08-09 | 本机执行 `gh` 返回 command not found | 1 | 改用 GitHub REST/API；远程 Runner 内的 `gh` 发布步骤可继续保留 |
+| 2026-08-09 | Web 工具拒绝直接打开 GitHub API URL | 1 | 改为搜索发现或只读 `curl`，不重复同一失败调用 |
+| 2026-08-09 | 本机 Keychain 未找到 `SPARKLE_PRIVATE_KEY` | 1 | 保留已验证的 GitHub Secret 作为 appcast 签名源；设计阶段不读取或迁移私钥值 |
+| 2026-08-09 | 临时文件清理命令被执行策略拒绝 | 1 | 改用纯管道读取证书公开元数据，没有生成或遗留证书文件 |
+| 2026-08-09 | `security create-keypair` 返回 `0 valid identities found` | 1 | 删除临时钥匙串，改为验证带 Code Signing EKU 的证书方案 |
+| 2026-08-09 | `certtool` 证书未被 `codesign` 识别，命令提前退出 | 1 | 立即移除临时证书信任、删除临时钥匙串并确认无残留 |
+| 2026-08-09 | 设计遗漏 Runner 临时信任、Finder Automation 与恢复副本 | 1 | 接受独立 Review 的 1 项 P1、2 项 P2，并补充为强制发布门禁 |
+| 2026-08-09 | 用户级 trust 可能弹窗、迁移步骤冲突、Sparkle 私钥无恢复副本 | 2 | 接受复审的 1 项 P1、2 项 P2，改为系统级临时 trust、全部权限恢复和加密恢复演练 |
+| 2026-08-09 | 新增 GitHub Runner 文档链接的 `curl` 复查遇到临时 DNS 解析失败 | 1 | 已通过 Web 搜索读取 GitHub 官方文档并确认 passwordless `sudo`；提交前再重试链接检查 |
+| 2026-08-09 | 恢复工作流允许替换收件公钥会形成 Secret 导出接口 | 3 | 接受第三次复审的 P2，固定公钥与指纹并加入 actor、Environment 审批和清理边界 |
 
-## 5-Question Reboot Check
-| Question | Answer |
-| --- | --- |
-| Where am I? | 实现与本机验证完成 |
-| Where am I going? | 真实双 Mac iCloud Drive 人工验收 |
-| What's the goal? | 免费账号可用的 iCloud Drive 多设备同步 |
-| What have I learned? | 见 `findings.md` |
-| What have I done? | 文件同步后端、容量/GC、运行时、设置和打包已完成，327 项测试通过 |
+## Next Step
+
+- 提交并推送已通过独立 Review 的设计规格；用户确认后再修改生产实现。

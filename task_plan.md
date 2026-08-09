@@ -1,89 +1,77 @@
-# Task Plan: iCloud Drive 多设备同步实现
+# Task Plan: 匿名稳定签名、多机权限与 GitHub Release
 
 ## Goal
-将当前需要付费 Capability 的 CloudKit 同步替换为用户选择 iCloud Drive 文件夹的多设备同步，保持本地 SQLite 为运行时数据源，并落实全局普通历史 500 条、默认稳态目录 512 MiB、SHA-256 去重、配置合并、墓碑和安全 GC。
+
+在没有付费 Apple Developer Program 的前提下，为用户自己的多台 Mac 建立不包含个人身份的固定自签名身份、单一发布产物和可验证的 GitHub Release 流程，使后续版本不再因 ad-hoc 重建产生重复的 MacTools 权限项。
 
 ## Current Phase
-Complete
+
+Design
 
 ## Phases
 
-### Phase 1: Baseline & Approved Design
-- [x] 核对现有本地存储、CloudKit 协调器、Core 同步状态和设置入口
-- [x] 确认每设备紧凑快照 + 共享内容对象协议
-- [x] 确认 512 MiB 默认容量、全局 500 条和 64 MiB 单图边界
-- [x] 技术方案完成自审并由用户确认开始执行
-- **Status:** complete
+### Phase 1: Baseline & Design
+- [x] 记录 `main@c4b637a`、`v0.3.0` 和干净工作树基线
+- [x] 确认现有 GitHub Actions 强制 ad-hoc 重建
+- [x] 比较 Apple Development、固定匿名自签名和继续 ad-hoc 三种方案
+- [x] 确认公开 Release 不接受暴露姓名与邮箱
+- [x] 写入并完成独立设计 Review，自审无未解决 P0-P2
+- [ ] 用户确认书面设计规格
+- **Status:** in_progress
 
-### Phase 2: Transport-neutral Core
-- [x] 将 CloudKit 命名重构为传输无关同步模型
-- [x] 实现快照、manifest、内容对象、容量策略和淘汰决策
-- [x] 增加确定性 Core 单元测试
-- **Status:** complete
+### Phase 2: Implementation
+- [ ] 收紧打包脚本，稳定渠道禁止静默回退 ad-hoc
+- [ ] 建立固定匿名代码签名身份并安全写入本机 Keychain 与 GitHub Actions Secret
+- [ ] 在第二台个人 Mac 的 Keychain 导入恢复身份并完成签名演练
+- [ ] 加密恢复现有 Sparkle EdDSA 私钥并在两台个人 Mac 的 Keychain 完成恢复演练
+- [ ] 调整远程工作流为导入匿名身份、构建并验证唯一发布产物
+- [ ] 统一正式运行路径并提供一次性旧权限清理引导
+- [ ] 权限设置页在应用重新激活时刷新真实状态
+- [ ] 更新自动化测试、README 和人工验收清单
+- **Status:** pending
 
-### Phase 3: iCloud Drive File Transport
-- [x] 实现同步根目录布局、紧凑 JSON、原子写入和读回摘要校验
-- [x] 实现文件下载状态、bookmark/目录解析和周期扫描适配边界
-- [x] 使用两个临时客户端验证损坏文件、内容收敛和去重
-- **Status:** complete
+### Phase 3: Verification & Review
+- [ ] 聚焦测试、完整 `swift test`、严格并发检查和打包验证
+- [ ] 多路径、签名 requirement、DMG、SHA-256、appcast 与敏感信息扫描
+- [ ] 独立代码 Review 清零 P0-P2
+- [ ] 独立发布判断确认版本级别、完整发布范围和门禁
+- **Status:** pending
 
-### Phase 4: Database & Runtime Integration
-- [x] 增加 V7-V9 文件同步、因果 tombstone 与命名迁移
-- [x] 将 AppEnvironment 切换到 iCloud Drive 协调器
-- [x] 移除 CloudKit 账号、推送和远程通知运行时路径
-- **Status:** complete
-
-### Phase 5: Settings & Packaging
-- [x] 在现有数据与同步卡片加入目录、容量、用量和状态入口
-- [x] 移除 CloudKit entitlement、Container、Provisioning Profile 和 APNs 打包门禁
-- [x] 更新 README 与手工验收清单
-- **Status:** complete
-
-### Phase 6: Verification
-- [x] 运行聚焦测试并修复问题
-- [x] 运行 `swift test`
-- [x] 打包、签名、启动和检查真实本地统一存储不受影响
-- [x] 使用临时共享目录模拟双设备完整同步
-- **Status:** complete
-
-### Phase 7: Delivery
-- [x] 复核需求与差异
-- [x] 说明真实 iCloud 双机人工验收边界
-- [x] 交付文件、测试和运行状态
-- **Status:** complete
-
-## Key Questions
-1. 文件协议如何避免不同设备同时写同一可变文件？已确定每设备快照单写者。
-2. 如何避免 iCloud 容量无限增长？已确定全局 500、稳态目录 512 MiB、单图 64 MiB、安全 GC。
-3. 如何在免费/ad-hoc 构建中持久访问用户选择目录？使用目录 bookmark 与可注入文件协调边界。
-4. 如何证明多设备收敛而不依赖真实 iCloud？两个独立数据库与同一临时同步根目录的集成测试。
+### Phase 4: Commit, Push & Release
+- [ ] 仅提交本任务改动并推送 `origin/main`
+- [ ] 计算下一版本并完成较低构建号更新发现验证
+- [ ] 创建带注释标签并持续等待发布工作流
+- [ ] 核验公开 Release、DMG、校验和、appcast 与 latest 地址
+- [ ] 同一发布判断 Agent 完成发布后复核
+- **Status:** pending
 
 ## Decisions Made
+
 | Decision | Rationale |
 | --- | --- |
-| 本地 SQLite 始终是运行时数据源 | 禁止共享 SQLite/WAL，避免文件同步损坏事务 |
-| 每设备紧凑快照 | 单写者且文件数量有界，优于事件日志和每记录文件 |
-| 共享 SHA-256 内容对象 | 跨设备去重并能校验完整性 |
-| 512 MiB 稳态目录预算 | 控制用户 iCloud 占用；用户已确认默认值 |
-| 收藏/置顶不自动删除 | 保留用户保护语义；容量满时暂停新增图片 |
-| API Key 只存本机 Keychain | 不把敏感凭据写入普通 iCloud Drive 文件 |
-| 不保留 CloudKit 后端 | 用户无付费会员且不要求兼容，可减少双后端复杂度 |
+| 不采用 Developer ID | 用户没有付费 Apple Developer Program |
+| 不公开使用 Apple Development | 证书会暴露真实姓名、邮箱和 Apple 标识 |
+| 采用固定匿名自签名身份 | 仅公开项目名、证书指纹和有效期，同时提供跨版本稳定 DR |
+| 多台 Mac 安装同一个 Release 产物 | 避免不同机器或路径产生新的代码身份 |
+| 每台 Mac 单独授予 TCC 权限 | 系统权限不跨设备同步 |
+| 私钥不写入仓库或普通文件 | 签名身份属于敏感资产 |
 
 ## Errors Encountered
+
 | Error | Attempt | Resolution |
 | --- | --- | --- |
-| 设计检索命令出现 zsh unmatched quote | 1 | 拆分 `rg` 表达式后成功读取 |
-| 删除重复文档行的 patch 未命中 | 1 | 核对实际文件后确认只是重叠 `sed` 输出，未重复修改 |
-| `writing-plans` skill 不可用 | 1 | 使用 `planning-with-files` 作为可恢复计划替代 |
-| Core 聚焦编译命中旧 CloudKit UI 状态枚举 | 1 | 根因是 `SyncStatus` 已替换而 `SettingsView` 仍引用账号/网络状态；按文件夹状态模型整体更新该卡片 |
-| 进度日志 patch 预期段落未命中 | 1 | 读取实际分节后按现有结构更新 |
-| 设置页大 patch 因上下文顺序未命中 | 1 | 拆为模型扩展、属性接线和编辑器替换三个小 patch |
-| 文件存储聚焦编译命中旧 CloudKit Coordinator 状态 | 1 | Core 与新设置页已通过编译，失败边界精确收敛到待删除的 CloudKit App 层和旧 AppEnvironment 接线 |
-| 新协调器 `Set(compactMap)` 元素类型推断失败 | 1 | 明确标注为 `Set<String>` 和闭包返回 `String?` |
-| 打包测试多行字符串修正首次未命中 | 1 | 使用文件中的实际单行转义文本精确替换 |
-| tombstone export 写事务闭包推断为 `Void` | 1 | 根因是新增 origin UPDATE 后末尾查询缺少显式 `return`；补齐返回值 |
-| `osascript` 无辅助功能权限，无法注入 Option+Space | 1 | 不修改系统权限；改用 SwiftUI 离屏渲染/源码布局检查，并保留真实交互为人工验收边界 |
+| 规划文件仍是上一项已完成任务 | 1 | 切换为本次签名与发布任务，旧结论仍保留在 Git 历史和对应设计文档 |
+| 本机没有 `gh` CLI | 1 | 设计和实现不依赖本机 `gh`；标签触发的 Runner 继续使用内置 `gh`，本机用 GitHub REST/API 和 Git 检查发布状态 |
+| Web 工具拒绝直接打开 GitHub API URL | 1 | 后续先用搜索发现安全页面，或使用只读 `curl` 获取公开 API；不重复直接 open |
+| 本机 Keychain 未找到 `SPARKLE_PRIVATE_KEY` 通用密码项 | 1 | 现有 GitHub Secret 已由 v0.3.0 成功工作流验证；设计改为远程生成 appcast，或另行安全配置本机 Keychain |
+| 含 `rm -f` 的临时证书检查被执行策略拒绝 | 1 | 不创建临时文件，改用 `security find-certificate | openssl x509` 管道只读检查 |
+| `security create-keypair` 只生成密钥对，没有可用于代码签名的证书身份 | 1 | 删除临时钥匙串；不将该命令作为身份生成方案 |
+| `certtool` 生成的旧式自签名证书不被 `codesign` 识别为有效身份 | 1 | 移除临时信任和钥匙串；设计改用带 Code Signing EKU 的自签名证书并在实现阶段先做隔离原型 |
+| 独立 Review 指出 Runner 信任、Finder Automation 迁移和密钥恢复缺口 | 1 | 将临时 codeSign 信任、Bundle ID 级 `All` 重置及第二台 Mac Keychain 恢复演练加入发布门禁 |
+| 复审指出用户级信任不可无人值守、迁移步骤不一致且 Sparkle 私钥无恢复副本 | 2 | 改为 passwordless `sudo` 系统级临时信任；补齐全部权限恢复；增加公钥加密的 Secret 恢复流程和双机演练 |
+| 第三次复审指出可变恢复公钥会形成 Secret 导出接口 | 3 | 将一次性公钥和指纹固定到受审提交，限定仓库所有者和受保护 Environment 审批，不接受 dispatch 公钥输入 |
 
 ## Notes
-- 工作树包含本任务前序统一存储和 CloudKit 实现，修改时只替换同步后端，不破坏已验证本地迁移。
-- 声称完成前必须执行全量测试、打包检查和真实数据库只读校验。
+
+- 设计确认前不修改生产代码、打包脚本或工作流。
+- 当前公开发布使用 ad-hoc；匿名自签名仍无法获得 Developer ID 公证，首次下载后每台 Mac 需要确认一次“仍要打开”。
