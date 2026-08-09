@@ -49,12 +49,17 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(workflow.contains("if: always()"))
         XCTAssertTrue(workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh"))
         let buildStep = try XCTUnwrap(workflow.range(of: "- name: Build stable signed app"))
-        let earlyCleanupStep = try XCTUnwrap(
-            workflow.range(of: "- name: Retire anonymous signing identity after build")
+        let trustCleanupStep = try XCTUnwrap(
+            workflow.range(of: "- name: Retire anonymous signing system trust after build")
+        )
+        let keychainCleanupStep = try XCTUnwrap(
+            workflow.range(of: "- name: Retire anonymous signing keychain after build")
         )
         let verificationStep = try XCTUnwrap(workflow.range(of: "- name: Verify app bundle"))
-        XCTAssertLessThan(buildStep.lowerBound, earlyCleanupStep.lowerBound)
-        XCTAssertLessThan(earlyCleanupStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertLessThan(buildStep.lowerBound, trustCleanupStep.lowerBound)
+        XCTAssertLessThan(trustCleanupStep.lowerBound, keychainCleanupStep.lowerBound)
+        XCTAssertLessThan(keychainCleanupStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertTrue(workflow.contains("timeout-minutes: 20"))
         XCTAssertTrue(
             workflow.contains(
                 "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
@@ -79,14 +84,19 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(workflow.contains("MACOS_SIGNING_MODE: stable"))
         XCTAssertTrue(workflow.contains("scripts/ci/cleanup_anonymous_signing_identity.sh"))
         let buildStep = try XCTUnwrap(workflow.range(of: "- name: Build stable signed app"))
-        let earlyCleanupStep = try XCTUnwrap(
-            workflow.range(of: "- name: Retire anonymous signing identity after build")
+        let trustCleanupStep = try XCTUnwrap(
+            workflow.range(of: "- name: Retire anonymous signing system trust after build")
+        )
+        let keychainCleanupStep = try XCTUnwrap(
+            workflow.range(of: "- name: Retire anonymous signing keychain after build")
         )
         let verificationStep = try XCTUnwrap(
             workflow.range(of: "- name: Verify stable signed app without signing trust")
         )
-        XCTAssertLessThan(buildStep.lowerBound, earlyCleanupStep.lowerBound)
-        XCTAssertLessThan(earlyCleanupStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertLessThan(buildStep.lowerBound, trustCleanupStep.lowerBound)
+        XCTAssertLessThan(trustCleanupStep.lowerBound, keychainCleanupStep.lowerBound)
+        XCTAssertLessThan(keychainCleanupStep.lowerBound, verificationStep.lowerBound)
+        XCTAssertTrue(workflow.contains("timeout-minutes: 10"))
         XCTAssertFalse(workflow.contains("workflow_dispatch"))
         XCTAssertFalse(workflow.contains("gh release"))
         XCTAssertFalse(workflow.contains("contents: write"))
@@ -149,12 +159,13 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertFalse(importScript.contains("MACTOOLS_CI_SIGNING_P12="))
         XCTAssertFalse(importScript.contains("MACOS_SIGNING_CERTIFICATE_P12"))
         XCTAssertFalse(importScript.contains("MACOS_SIGNING_CERTIFICATE_PASSWORD"))
-        XCTAssertTrue(cleanupScript.contains("sudo security remove-trusted-cert"))
+        XCTAssertTrue(cleanupScript.contains("run_sudo_security remove-trusted-cert"))
         XCTAssertTrue(cleanupScript.contains("SYSTEM_TRUST_OWNERSHIP_MARKER"))
         XCTAssertFalse(cleanupScript.contains("ADDED_SYSTEM_TRUST:-unknown"))
         XCTAssertTrue(cleanupScript.contains("unable to verify system keychain cleanup"))
-        XCTAssertTrue(cleanupScript.contains("unable to remove temporary system trust settings"))
-        XCTAssertTrue(cleanupScript.contains("TRUST_SETTINGS_REMOVAL_SUCCEEDED"))
+        XCTAssertTrue(cleanupScript.contains("trust-removal command did not report success"))
+        XCTAssertTrue(cleanupScript.contains("CSSMERR_TP_NOT_TRUSTED"))
+        XCTAssertFalse(cleanupScript.contains("TRUST_SETTINGS_REMOVAL_SUCCEEDED"))
         XCTAssertTrue(
             cleanupScript.contains(
                 "anonymous signing certificate remains trusted for code signing"
@@ -162,6 +173,17 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         )
         XCTAssertTrue(cleanupScript.contains("security delete-keychain"))
         XCTAssertTrue(cleanupScript.contains("manage_keychain_search_list.sh"))
+        XCTAssertTrue(cleanupScript.contains("run_with_timeout.sh"))
+        XCTAssertTrue(
+            cleanupScript.contains(
+                "sudo -n \"$TIMEOUT_SCRIPT\" \"$SECURITY_TIMEOUT_SECONDS\" security"
+            )
+        )
+        XCTAssertFalse(
+            cleanupScript.contains(
+                "\"$TIMEOUT_SCRIPT\" \"$SECURITY_TIMEOUT_SECONDS\" sudo -n security"
+            )
+        )
         XCTAssertTrue(cleanupScript.contains("SIGNING_PRIVATE_KEY"))
     }
 
@@ -273,6 +295,59 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertFalse(fileManager.fileExists(atPath: stateFile.path))
     }
 
+    func testBoundedCommandTerminatesHangingProcessTree() throws {
+        let fileManager = FileManager.default
+        let temporaryDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MacToolsBoundedCommandTests-\(UUID().uuidString)")
+        try fileManager.createDirectory(
+            at: temporaryDirectory,
+            withIntermediateDirectories: false
+        )
+        defer { try? fileManager.removeItem(at: temporaryDirectory) }
+
+        let childPIDFile = temporaryDirectory.appendingPathComponent("child.pid")
+        let command = temporaryDirectory.appendingPathComponent("command.sh")
+        try """
+        #!/bin/sh
+        /bin/sh -c 'trap "" TERM; while :; do /bin/sleep 30; done' &
+        child_pid=$!
+        printf '%s\n' "$child_pid" > "$MACTOOLS_TEST_CHILD_PID_FILE"
+        wait "$child_pid"
+        """.write(to: command, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: command.path
+        )
+
+        let boundedCommand = Process()
+        boundedCommand.executableURL = URL(fileURLWithPath: "/bin/bash")
+        boundedCommand.arguments = [
+            try repositoryRoot()
+                .appendingPathComponent("scripts/ci/run_with_timeout.sh")
+                .path,
+            "1",
+            command.path,
+        ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["MACTOOLS_TEST_CHILD_PID_FILE"] = childPIDFile.path
+        boundedCommand.environment = environment
+        let startedAt = Date()
+        try boundedCommand.run()
+        boundedCommand.waitUntilExit()
+
+        XCTAssertEqual(boundedCommand.terminationStatus, 124)
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 3)
+
+        let childPID = try String(contentsOf: childPIDFile, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertFalse(childPID.isEmpty)
+        defer { terminateProcessIfRunning(childPID) }
+        XCTAssertFalse(
+            isProcessRunningAfterWait(childPID),
+            "bounded command must terminate descendants in its isolated process group"
+        )
+    }
+
     func testSigningCleanupRemovesTrustWhenOwnershipMarkerExists() throws {
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
@@ -292,6 +367,7 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
             sudoLog: sudoLog,
             certificateQueryExitStatus: 0,
             verifyExitStatus: 1,
+            verifyReportsNotTrusted: true,
             removeTrustExitStatus: 0,
             deleteCertificateExitStatus: 0
         )
@@ -383,7 +459,7 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         XCTAssertTrue(commands.contains("security delete-certificate -Z"))
     }
 
-    func testSigningCleanupKeepsOwnershipWhenTrustRemovalAndTrustVerificationBothFail() throws {
+    func testSigningCleanupConvergesWhenTrustRemovalFailsAfterTakingEffect() throws {
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("MacToolsSigningCleanupIndeterminateTrustTests-\(UUID().uuidString)")
@@ -402,6 +478,74 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
             sudoLog: sudoLog,
             certificateQueryExitStatus: 0,
             verifyExitStatus: 1,
+            verifyReportsNotTrusted: true,
+            removeTrustExitStatus: 1,
+            deleteCertificateExitStatus: 0
+        )
+
+        let cleanup = try runSigningCleanup(
+            temporaryDirectory: temporaryDirectory,
+            signingDirectory: signingDirectory,
+            sudoLog: sudoLog
+        )
+
+        XCTAssertEqual(cleanup.terminationStatus, 0)
+        XCTAssertFalse(fileManager.fileExists(atPath: marker.path))
+    }
+
+    func testSigningCleanupKeepsOwnershipWhenTrustVerificationTimesOut() throws {
+        let fileManager = FileManager.default
+        let temporaryDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MacToolsSigningCleanupTrustTimeoutTests-\(UUID().uuidString)")
+        let signingDirectory = temporaryDirectory.appendingPathComponent("signing")
+        try fileManager.createDirectory(
+            at: signingDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? fileManager.removeItem(at: temporaryDirectory) }
+
+        let marker = signingDirectory.appendingPathComponent("system-trust-owned")
+        try Data().write(to: marker)
+        let sudoLog = temporaryDirectory.appendingPathComponent("sudo.log")
+        try installFakeSecurityTools(
+            in: temporaryDirectory,
+            sudoLog: sudoLog,
+            certificateQueryExitStatus: 0,
+            verifyExitStatus: 124,
+            removeTrustExitStatus: 1,
+            deleteCertificateExitStatus: 0
+        )
+
+        let cleanup = try runSigningCleanup(
+            temporaryDirectory: temporaryDirectory,
+            signingDirectory: signingDirectory,
+            sudoLog: sudoLog
+        )
+
+        XCTAssertNotEqual(cleanup.terminationStatus, 0)
+        XCTAssertTrue(fileManager.fileExists(atPath: marker.path))
+    }
+
+    func testSigningCleanupKeepsOwnershipWhenTrustVerificationIsIndeterminate() throws {
+        let fileManager = FileManager.default
+        let temporaryDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MacToolsSigningCleanupTrustErrorTests-\(UUID().uuidString)")
+        let signingDirectory = temporaryDirectory.appendingPathComponent("signing")
+        try fileManager.createDirectory(
+            at: signingDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? fileManager.removeItem(at: temporaryDirectory) }
+
+        let marker = signingDirectory.appendingPathComponent("system-trust-owned")
+        try Data().write(to: marker)
+        let sudoLog = temporaryDirectory.appendingPathComponent("sudo.log")
+        try installFakeSecurityTools(
+            in: temporaryDirectory,
+            sudoLog: sudoLog,
+            certificateQueryExitStatus: 0,
+            verifyExitStatus: 1,
+            verifyReportsNotTrusted: false,
             removeTrustExitStatus: 1,
             deleteCertificateExitStatus: 0
         )
@@ -421,6 +565,7 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         sudoLog: URL,
         certificateQueryExitStatus: Int,
         verifyExitStatus: Int,
+        verifyReportsNotTrusted: Bool = false,
         removeTrustExitStatus: Int,
         deleteCertificateExitStatus: Int
     ) throws {
@@ -433,20 +578,26 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
           exit \(certificateQueryExitStatus)
         fi
         if [ "$1" = "verify-cert" ]; then
+          if [ "\(verifyReportsNotTrusted ? "1" : "0")" = "1" ]; then
+            printf '%s\n' 'Cert Verify Result: CSSMERR_TP_NOT_TRUSTED' >&2
+          fi
           exit \(verifyExitStatus)
+        fi
+        if [ "$1" = "remove-trusted-cert" ]; then
+          exit \(removeTrustExitStatus)
+        fi
+        if [ "$1" = "delete-certificate" ]; then
+          exit \(deleteCertificateExitStatus)
         fi
         exit 0
         """.write(to: securityTool, atomically: true, encoding: .utf8)
         try """
         #!/bin/sh
         printf '%s\n' "$*" >> "\(sudoLog.path)"
-        if [ "$2" = "remove-trusted-cert" ]; then
-          exit \(removeTrustExitStatus)
+        if [ "$1" = "-n" ]; then
+          shift
         fi
-        if [ "$2" = "delete-certificate" ]; then
-          exit \(deleteCertificateExitStatus)
-        fi
-        exit 0
+        exec "$@"
         """.write(to: sudoTool, atomically: true, encoding: .utf8)
         for tool in [securityTool, sudoTool] {
             try fileManager.setAttributes(
@@ -477,6 +628,44 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         try cleanup.run()
         cleanup.waitUntilExit()
         return cleanup
+    }
+
+    private func isProcessRunning(_ processID: String) -> Bool {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: "/bin/kill")
+        probe.arguments = ["-0", processID]
+        probe.standardError = Pipe()
+        do {
+            try probe.run()
+            probe.waitUntilExit()
+            return probe.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private func isProcessRunningAfterWait(_ processID: String) -> Bool {
+        for _ in 0..<20 {
+            if !isProcessRunning(processID) {
+                return false
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return isProcessRunning(processID)
+    }
+
+    private func terminateProcessIfRunning(_ processID: String) {
+        guard isProcessRunning(processID) else { return }
+        let termination = Process()
+        termination.executableURL = URL(fileURLWithPath: "/bin/kill")
+        termination.arguments = ["-KILL", processID]
+        termination.standardError = Pipe()
+        do {
+            try termination.run()
+            termination.waitUntilExit()
+        } catch {
+            return
+        }
     }
 
     private func sourceFile(_ path: String) throws -> String {

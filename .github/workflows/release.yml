@@ -11,6 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: macos-26
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -36,8 +37,11 @@ jobs:
           MACOS_SIGNING_MODE: stable
         run: scripts/package_app.sh
 
-      - name: Retire anonymous signing identity after build
-        run: scripts/ci/cleanup_anonymous_signing_identity.sh
+      - name: Retire anonymous signing system trust after build
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh trust
+
+      - name: Retire anonymous signing keychain after build
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh local
 
       - name: Verify app bundle
         run: |

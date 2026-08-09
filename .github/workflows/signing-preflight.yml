@@ -14,6 +14,7 @@ jobs:
       github.actor == github.repository_owner &&
       github.ref == 'refs/heads/codex/anonymous-signing-preflight'
     runs-on: macos-26
+    timeout-minutes: 10
 
     steps:
       - name: Check out repository
@@ -33,8 +34,11 @@ jobs:
           MACOS_BUILD_NUMBER: 1
         run: scripts/package_app.sh
 
-      - name: Retire anonymous signing identity after build
-        run: scripts/ci/cleanup_anonymous_signing_identity.sh
+      - name: Retire anonymous signing system trust after build
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh trust
+
+      - name: Retire anonymous signing keychain after build
+        run: scripts/ci/cleanup_anonymous_signing_identity.sh local
 
       - name: Verify stable signed app without signing trust
         run: |

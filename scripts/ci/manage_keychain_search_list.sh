@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TIMEOUT_SCRIPT="$ROOT_DIR/scripts/ci/run_with_timeout.sh"
+SECURITY_TIMEOUT_SECONDS=30
+
+if [[ ! -x "$TIMEOUT_SCRIPT" ]]; then
+  echo "error: bounded command helper is missing." >&2
+  exit 1
+fi
+
+run_security() {
+  "$TIMEOUT_SCRIPT" "$SECURITY_TIMEOUT_SECONDS" security "$@"
+}
+
 if [[ "$#" -lt 2 ]]; then
   echo "usage: $0 <prepend|restore> <state-file> [signing-keychain]" >&2
   exit 64
@@ -38,7 +51,7 @@ case "$MODE" in
       echo "error: user keychain search-list state already exists." >&2
       exit 1
     fi
-    if ! ORIGINAL_LIST_OUTPUT="$(security list-keychains -d user)"; then
+    if ! ORIGINAL_LIST_OUTPUT="$(run_security list-keychains -d user)"; then
       echo "error: unable to read the original user keychain search list." >&2
       exit 1
     fi
@@ -70,7 +83,7 @@ case "$MODE" in
     mv "$PENDING_STATE_FILE" "$STATE_FILE"
     trap - EXIT
 
-    if ! security list-keychains -d user -s "${PREPENDED_KEYCHAINS[@]}"; then
+    if ! run_security list-keychains -d user -s "${PREPENDED_KEYCHAINS[@]}"; then
       echo "error: unable to prepend the temporary signing keychain." >&2
       exit 1
     fi
@@ -84,7 +97,7 @@ case "$MODE" in
       exit 0
     fi
     read_state_file
-    if ! security list-keychains -d user -s "${KEYCHAINS[@]}"; then
+    if ! run_security list-keychains -d user -s "${KEYCHAINS[@]}"; then
       echo "error: unable to restore the original user keychain search list." >&2
       exit 1
     fi
