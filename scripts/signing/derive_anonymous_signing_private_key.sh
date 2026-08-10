@@ -110,6 +110,6 @@ openssl ec \
   -out "$OUTPUT_PATH" \
   >/dev/null 2>&1
 chmod 600 "$OUTPUT_PATH"
-openssl ec -in "$OUTPUT_PATH" -check -noout >/dev/null 2>&1
+openssl ec -in "$OUTPUT_PATH" -pubout -out /dev/null >/dev/null 2>&1
 
 printf 'Derived anonymous P-256 signing key.\n'
