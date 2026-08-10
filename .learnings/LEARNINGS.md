@@ -30,6 +30,33 @@ replica，因此两者不能强制相等。
 
 ---
 
+## [LRN-20260810-001] knowledge_gap
+
+**Logged**: 2026-08-10T15:38:39+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+飞书截图的标签颜色只作用于定位点，标签正文保持深色说明气泡。
+
+### Details
+初版参考稿把定位点、连接线和标签气泡整体使用同一种标注色。核对飞书官方帮助中心的动态示例后确认，标签主体是固定深灰色气泡，用户选择的颜色仅用于独立定位点；定位点还用于翻转标签方向。
+
+### Suggested Action
+参考外部产品设计具体控件时，应查看完整动态示例或多个关键帧，区分不同子元素的颜色和状态规则，避免仅凭首帧、图标或文字说明推断视觉行为。
+
+### Metadata
+- Source: error
+- Related Files: docs/superpowers/specs/2026-08-10-screenshot-text-label-design.md
+- Tags: screenshot, annotation, feishu, label, visual-reference
+
+### Resolution
+- **Resolved**: 2026-08-10T15:38:39+08:00
+- **Notes**: 最终 UI 设计改为深色标签气泡、独立彩色定位点，并保留定位点翻转交互。
+
+---
+
 ## [LRN-20260727-001] correction
 
 **Logged**: 2026-07-27T11:57:26+08:00
