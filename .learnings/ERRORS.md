@@ -1,5 +1,38 @@
 # Errors
 
+## [ERR-20260810-017] AppKit marked text observation prototype names
+
+**Logged**: 2026-08-10T19:47:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+验证 NSTextStorage 组合态回调时先使用了错误的 Swift 类型名，随后通知 selector 又与 NSObject 的旧方法重名。
+
+### Error
+```
+'EditActions' is not a member type of class 'NSTextStorage'
+overriding declaration requires an 'override' keyword
+```
+
+### Context
+- 当前 SDK 的回调参数类型为 `NSTextStorageEditActions`，不是嵌套的 `NSTextStorage.EditActions`。
+- `textStorageDidProcessEditing(_:)` 已存在于 `NSObject` 的旧 AppKit 兼容 API，自定义通知 selector 不能复用该名字。
+
+### Suggested Fix
+使用 `NSTextStorage.didProcessEditingNotification`，并为项目私有 selector 使用不与 NSObject 冲突的 `handleTextStorageDidProcessEditing(_:)` 名称。
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift
+
+### Resolution
+- **Resolved**: 2026-08-10T19:48:00+08:00
+- **Notes**: 更正类型名与 selector 名称后，组合态回归测试和严格并发构建通过。
+
+---
+
 ## [ERR-20260810-016] 发布脚本进程树测试偶发早于 PID 文件创建
 
 **Logged**: 2026-08-10T19:22:00+08:00

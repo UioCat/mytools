@@ -100,6 +100,10 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
         context.coordinator.configureFieldEditor(for: field)
     }
 
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        coordinator.stopObservingFieldEditor()
+    }
+
     private func configure(_ field: NSTextField) {
         field.font = .systemFont(ofSize: max(1, fontSize), weight: .medium)
         field.textColor = NSColor(
@@ -114,6 +118,9 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: ScreenshotLabelTextField
+        private weak var fieldEditor: NSTextView?
+        private weak var observedTextStorage: NSTextStorage?
+        private var textStorageSyncGeneration = 0
 
         init(parent: ScreenshotLabelTextField) {
             self.parent = parent
@@ -134,6 +141,10 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
             configureFieldEditor(for: field)
         }
 
+        func controlTextDidEndEditing(_ notification: Notification) {
+            stopObservingFieldEditor()
+        }
+
         func control(
             _ control: NSControl,
             textView: NSTextView,
@@ -150,10 +161,66 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
             guard let editor = field.currentEditor() as? NSTextView else {
                 return
             }
+            observeFieldEditor(editor)
             editor.textContainerInset = .zero
             editor.textContainer?.lineFragmentPadding = 0
             editor.alignment = .center
             editor.drawsBackground = false
+        }
+
+        @objc private func handleTextStorageDidProcessEditing(_ notification: Notification) {
+            guard let textStorage = notification.object as? NSTextStorage,
+                  textStorage === observedTextStorage,
+                  let fieldEditor,
+                  fieldEditor.textStorage === textStorage else {
+                return
+            }
+            scheduleTextStorageSync(from: fieldEditor)
+        }
+
+        private func observeFieldEditor(_ editor: NSTextView) {
+            guard fieldEditor !== editor || observedTextStorage !== editor.textStorage else {
+                return
+            }
+            stopObservingFieldEditor()
+            fieldEditor = editor
+            observedTextStorage = editor.textStorage
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleTextStorageDidProcessEditing(_:)),
+                name: NSTextStorage.didProcessEditingNotification,
+                object: observedTextStorage
+            )
+        }
+
+        func stopObservingFieldEditor() {
+            textStorageSyncGeneration += 1
+            if let observedTextStorage {
+                NotificationCenter.default.removeObserver(
+                    self,
+                    name: NSTextStorage.didProcessEditingNotification,
+                    object: observedTextStorage
+                )
+            }
+            observedTextStorage = nil
+            fieldEditor = nil
+        }
+
+        private func scheduleTextStorageSync(from editor: NSTextView) {
+            textStorageSyncGeneration += 1
+            let generation = textStorageSyncGeneration
+            DispatchQueue.main.async { [weak self, weak editor] in
+                guard let self,
+                      let editor,
+                      generation == self.textStorageSyncGeneration,
+                      self.fieldEditor === editor else {
+                    return
+                }
+                let value = editor.string.replacingOccurrences(of: "\n", with: " ")
+                if self.parent.text != value {
+                    self.parent.text = value
+                }
+            }
         }
     }
 }
@@ -186,6 +253,7 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         editor.autoresizingMask = [.width, .height]
         configure(editor)
         context.coordinator.installOutsideClickMonitor(for: editor)
+        context.coordinator.observeTextStorage(for: editor)
         return editor
     }
 
@@ -195,9 +263,11 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
             editor.string = text
         }
         configure(editor)
+        context.coordinator.observeTextStorage(for: editor)
     }
 
     static func dismantleNSView(_ editor: NSTextView, coordinator: Coordinator) {
+        coordinator.stopObservingTextStorage(for: editor)
         coordinator.removeOutsideClickMonitor()
     }
 
@@ -216,7 +286,9 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ScreenshotPlainTextEditor
         private weak var editor: NSTextView?
+        private weak var observedTextStorage: NSTextStorage?
         private var outsideClickMonitor: Any?
+        private var textStorageSyncGeneration = 0
 
         init(parent: ScreenshotPlainTextEditor) {
             self.parent = parent
@@ -227,6 +299,62 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
                 return
             }
             parent.text = editor.string
+        }
+
+        @objc private func handleTextStorageDidProcessEditing(_ notification: Notification) {
+            guard let textStorage = notification.object as? NSTextStorage,
+                  textStorage === observedTextStorage,
+                  let editor,
+                  editor.textStorage === textStorage else {
+                return
+            }
+            textStorageSyncGeneration += 1
+            let generation = textStorageSyncGeneration
+            DispatchQueue.main.async { [weak self, weak editor] in
+                guard let self,
+                      let editor,
+                      generation == self.textStorageSyncGeneration,
+                      self.editor === editor else {
+                    return
+                }
+                if self.parent.text != editor.string {
+                    self.parent.text = editor.string
+                }
+            }
+        }
+
+        func observeTextStorage(for editor: NSTextView) {
+            guard self.editor !== editor || observedTextStorage !== editor.textStorage else {
+                return
+            }
+            if let observedTextStorage {
+                NotificationCenter.default.removeObserver(
+                    self,
+                    name: NSTextStorage.didProcessEditingNotification,
+                    object: observedTextStorage
+                )
+            }
+            self.editor = editor
+            observedTextStorage = editor.textStorage
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleTextStorageDidProcessEditing(_:)),
+                name: NSTextStorage.didProcessEditingNotification,
+                object: observedTextStorage
+            )
+        }
+
+        func stopObservingTextStorage(for editor: NSTextView) {
+            textStorageSyncGeneration += 1
+            if observedTextStorage === editor.textStorage,
+               let observedTextStorage {
+                NotificationCenter.default.removeObserver(
+                    self,
+                    name: NSTextStorage.didProcessEditingNotification,
+                    object: observedTextStorage
+                )
+                self.observedTextStorage = nil
+            }
         }
 
         func installOutsideClickMonitor(for editor: NSTextView) {

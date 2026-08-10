@@ -1,5 +1,33 @@
 # Learnings
 
+## [LRN-20260810-003] correction
+
+**Logged**: 2026-08-10T19:49:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+截图文本和标签即使通过直接键入测试，中文输入法组合态仍可能使用旧对象宽度裁掉最新内容。
+
+### Details
+用户实机截图显示普通文本在编辑态只绘制“`不该，不该，`”，退出编辑后完整的“`不该，不该，333`”才出现。生产交互回归确认：`setMarkedText` 已把完整内容写入原生编辑器，但 `NSTextViewDelegate.textDidChange` 和 `NSTextFieldDelegate.controlTextDidChange` 不会在组合态字符变化时通知 SwiftUI 草稿，因此普通文本仍停在前缀的 `91 pt`，标签仍停在前缀的 `132 pt`。直接调用 `insertText` 的测试无法覆盖这个差异。
+
+### Suggested Action
+文本和标签编辑器都监听 `NSTextStorage.didProcessEditingNotification`，在下一次主循环读取稳定的完整字符串并更新草稿；生产交互测试必须包含“先输入前缀，再通过 `setMarkedText` 增长内容”的真实 IME 路径，并断言编辑态对象边界同步增长且字形不换行裁切。
+
+### Metadata
+- Source: user_feedback
+- Related Files: Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift, Tests/MacToolsCoreTests/ScreenshotEditorInteractionTests.swift
+- Tags: screenshot, ime, marked-text, text-layout, appkit
+- See Also: LRN-20260810-002
+
+### Resolution
+- **Resolved**: 2026-08-10T19:53:00+08:00
+- **Notes**: 文本和标签都改为监听 text storage 组合态变化；真实生产编辑器 marked text 回归、截图专项、全量测试和严格并发构建通过。
+
+---
+
 ## [LRN-20260810-002] correction
 
 **Logged**: 2026-08-10T18:30:00+08:00

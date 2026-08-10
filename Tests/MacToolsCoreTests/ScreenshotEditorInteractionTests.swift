@@ -260,9 +260,40 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         let glyphCenterInField = textView.convert(glyphCenterInEditor, to: labelField)
         XCTAssertEqual(glyphCenterInField.y, labelField.bounds.midY, accuracy: 1)
 
-        let longText = "hello, 大家好，这是一个需要完整展开的标签文本"
         textView.selectAll(nil)
         textView.insertText(
+            "gekki word 我 是 ",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        runMainLoop()
+        let prefixLabelEditor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        prefixLabelEditor.setMarkedText(
+            "333",
+            selectedRange: NSRange(location: 3, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        runMainLoop()
+        let markedLabelEditor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        let markedLabelField = try XCTUnwrap(
+            textField(using: markedLabelEditor, below: contentView)
+        )
+        let expectedMarkedLabelWidth = ceil(
+            ScreenshotTextLayout.singleLineWidth(
+                text: "gekki word 我 是 333",
+                fontSize: 16
+            ) + ScreenshotLabelStyle.glyphSafetyWidth(for: 16)
+        )
+        XCTAssertEqual(markedLabelEditor.string, "gekki word 我 是 333")
+        XCTAssertTrue(markedLabelEditor.hasMarkedText())
+        XCTAssertGreaterThanOrEqual(
+            markedLabelField.bounds.width,
+            expectedMarkedLabelWidth
+        )
+
+        markedLabelEditor.unmarkText()
+        let longText = "hello, 大家好，这是一个需要完整展开的标签文本"
+        markedLabelEditor.selectAll(nil)
+        markedLabelEditor.insertText(
             longText,
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
@@ -347,6 +378,50 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         XCTAssertLessThan(glyphBounds.height, 30)
         XCTAssertLessThanOrEqual(glyphBounds.maxX, textContainer.containerSize.width)
         XCTAssertLessThan(updatedTextView.bounds.width, 64)
+
+        updatedTextView.selectAll(nil)
+        updatedTextView.insertText(
+            "不该，不该，",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        runMainLoop()
+        let prefixTextView = try XCTUnwrap(window.firstResponder as? NSTextView)
+        prefixTextView.setMarkedText(
+            "333",
+            selectedRange: NSRange(location: 3, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        runMainLoop()
+
+        let grownTextView = try XCTUnwrap(window.firstResponder as? NSTextView)
+        let grownTextContainer = try XCTUnwrap(grownTextView.textContainer)
+        let grownLayoutManager = try XCTUnwrap(grownTextView.layoutManager)
+        grownLayoutManager.ensureLayout(for: grownTextContainer)
+        let grownGlyphBounds = grownLayoutManager.boundingRect(
+            forGlyphRange: grownLayoutManager.glyphRange(for: grownTextContainer),
+            in: grownTextContainer
+        )
+        XCTAssertEqual(grownTextView.string, "不该，不该，333")
+        XCTAssertEqual(
+            grownTextContainer.containerSize.width,
+            grownTextView.bounds.width,
+            accuracy: 0.5
+        )
+        XCTAssertGreaterThan(grownTextView.bounds.width, 120)
+        XCTAssertLessThan(
+            grownGlyphBounds.height,
+            30,
+            "view=\(grownTextView.bounds) container=\(grownTextContainer.containerSize) glyph=\(grownGlyphBounds) font=\(String(describing: grownTextView.font))"
+        )
+        XCTAssertTrue(grownTextView.hasMarkedText())
+
+        grownTextView.unmarkText()
+        grownTextView.selectAll(nil)
+        grownTextView.insertText(
+            "333",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        runMainLoop()
         sendClick(
             to: window,
             swiftUIPoint: CGPoint(x: imageFrame.maxX - 20, y: imageFrame.maxY - 20),
