@@ -187,6 +187,8 @@ scripts/rebuild_and_run_app.sh
 
 `package_app.sh` 默认生成隔离 Bundle ID 的 ad-hoc `MacTools Dev`。稳定包必须显式使用 `MACOS_SIGNING_MODE=stable`，并且只接受仓库固定的 `MacTools Release Signing` 证书及指纹；不会自动选择 Apple Development，也不会回退到 ad-hoc。公开证书只包含项目通用名、公钥和密码学元数据，不包含姓名、邮箱或 Apple Team 标识。发布只使用现有 `SPARKLE_PRIVATE_KEY`：GitHub Runner 通过 HKDF-SHA256 用途隔离派生临时 P-256 代码签名子私钥，不需新增证书或密码 Secret，标签发布仍只需 Git Push。
 
+维护者发布稳定版本时，按 [GitHub Release 发布指南](docs/release-guide.md) 完成版本判断、签名预检、标签发布和公开资产复核。
+
 ```sh
 MACOS_SIGNING_MODE=development scripts/package_app.sh
 MACOS_SIGNING_MODE=stable scripts/package_app.sh
