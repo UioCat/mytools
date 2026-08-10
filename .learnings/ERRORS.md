@@ -1,5 +1,38 @@
 # Errors
 
+## [ERR-20260810-016] 发布脚本进程树测试偶发早于 PID 文件创建
+
+**Logged**: 2026-08-10T19:22:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+全量测试首次运行时，进程树终止用例在读取子进程 PID 文件前未观察到该文件；单独原命令重跑通过，确认不是本次截图改动引入的稳定失败。
+
+### Error
+```
+NSCocoaErrorDomain Code=260: child.pid 不存在
+```
+
+### Context
+- 失败用例为 `ReleaseWorkflowSourceTests/testBoundedCommandTerminatesHangingProcessTree`。
+- 本次改动仅涉及截图文本与标签排版，截图专项 65 项同时全部通过。
+- 未修改或放宽发布脚本测试，保持原测试继续覆盖进程树清理。
+
+### Suggested Fix
+遇到同类失败时先单独原样重跑确认稳定性；若持续复现，再为 PID 文件创建增加确定性的就绪同步，而不是延长固定等待时间。
+
+### Metadata
+- Reproducible: no
+- Related Files: Tests/MacToolsCoreTests/ReleaseWorkflowSourceTests.swift
+
+### Resolution
+- **Resolved**: 2026-08-10T19:23:00+08:00
+- **Notes**: 单独重跑通过；继续执行第二次完整测试验证。
+
+---
+
 ## [ERR-20260810-015] 截断标签像素测试误把字形结果当作完全相同
 
 **Logged**: 2026-08-10T18:22:00+08:00

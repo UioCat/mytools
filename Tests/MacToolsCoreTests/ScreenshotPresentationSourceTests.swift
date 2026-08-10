@@ -162,22 +162,25 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         let source = try sourceFile(
             "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift"
         )
-
-        XCTAssertTrue(
-            source.contains(
-                ".font(.system(size: canvasLineWidth(fontSize, in: imageRect), weight: .medium))"
-            )
+        let annotationSource = try sourceFile(
+            "Sources/MacToolsCore/ScreenCapture/ScreenshotAnnotation.swift"
         )
+
+        XCTAssertTrue(source.contains("ScreenshotLabelText("))
+        XCTAssertTrue(source.contains("fontSize: canvasLineWidth(fontSize, in: imageRect)"))
         XCTAssertTrue(source.contains("ScreenshotLabelTextField("))
         XCTAssertTrue(source.contains("editor.textContainer?.lineFragmentPadding = 0"))
         XCTAssertTrue(source.contains("field.alignment = .center"))
         XCTAssertTrue(source.contains("labelColor(ScreenshotLabelStyle.backgroundColor)"))
-        XCTAssertTrue(source.contains("labelColor(ScreenshotLabelStyle.foregroundColor)"))
+        XCTAssertTrue(source.contains("foregroundColor: ScreenshotLabelStyle.foregroundColor"))
         XCTAssertTrue(source.contains("ScreenshotLabelStyle.maximumBubbleWidth("))
         XCTAssertTrue(source.contains("ScreenshotLabelStyle.resolvedMaximumBubbleWidth("))
+        XCTAssertTrue(source.contains("ScreenshotLabelStyle.normalizedMaximumBubbleWidth("))
         XCTAssertTrue(source.contains("labelFontSize: annotationFontSize.points"))
         XCTAssertFalse(source.contains("Color(red: 0.09, green: 0.10, blue: 0.12)"))
         XCTAssertFalse(source.contains("min(240 * scale"))
+        XCTAssertFalse(source.contains("let width = min(360 * scale"))
+        XCTAssertFalse(annotationSource.contains("maximumWidth: CGFloat = 240"))
     }
 
     func testPlainLiquidGlassButtonsUseTheSharedFullSurfaceHitTarget() throws {

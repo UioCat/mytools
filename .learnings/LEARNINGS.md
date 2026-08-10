@@ -1,5 +1,28 @@
 # Learnings
 
+## [LRN-20260810-002] correction
+
+**Logged**: 2026-08-10T18:30:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: frontend
+
+### Summary
+截图文本与标签的自适应不能只验证排版辅助函数，必须验证生产编辑器创建后的真实对象边界。
+
+### Details
+首轮优化的 CoreText 几何测试、原生标签输入框居中测试和渲染快照均通过，但用户在打包应用中仍观察到两类问题：标签在空间充足时提前省略，普通文本选中框仍保留固定大宽度，短文本停留在左上角。现有测试没有覆盖从工具点击、输入、提交到选中边界的完整生产链路，因此没有发现固定文本草稿宽度和标签宽度上限在真实交互中的残留。
+
+### Suggested Action
+文本类标注应由内容测量结果生成最终边界，并对生产编辑器补充“输入短文本/长标签 → 提交 → 检查对象边界或最终 PNG”的端到端回归；几何单测只作为底层证据，不能替代真实交互验证。
+
+### Metadata
+- Source: user_feedback
+- Related Files: `Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift`, `Sources/MacToolsCore/ScreenCapture/ScreenshotTextLayout.swift`, `Tests/MacToolsCoreTests/ScreenshotEditorInteractionTests.swift`
+- Tags: screenshot, text, label, adaptive-layout, ui-regression
+
+---
+
 ## [LRN-20260725-001] best_practice
 
 **Logged**: 2026-07-25T16:12:38+08:00

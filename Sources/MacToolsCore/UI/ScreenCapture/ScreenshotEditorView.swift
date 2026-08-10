@@ -158,6 +158,196 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
     }
 }
 
+/// 零内缩多行编辑器，使普通文本编辑态与 CoreText 的内容边界一致。
+private struct ScreenshotPlainTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    let fontSize: CGFloat
+    let color: ScreenshotAnnotationColor
+    let onCommit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSTextView {
+        let editor = NSTextView(frame: .zero)
+        editor.delegate = context.coordinator
+        editor.isEditable = true
+        editor.isSelectable = true
+        editor.isRichText = false
+        editor.importsGraphics = false
+        editor.drawsBackground = false
+        editor.allowsUndo = true
+        editor.textContainerInset = .zero
+        editor.textContainer?.lineFragmentPadding = 0
+        editor.textContainer?.widthTracksTextView = true
+        editor.textContainer?.heightTracksTextView = false
+        editor.textContainer?.lineBreakMode = .byWordWrapping
+        editor.autoresizingMask = [.width, .height]
+        configure(editor)
+        context.coordinator.installOutsideClickMonitor(for: editor)
+        return editor
+    }
+
+    func updateNSView(_ editor: NSTextView, context: Context) {
+        context.coordinator.parent = self
+        if editor.string != text, !editor.hasMarkedText() {
+            editor.string = text
+        }
+        configure(editor)
+    }
+
+    static func dismantleNSView(_ editor: NSTextView, coordinator: Coordinator) {
+        coordinator.removeOutsideClickMonitor()
+    }
+
+    private func configure(_ editor: NSTextView) {
+        editor.font = .systemFont(ofSize: max(1, fontSize))
+        editor.textColor = NSColor(
+            calibratedRed: color.red,
+            green: color.green,
+            blue: color.blue,
+            alpha: color.alpha
+        )
+        editor.alignment = .left
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: ScreenshotPlainTextEditor
+        private weak var editor: NSTextView?
+        private var outsideClickMonitor: Any?
+
+        init(parent: ScreenshotPlainTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let editor = notification.object as? NSTextView else {
+                return
+            }
+            parent.text = editor.string
+        }
+
+        func installOutsideClickMonitor(for editor: NSTextView) {
+            removeOutsideClickMonitor()
+            self.editor = editor
+            outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) {
+                [weak self, weak editor] event in
+                guard let self,
+                      let editor,
+                      event.window === editor.window,
+                      !editor.bounds.contains(editor.convert(event.locationInWindow, from: nil)) else {
+                    return event
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.parent.onCommit()
+                }
+                return event
+            }
+        }
+
+        func removeOutsideClickMonitor() {
+            guard let outsideClickMonitor else {
+                return
+            }
+            NSEvent.removeMonitor(outsideClickMonitor)
+            self.outsideClickMonitor = nil
+            editor = nil
+        }
+    }
+}
+
+/// 标签已提交预览使用与编辑器相同的 AppKit 排版，避免 SwiftUI 二次测量后提前省略。
+private struct ScreenshotLabelText: NSViewRepresentable {
+    let text: String
+    let fontSize: CGFloat
+    let foregroundColor: ScreenshotLabelColorComponents
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(labelWithString: text)
+        field.cell = ScreenshotLabelTextFieldCell(textCell: text)
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.isEditable = false
+        field.isSelectable = false
+        field.focusRingType = .none
+        field.maximumNumberOfLines = 1
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.usesSingleLineMode = true
+        field.cell?.wraps = false
+        configure(field)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        field.stringValue = text
+        configure(field)
+    }
+
+    private func configure(_ field: NSTextField) {
+        field.font = .systemFont(ofSize: max(1, fontSize), weight: .medium)
+        field.textColor = NSColor(
+            calibratedRed: foregroundColor.red,
+            green: foregroundColor.green,
+            blue: foregroundColor.blue,
+            alpha: foregroundColor.alpha
+        )
+        field.alignment = .center
+    }
+}
+
+/// 普通文本预览按已测量边界绘制，避免 SwiftUI 再次扩张为固定宽度容器。
+private struct ScreenshotPlainText: NSViewRepresentable {
+    let text: String
+    let fontSize: CGFloat
+    let color: ScreenshotAnnotationColor
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(wrappingLabelWithString: text)
+        field.cell = ScreenshotPlainTextFieldCell(textCell: text)
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.isEditable = false
+        field.isSelectable = false
+        field.focusRingType = .none
+        field.maximumNumberOfLines = 0
+        field.lineBreakMode = .byWordWrapping
+        field.cell?.usesSingleLineMode = false
+        field.cell?.wraps = true
+        configure(field)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        field.stringValue = text
+        configure(field)
+    }
+
+    private func configure(_ field: NSTextField) {
+        field.font = .systemFont(ofSize: max(1, fontSize))
+        field.textColor = NSColor(
+            calibratedRed: color.red,
+            green: color.green,
+            blue: color.blue,
+            alpha: color.alpha
+        )
+        field.alignment = .left
+    }
+}
+
+private final class ScreenshotPlainTextFieldCell: NSTextFieldCell {
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        rect
+    }
+
+    override func titleRect(forBounds rect: NSRect) -> NSRect {
+        rect
+    }
+}
+
 /// 去除 NSTextFieldCell 默认水平内缩，并按真实字体行高垂直居中。
 private final class ScreenshotLabelTextFieldCell: NSTextFieldCell {
     override func drawingRect(forBounds rect: NSRect) -> NSRect {
@@ -1336,11 +1526,12 @@ public struct ScreenshotEditorView: View {
         switch annotation {
         case let .text(text, frame, color, fontSize):
             let rect = canvasRect(from: frame, imageRect: imageRect)
-            Text(text)
-                .font(.system(size: canvasLineWidth(fontSize, in: imageRect)))
-                .foregroundStyle(swiftUIColor(color))
-                .multilineTextAlignment(.leading)
-                .frame(width: rect.width, height: rect.height, alignment: .topLeading)
+            ScreenshotPlainText(
+                text: text,
+                fontSize: canvasLineWidth(fontSize, in: imageRect),
+                color: color
+            )
+                .frame(width: rect.width, height: rect.height)
                 .position(x: rect.midX, y: rect.midY)
         case let .label(text, anchor, direction, color, fontSize, maximumWidth):
             let geometry = ScreenshotTextLayout.labelGeometry(
@@ -1360,12 +1551,11 @@ public struct ScreenshotEditorView: View {
                     imageRect: imageRect,
                     isEditing: false
                 )
-                Text(text)
-                    .font(.system(size: canvasLineWidth(fontSize, in: imageRect), weight: .medium))
-                    .foregroundStyle(labelColor(ScreenshotLabelStyle.foregroundColor))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .multilineTextAlignment(.center)
+                ScreenshotLabelText(
+                    text: text,
+                    fontSize: canvasLineWidth(fontSize, in: imageRect),
+                    foregroundColor: ScreenshotLabelStyle.foregroundColor
+                )
                     .frame(width: textRect.width, height: bubbleRect.height, alignment: .center)
                     .position(x: textRect.midX, y: bubbleRect.midY)
                 Circle()
@@ -1390,14 +1580,13 @@ public struct ScreenshotEditorView: View {
                 if draft.text.isEmpty {
                     Text("输入文本")
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 7)
                 }
-                TextEditor(text: editingTextBinding)
-                    .font(.system(size: canvasLineWidth(draft.fontSize, in: imageRect)))
-                    .foregroundStyle(swiftUIColor(draft.color))
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
+                ScreenshotPlainTextEditor(
+                    text: editingTextBinding,
+                    fontSize: canvasLineWidth(draft.fontSize, in: imageRect),
+                    color: draft.color,
+                    onCommit: commitEditing
+                )
                     .focused($isTextInputFocused)
             }
             .frame(width: rect.width, height: rect.height)
@@ -1488,8 +1677,42 @@ public struct ScreenshotEditorView: View {
                 draft.text = draft.kind == .label
                     ? newValue.replacingOccurrences(of: "\n", with: " ")
                     : newValue
+                let scale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
+                switch draft.kind {
+                case .text:
+                    if let frame = fittedTextFrame(
+                        for: draft,
+                        text: draft.text.isEmpty ? "输入文本" : draft.text
+                    ) {
+                        draft.frame = frame
+                    }
+                case .label:
+                    draft.maximumWidth = ScreenshotLabelStyle.normalizedMaximumBubbleWidth(
+                        existingMaximumWidth: draft.maximumWidth,
+                        in: CGFloat(image.width),
+                        fontSize: draft.fontSize,
+                        edgeInset: 8 * scale
+                    )
+                }
                 editingDraft = draft
             }
+        )
+    }
+
+    private func fittedTextFrame(
+        for draft: ScreenshotTextDraft,
+        text: String
+    ) -> CGRect? {
+        let contentSize = ScreenshotTextLayout.fittedMultilineSize(
+            text: text,
+            fontSize: draft.fontSize,
+            maximumWidth: draft.maximumWidth,
+            minimumSize: CGSize(width: 1, height: 1)
+        )
+        return ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
+            draft.frame,
+            requiredSize: contentSize,
+            imageBounds: textContentBounds
         )
     }
 
@@ -1534,7 +1757,7 @@ public struct ScreenshotEditorView: View {
         didDragSelectedAnnotation = hypot(dx, dy) >= imageScale(for: imageRect) * 2
         previewAnnotation = ScreenshotAnnotationEditingPolicy.constrained(
             draggedAnnotation.offsetBy(dx: dx, dy: dy),
-            to: imageBounds,
+            to: constraintBounds(for: draggedAnnotation),
             canFlipLabel: true
         )
     }
@@ -1606,27 +1829,37 @@ public struct ScreenshotEditorView: View {
         let fontSize = annotationFontSize.points * scale
         switch tool {
         case .text:
-            let horizontalInset = 8 * scale
-            let width = min(360 * scale, CGFloat(image.width) - horizontalInset * 2)
-            let height = min(
-                CGFloat(image.height),
-                max(32 * scale, min(64 * scale, fontSize * 2.8))
+            let maximumWidth = textContentBounds.width
+            let placeholderSize = ScreenshotTextLayout.fittedMultilineSize(
+                text: "输入文本",
+                fontSize: fontSize,
+                maximumWidth: maximumWidth,
+                minimumSize: CGSize(width: 48 * scale, height: 32 * scale)
             )
-            let x = min(max(point.x, horizontalInset), CGFloat(image.width) - horizontalInset - width)
-            let y = min(
-                max(point.y - height, 0),
-                max(0, CGFloat(image.height) - height)
+            let initialFrame = CGRect(
+                x: point.x,
+                y: point.y - placeholderSize.height,
+                width: placeholderSize.width,
+                height: placeholderSize.height
             )
+            guard let frame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
+                initialFrame,
+                requiredSize: placeholderSize,
+                imageBounds: textContentBounds
+            ) else {
+                errorMessage = "选区过小，无法添加文本"
+                return
+            }
             editingDraft = ScreenshotTextDraft(
                 id: nil,
                 kind: .text,
                 text: "",
-                frame: CGRect(x: x, y: y, width: width, height: height),
+                frame: frame,
                 anchor: .zero,
                 direction: .left,
                 color: annotationColor,
                 fontSize: fontSize,
-                maximumWidth: width
+                maximumWidth: maximumWidth
             )
         case .label:
             let maximumWidth = ScreenshotLabelStyle.maximumBubbleWidth(
@@ -1675,18 +1908,30 @@ public struct ScreenshotEditorView: View {
     private func beginEditing(_ item: ScreenshotAnnotationItem) {
         switch item.annotation {
         case let .text(text, frame, color, fontSize):
+            let maximumWidth = textContentBounds.width
+            let contentSize = ScreenshotTextLayout.fittedMultilineSize(
+                text: text,
+                fontSize: fontSize,
+                maximumWidth: maximumWidth,
+                minimumSize: CGSize(width: 1, height: 1)
+            )
             editingDraft = ScreenshotTextDraft(
                 id: item.id,
                 kind: .text,
                 text: text,
-                frame: frame,
+                frame: ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
+                    frame,
+                    requiredSize: contentSize,
+                    imageBounds: textContentBounds
+                ) ?? frame,
                 anchor: .zero,
                 direction: .left,
                 color: color,
                 fontSize: fontSize,
-                maximumWidth: frame.width
+                maximumWidth: maximumWidth
             )
         case let .label(text, anchor, direction, color, fontSize, maximumWidth):
+            let scale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
             editingDraft = ScreenshotTextDraft(
                 id: item.id,
                 kind: .label,
@@ -1696,7 +1941,12 @@ public struct ScreenshotEditorView: View {
                 direction: direction,
                 color: color,
                 fontSize: fontSize,
-                maximumWidth: maximumWidth
+                maximumWidth: ScreenshotLabelStyle.normalizedMaximumBubbleWidth(
+                    existingMaximumWidth: maximumWidth,
+                    in: CGFloat(image.width),
+                    fontSize: fontSize,
+                    edgeInset: 8 * scale
+                )
             )
         default:
             return
@@ -1719,17 +1969,16 @@ public struct ScreenshotEditorView: View {
         let annotation: ScreenshotAnnotation
         switch draft.kind {
         case .text:
-            let measured = ScreenshotTextLayout.multilineSize(
+            let measured = ScreenshotTextLayout.fittedMultilineSize(
                 text: draft.text,
                 fontSize: draft.fontSize,
-                maximumWidth: draft.frame.width
+                maximumWidth: draft.maximumWidth,
+                minimumSize: CGSize(width: 1, height: 1)
             )
-            let scale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
-            let requiredHeight = max(32 * scale, ceil(measured.height + 4 * scale))
             guard let frame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
                 draft.frame,
-                requiredHeight: requiredHeight,
-                imageBounds: imageBounds
+                requiredSize: measured,
+                imageBounds: textContentBounds
             ) else {
                 errorMessage = "文本内容超出截图高度，请缩短内容或减小字号"
                 return
@@ -1743,7 +1992,7 @@ public struct ScreenshotEditorView: View {
             )
             guard let constrained = ScreenshotAnnotationEditingPolicy.constrained(
                 candidate,
-                to: imageBounds,
+                to: textContentBounds,
                 canFlipLabel: false
             ) else {
                 errorMessage = "文本内容超出截图范围，请缩短内容或减小字号"
@@ -1751,6 +2000,13 @@ public struct ScreenshotEditorView: View {
             }
             annotation = constrained
         case .label:
+            let scale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
+            draft.maximumWidth = ScreenshotLabelStyle.normalizedMaximumBubbleWidth(
+                existingMaximumWidth: draft.maximumWidth,
+                in: CGFloat(image.width),
+                fontSize: draft.fontSize,
+                edgeInset: 8 * scale
+            )
             let candidate = ScreenshotAnnotation.label(
                 text: draft.text.replacingOccurrences(of: "\n", with: " "),
                 anchor: draft.anchor,
@@ -1869,15 +2125,16 @@ public struct ScreenshotEditorView: View {
             let resolvedFontSize = requestedFontSize ?? existingFontSize
             var resolvedFrame = frame
             if requestedFontSize != nil {
-                let measured = ScreenshotTextLayout.multilineSize(
+                let measured = ScreenshotTextLayout.fittedMultilineSize(
                     text: text,
                     fontSize: resolvedFontSize,
-                    maximumWidth: frame.width
+                    maximumWidth: textContentBounds.width,
+                    minimumSize: CGSize(width: 1, height: 1)
                 )
                 guard let resizedFrame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
                     frame,
-                    requiredHeight: max(32 * scale, ceil(measured.height + 4 * scale)),
-                    imageBounds: imageBounds
+                    requiredSize: measured,
+                    imageBounds: textContentBounds
                 ) else {
                     errorMessage = "文本内容超出截图高度，请减小字号"
                     syncStyleControls(with: item.annotation)
@@ -1905,7 +2162,12 @@ public struct ScreenshotEditorView: View {
                 direction: direction,
                 color: color ?? existingColor,
                 fontSize: resolvedFontSize,
-                maximumWidth: resolvedMaximumWidth
+                maximumWidth: ScreenshotLabelStyle.normalizedMaximumBubbleWidth(
+                    existingMaximumWidth: resolvedMaximumWidth,
+                    in: CGFloat(image.width),
+                    fontSize: resolvedFontSize,
+                    edgeInset: 8 * scale
+                )
             )
         default:
             return
@@ -2053,6 +2315,19 @@ public struct ScreenshotEditorView: View {
             width: CGFloat(image.width),
             height: CGFloat(image.height)
         )
+    }
+
+    /// 普通文本在截图左右各留出 8pt 的显示安全区，避免选框描边被画布裁切。
+    private var textContentBounds: CGRect {
+        let displayBounds = CGRect(origin: .zero, size: imageFrame.size)
+        return imageBounds.insetBy(dx: 8 * imageScale(for: displayBounds), dy: 0)
+    }
+
+    private func constraintBounds(for annotation: ScreenshotAnnotation) -> CGRect {
+        if case .text = annotation {
+            return textContentBounds
+        }
+        return imageBounds
     }
 
     /// 判断 `canvasLineWidth` 所描述的屏幕捕获系统集成条件是否成立。

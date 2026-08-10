@@ -137,18 +137,31 @@ public enum ScreenshotAnnotationEditingPolicy {
         requiredHeight: CGFloat,
         imageBounds: CGRect
     ) -> CGRect? {
+        resizedTextFramePreservingTop(
+            frame,
+            requiredSize: CGSize(width: frame.standardized.width, height: requiredHeight),
+            imageBounds: imageBounds
+        )
+    }
+
+    public static func resizedTextFramePreservingTop(
+        _ frame: CGRect,
+        requiredSize: CGSize,
+        imageBounds: CGRect
+    ) -> CGRect? {
         let bounds = imageBounds.standardized
         let frame = frame.standardized
-        guard requiredHeight > 0,
-              requiredHeight <= bounds.height,
-              frame.width <= bounds.width else {
+        guard requiredSize.width > 0,
+              requiredSize.height > 0,
+              requiredSize.width <= bounds.width,
+              requiredSize.height <= bounds.height else {
             return nil
         }
         let resized = CGRect(
             x: frame.minX,
-            y: frame.maxY - requiredHeight,
-            width: frame.width,
-            height: requiredHeight
+            y: frame.maxY - requiredSize.height,
+            width: requiredSize.width,
+            height: requiredSize.height
         )
         return constrainedRect(resized, to: bounds)
     }

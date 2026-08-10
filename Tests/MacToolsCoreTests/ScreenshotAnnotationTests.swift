@@ -276,6 +276,26 @@ final class ScreenshotAnnotationTests: XCTestCase {
         XCTAssertGreaterThan(maximumWidth, 700)
     }
 
+    func testLabelMaximumWidthNormalizationReplacesLegacyFixedCap() {
+        let normalized = ScreenshotLabelStyle.normalizedMaximumBubbleWidth(
+            existingMaximumWidth: 240,
+            in: 800,
+            fontSize: 16,
+            edgeInset: 8
+        )
+
+        XCTAssertEqual(
+            normalized,
+            ScreenshotLabelStyle.maximumBubbleWidth(
+                in: 800,
+                fontSize: 16,
+                edgeInset: 8
+            ),
+            accuracy: 0.001
+        )
+        XCTAssertGreaterThan(normalized, 700)
+    }
+
     func testLabelBoundsIncludeBorderAndDownwardScreenShadow() {
         let geometry = ScreenshotTextLayout.labelGeometry(
             text: "边界",
@@ -333,6 +353,47 @@ final class ScreenshotAnnotationTests: XCTestCase {
         )
 
         XCTAssertGreaterThan(twoLines.height, oneLine.height)
+    }
+
+    func testPlainTextFittedSizeHugsShortContentAndWrapsAtCanvasLimit() {
+        let short = ScreenshotTextLayout.fittedMultilineSize(
+            text: "333",
+            fontSize: 16,
+            maximumWidth: 360,
+            minimumSize: CGSize(width: 1, height: 1)
+        )
+        let wrapped = ScreenshotTextLayout.fittedMultilineSize(
+            text: String(repeating: "自适应文本", count: 20),
+            fontSize: 16,
+            maximumWidth: 120,
+            minimumSize: CGSize(width: 1, height: 1)
+        )
+
+        XCTAssertLessThan(short.width, 64)
+        XCTAssertGreaterThan(short.width, ScreenshotTextLayout.singleLineWidth(text: "333", fontSize: 16))
+        XCTAssertEqual(wrapped.width, 120, accuracy: 0.001)
+        XCTAssertGreaterThan(wrapped.height, short.height)
+    }
+
+    func testPlainTextAtMaximumWidthStaysInsideHorizontalSafeArea() throws {
+        let safeBounds = CGRect(x: 8, y: 0, width: 384, height: 300)
+        let requiredSize = ScreenshotTextLayout.fittedMultilineSize(
+            text: String(repeating: "自适应文本", count: 20),
+            fontSize: 16,
+            maximumWidth: safeBounds.width,
+            minimumSize: CGSize(width: 1, height: 1)
+        )
+        let resized = try XCTUnwrap(
+            ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
+                CGRect(x: 300, y: 120, width: 48, height: 32),
+                requiredSize: requiredSize,
+                imageBounds: safeBounds
+            )
+        )
+
+        XCTAssertEqual(requiredSize.width, safeBounds.width, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(resized.minX, safeBounds.minX)
+        XCTAssertLessThanOrEqual(resized.maxX, safeBounds.maxX)
     }
 
     private func contrastRatio(_ lhs: CGFloat, _ rhs: CGFloat) -> CGFloat {

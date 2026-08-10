@@ -259,6 +259,108 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         )
         let glyphCenterInField = textView.convert(glyphCenterInEditor, to: labelField)
         XCTAssertEqual(glyphCenterInField.y, labelField.bounds.midY, accuracy: 1)
+
+        let longText = "hello, 大家好，这是一个需要完整展开的标签文本"
+        textView.selectAll(nil)
+        textView.insertText(
+            longText,
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        runMainLoop()
+        sendKey(to: window, keyCode: 36, characters: "\r")
+        runMainLoop()
+
+        let committedLabel = try XCTUnwrap(
+            textField(with: longText, editable: false, below: contentView)
+        )
+        XCTAssertGreaterThan(committedLabel.bounds.width, 240)
+    }
+
+    @MainActor
+    func testCommittedPlainTextViewHugsShortContentInProductionEditor() throws {
+        let rootSize = CGSize(width: 800, height: 600)
+        let imageFrame = CGRect(x: 200, y: 100, width: 400, height: 300)
+        let toolbarFrame = CGRect(x: 162, y: 450, width: 476, height: 68)
+        let toolbarMeasurement = ScreenshotCompactToolbarMeasurementSink()
+        let editor = ScreenshotEditorView(
+            image: try makeSolidImage(width: 400, height: 300),
+            imageFrame: imageFrame,
+            toolbarFrame: toolbarFrame,
+            settings: .defaults,
+            onSettingsChange: { _ in true },
+            onCopy: { _ in },
+            onCancel: {},
+            registerEscapeHandler: { _ in },
+            clearEscapeHandler: {}
+        )
+        .environment(\.screenshotCompactToolbarMeasurement, toolbarMeasurement)
+        .frame(width: rootSize.width, height: rootSize.height)
+
+        let window = NSWindow(
+            contentRect: CGRect(origin: .zero, size: rootSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.animationBehavior = .none
+        window.isReleasedWhenClosed = false
+        let hostingView = NSHostingView(rootView: editor)
+        hostingView.frame = CGRect(origin: .zero, size: rootSize)
+        window.contentView = hostingView
+        ScreenshotEditorTestWindowRetainer.windows.append(window)
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            window.orderOut(nil)
+        }
+        runMainLoop()
+
+        let textToolFrame = try XCTUnwrap(toolbarMeasurement.frames["tool-text"])
+        sendClick(
+            to: window,
+            swiftUIPoint: compactControlCenter(textToolFrame, toolbarFrame: toolbarFrame),
+            rootHeight: rootSize.height
+        )
+        sendClick(
+            to: window,
+            swiftUIPoint: CGPoint(x: imageFrame.minX + 100, y: imageFrame.midY),
+            rootHeight: rootSize.height
+        )
+        runMainLoop()
+
+        let textView = try XCTUnwrap(window.firstResponder as? NSTextView)
+        textView.insertText(
+            "333",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        runMainLoop()
+        let updatedTextView = try XCTUnwrap(window.firstResponder as? NSTextView)
+        XCTAssertEqual(updatedTextView.textContainerInset, .zero)
+        let textContainer = try XCTUnwrap(updatedTextView.textContainer)
+        XCTAssertEqual(textContainer.lineFragmentPadding, 0)
+        let layoutManager = try XCTUnwrap(updatedTextView.layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        let glyphBounds = layoutManager.boundingRect(
+            forGlyphRange: glyphRange,
+            in: textContainer
+        )
+        XCTAssertLessThan(glyphBounds.height, 30)
+        XCTAssertLessThanOrEqual(glyphBounds.maxX, textContainer.containerSize.width)
+        XCTAssertLessThan(updatedTextView.bounds.width, 64)
+        sendClick(
+            to: window,
+            swiftUIPoint: CGPoint(x: imageFrame.maxX - 20, y: imageFrame.maxY - 20),
+            rootHeight: rootSize.height,
+            throughApplication: true
+        )
+        runMainLoop()
+
+        let contentView = try XCTUnwrap(window.contentView)
+        let committedText = try XCTUnwrap(
+            textField(with: "333", editable: false, below: contentView)
+        )
+        XCTAssertLessThan(committedText.bounds.width, 64)
+        XCTAssertLessThan(committedText.bounds.height, 40)
     }
 
     @MainActor
@@ -269,6 +371,25 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         }
         for subview in root.subviews {
             if let match = textField(using: editor, below: subview) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    @MainActor
+    private func textField(
+        with value: String,
+        editable: Bool,
+        below root: NSView
+    ) -> NSTextField? {
+        if let field = root as? NSTextField,
+           field.stringValue == value,
+           field.isEditable == editable {
+            return field
+        }
+        for subview in root.subviews {
+            if let match = textField(with: value, editable: editable, below: subview) {
                 return match
             }
         }
@@ -292,7 +413,8 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
     private func sendClick(
         to window: NSWindow,
         swiftUIPoint: CGPoint,
-        rootHeight: CGFloat
+        rootHeight: CGFloat,
+        throughApplication: Bool = false
     ) {
         let location = CGPoint(x: swiftUIPoint.x, y: rootHeight - swiftUIPoint.y)
         let timestamp = ProcessInfo.processInfo.systemUptime
@@ -319,10 +441,18 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             pressure: 0
         )
         if let mouseDown {
-            window.sendEvent(mouseDown)
+            if throughApplication {
+                NSApp.sendEvent(mouseDown)
+            } else {
+                window.sendEvent(mouseDown)
+            }
         }
         if let mouseUp {
-            window.sendEvent(mouseUp)
+            if throughApplication {
+                NSApp.sendEvent(mouseUp)
+            } else {
+                window.sendEvent(mouseUp)
+            }
         }
         runMainLoop()
     }

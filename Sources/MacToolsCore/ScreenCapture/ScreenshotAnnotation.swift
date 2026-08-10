@@ -167,7 +167,7 @@ public enum ScreenshotAnnotation: Equatable, Sendable {
         direction: ScreenshotLabelDirection = .left,
         color: ScreenshotAnnotationColor = .blue,
         fontSize: CGFloat = ScreenshotAnnotationFontSize.medium.points,
-        maximumWidth: CGFloat = 240
+        maximumWidth: CGFloat
     )
 
     /// 返回文本类标注的可交互范围；绘制类标注仍由手势工具管理。

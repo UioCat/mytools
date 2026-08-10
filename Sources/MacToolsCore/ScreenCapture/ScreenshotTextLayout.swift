@@ -158,6 +158,23 @@ public enum ScreenshotLabelStyle {
             edgeInset: edgeInset
         )
     }
+
+    /// 标签宽度上限始终由当前画布决定，避免旧对象继续携带早期的 240 pt 固定上限。
+    public static func normalizedMaximumBubbleWidth(
+        existingMaximumWidth: CGFloat,
+        in canvasWidth: CGFloat,
+        fontSize: CGFloat,
+        edgeInset: CGFloat
+    ) -> CGFloat {
+        let currentMaximumWidth = maximumBubbleWidth(
+            in: canvasWidth,
+            fontSize: fontSize,
+            edgeInset: edgeInset
+        )
+        return existingMaximumWidth == currentMaximumWidth
+            ? existingMaximumWidth
+            : currentMaximumWidth
+    }
 }
 
 public struct ScreenshotLabelGeometry: Equatable, Sendable {
@@ -281,6 +298,43 @@ public enum ScreenshotTextLayout {
             nil,
             CGSize(width: max(1, maximumWidth), height: .greatestFiniteMagnitude),
             nil
+        )
+    }
+
+    /// 以最长一行的真实字形宽度为首选宽度，仅在达到画布上限后换行并增加高度。
+    public static func fittedMultilineSize(
+        text: String,
+        fontSize: CGFloat,
+        maximumWidth: CGFloat,
+        minimumSize: CGSize
+    ) -> CGSize {
+        let resolvedText = text.isEmpty ? " " : text
+        let resolvedMaximumWidth = max(1, maximumWidth)
+        let naturalWidth = resolvedText
+            .components(separatedBy: "\n")
+            .map {
+                singleLineMetrics(text: $0, fontSize: fontSize).width
+            }
+            .max() ?? 0
+        let width = min(
+            resolvedMaximumWidth,
+            max(
+                minimumSize.width,
+                ceil(naturalWidth + ScreenshotLabelStyle.glyphSafetyWidth(for: fontSize))
+            )
+        )
+        let measured = multilineSize(
+            text: resolvedText,
+            fontSize: fontSize,
+            maximumWidth: width
+        )
+        let lineMetrics = singleLineMetrics(text: "Ag", fontSize: fontSize)
+        let minimumLineHeight = ceil(
+            lineMetrics.ascent + lineMetrics.descent + lineMetrics.leading
+        )
+        return CGSize(
+            width: width,
+            height: max(minimumSize.height, ceil(max(measured.height, minimumLineHeight)))
         )
     }
 
