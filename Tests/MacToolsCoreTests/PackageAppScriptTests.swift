@@ -169,6 +169,15 @@ final class PackageAppScriptTests: XCTestCase {
         XCTAssertFalse(script.contains("SPARKLE_PRIVATE_KEY"))
     }
 
+    func testPackageScriptDeclaresSimplifiedChineseLocalizationForSparkleAlerts() throws {
+        let script = try packageScript()
+
+        XCTAssertTrue(script.contains("<key>CFBundleDevelopmentRegion</key>"))
+        XCTAssertTrue(script.contains("<string>zh_CN</string>"))
+        XCTAssertTrue(script.contains("<key>CFBundleLocalizations</key>"))
+        XCTAssertTrue(script.contains("<array>\n    <string>zh_CN</string>\n  </array>"))
+    }
+
     func testPackageScriptDerivesDefaultBuildNumberFromApplicationVersion() throws {
         let script = try packageScript()
 

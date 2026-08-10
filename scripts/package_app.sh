@@ -153,6 +153,12 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <string>MacTools</string>
   <key>CFBundleDisplayName</key>
   <string>MacTools</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>zh_CN</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>zh_CN</string>
+  </array>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

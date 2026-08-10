@@ -122,6 +122,8 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/MacTools.app/Contents/Info.plist)" = "$MACOS_APP_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/MacTools.app/Contents/Info.plist)" = "$MACOS_BUILD_NUMBER"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' build/MacTools.app/Contents/Info.plist)" = "AppIcon.icns"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDevelopmentRegion' build/MacTools.app/Contents/Info.plist)" = "zh_CN"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:0' build/MacTools.app/Contents/Info.plist)" = "zh_CN"
           test -f build/MacTools.app/Contents/Resources/AppIcon.icns
           test -d build/MacTools.app/Contents/Frameworks/Sparkle.framework
           test "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' build/MacTools.app/Contents/Info.plist)" = "true"
