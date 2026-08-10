@@ -3,6 +3,7 @@
 
 import CoreGraphics
 import CoreImage
+import CoreText
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -55,6 +56,24 @@ public enum ScreenshotRenderer {
                 if let mosaicImage {
                     drawMosaic(in: context, mosaicImage: mosaicImage, rect: rect, bounds: bounds)
                 }
+            case let .text(text, frame, color, fontSize):
+                drawText(
+                    in: context,
+                    text: text,
+                    frame: frame,
+                    color: color,
+                    fontSize: fontSize
+                )
+            case let .label(text, anchor, direction, color, fontSize, maximumWidth):
+                drawLabel(
+                    in: context,
+                    text: text,
+                    anchor: anchor,
+                    direction: direction,
+                    color: color,
+                    fontSize: fontSize,
+                    maximumWidth: maximumWidth
+                )
             }
         }
 
@@ -228,6 +247,93 @@ public enum ScreenshotRenderer {
         context.saveGState()
         context.clip(to: mosaicRect)
         context.draw(mosaicImage, in: bounds)
+        context.restoreGState()
+    }
+
+    private static func drawText(
+        in context: CGContext,
+        text: String,
+        frame: CGRect,
+        color: ScreenshotAnnotationColor,
+        fontSize: CGFloat
+    ) {
+        guard !text.isEmpty, !frame.isEmpty else {
+            return
+        }
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            ScreenshotTextLayout.attributedString(text: text, fontSize: fontSize, color: color.cgColor)
+        )
+        let path = CGPath(rect: frame.standardized, transform: nil)
+        let textFrame = CTFramesetterCreateFrame(framesetter, CFRange(), path, nil)
+
+        context.saveGState()
+        context.textMatrix = .identity
+        CTFrameDraw(textFrame, context)
+        context.restoreGState()
+    }
+
+    private static func drawLabel(
+        in context: CGContext,
+        text: String,
+        anchor: CGPoint,
+        direction: ScreenshotLabelDirection,
+        color: ScreenshotAnnotationColor,
+        fontSize: CGFloat,
+        maximumWidth: CGFloat
+    ) {
+        guard !text.isEmpty else {
+            return
+        }
+        let geometry = ScreenshotTextLayout.labelGeometry(
+            text: text,
+            anchor: anchor,
+            direction: direction,
+            fontSize: fontSize,
+            maximumWidth: maximumWidth
+        )
+        let cornerRadius = min(geometry.cornerRadius, geometry.bubbleRect.height / 2)
+
+        context.saveGState()
+        context.setFillColor(CGColor(red: 0.09, green: 0.10, blue: 0.12, alpha: 0.94))
+        context.addPath(
+            CGPath(
+                roundedRect: geometry.bubbleRect,
+                cornerWidth: cornerRadius,
+                cornerHeight: cornerRadius,
+                transform: nil
+            )
+        )
+        context.fillPath()
+        context.setFillColor(color.cgColor)
+        context.fillEllipse(in: geometry.dotRect)
+
+        let attributedText = ScreenshotTextLayout.attributedString(
+            text: text,
+            fontSize: fontSize,
+            color: CGColor(gray: 1, alpha: 1)
+        )
+        let originalLine = CTLineCreateWithAttributedString(attributedText)
+        let truncationToken = CTLineCreateWithAttributedString(
+            ScreenshotTextLayout.attributedString(
+                text: "…",
+                fontSize: fontSize,
+                color: CGColor(gray: 1, alpha: 1)
+            )
+        )
+        let line = CTLineCreateTruncatedLine(
+            originalLine,
+            Double(geometry.textRect.width),
+            .end,
+            truncationToken
+        ) ?? originalLine
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+        context.textPosition = CGPoint(
+            x: geometry.textRect.minX,
+            y: geometry.textRect.midY - (ascent - descent) / 2
+        )
+        CTLineDraw(line, context)
         context.restoreGState()
     }
 

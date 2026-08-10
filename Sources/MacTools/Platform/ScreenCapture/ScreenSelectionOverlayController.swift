@@ -15,6 +15,7 @@ final class ScreenSelectionOverlayController {
     private var onCancel: (() -> Void)?
     private var escapeEventMonitor: Any?
     private var globalEscapeEventMonitor: Any?
+    private var editorEscapeHandler: ((Bool) -> ScreenshotEditorEscapeAction)?
     private var isSelectionCommitted = false
 
     /// 在每块屏幕上创建不激活应用的全屏选区面板，并安装本地及全局 Escape 监听。
@@ -80,11 +81,29 @@ final class ScreenSelectionOverlayController {
         }
 
         escapeEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
-                self?.cancel()
+            guard let self else {
+                return event
+            }
+            guard let editorEscapeHandler = self.editorEscapeHandler else {
+                if event.keyCode == 53 {
+                    self.cancel()
+                    return nil
+                }
+                return event
+            }
+            switch ScreenshotEditorKeyEventRouter.route(
+                event: event,
+                firstResponder: NSApp.keyWindow?.firstResponder,
+                handler: editorEscapeHandler
+            ) {
+            case .forwardToResponder:
+                return event
+            case .consumed:
+                return nil
+            case .cancelSession:
+                self.cancel()
                 return nil
             }
-            return event
         }
         globalEscapeEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             // 全局按键监听依赖输入监控/辅助功能授权；本地监听仍覆盖应用收到按键的场景。
@@ -113,13 +132,18 @@ final class ScreenSelectionOverlayController {
             NSEvent.removeMonitor(globalEscapeEventMonitor)
         }
         globalEscapeEventMonitor = nil
+        editorEscapeHandler = nil
         onSelection = nil
         onCancel = nil
         isSelectionCommitted = false
     }
 
     /// 在当前选区面板内原位挂载编辑内容，保持窗口和遮罩层不变。
-    func presentEditor(_ editorView: NSView, for selection: ScreenCaptureSelection) -> Bool {
+    func presentEditor(
+        _ editorView: NSView,
+        for selection: ScreenCaptureSelection,
+        escapeHandler: @escaping (Bool) -> ScreenshotEditorEscapeAction
+    ) -> Bool {
         guard isSelectionCommitted,
               let panel = panels.first(where: {
                   ($0.contentView as? ScreenSelectionView)?.displayID == selection.displayID
@@ -129,6 +153,11 @@ final class ScreenSelectionOverlayController {
         }
 
         removeModeToolbar()
+        editorEscapeHandler = escapeHandler
+        if let globalEscapeEventMonitor {
+            NSEvent.removeMonitor(globalEscapeEventMonitor)
+            self.globalEscapeEventMonitor = nil
+        }
         selectionView.presentEditor(editorView)
         for candidate in panels where candidate !== panel {
             candidate.orderOut(nil)

@@ -10,6 +10,7 @@ import SwiftUI
 @MainActor
 final class ScreenshotEditorPanelController {
     private var preparedView: NSView?
+    private var escapeHandler: ((Bool) -> ScreenshotEditorEscapeAction)?
 
     /// 在不创建第二个窗口或改变应用焦点的前提下构造编辑内容并完成首次布局。
     func prepare(
@@ -36,7 +37,13 @@ final class ScreenshotEditorPanelController {
             settings: settings,
             onSettingsChange: onSettingsChange,
             onCopy: onCopy,
-            onCancel: onCancel
+            onCancel: onCancel,
+            registerEscapeHandler: { [weak self] handler in
+                self?.escapeHandler = handler
+            },
+            clearEscapeHandler: { [weak self] in
+                self?.escapeHandler = nil
+            }
         )
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.frame = displayBounds
@@ -53,10 +60,16 @@ final class ScreenshotEditorPanelController {
         preparedView
     }
 
+    /// 由选区面板同步转发 Escape，让编辑器先处理“退出编辑”和“取消选中”。
+    func handleEscape(hasMarkedText: Bool) -> ScreenshotEditorEscapeAction {
+        escapeHandler?(hasMarkedText) ?? .cancelSession
+    }
+
     /// 取消或关闭 `dismiss` 对应的屏幕捕获系统集成流程，并清理临时状态。
     func dismiss() {
         preparedView?.removeFromSuperview()
         preparedView = nil
+        escapeHandler = nil
     }
 
     /// 计算并返回 `swiftUIFrame` 对应的屏幕捕获系统集成数据或状态结果。

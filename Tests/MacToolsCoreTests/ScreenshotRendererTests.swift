@@ -153,6 +153,72 @@ final class ScreenshotRendererTests: XCTestCase {
         )
     }
 
+    func testRendererDrawsMultilineTextUsingSelectedColor() throws {
+        let image = try makeSolidImage(
+            width: 180,
+            height: 100,
+            color: CGColor(gray: 0, alpha: 1)
+        )
+        let data = try ScreenshotRenderer.pngData(
+            image: image,
+            annotations: [
+                .text(
+                    text: "第一行\nSecond line",
+                    frame: CGRect(x: 12, y: 16, width: 150, height: 64),
+                    color: .red,
+                    fontSize: 20
+                )
+            ]
+        )
+
+        XCTAssertGreaterThan(try coloredPixelCount(in: data), 40)
+    }
+
+    func testRendererDrawsLabelBubbleAndIndependentLocatorColor() throws {
+        let image = try makeSolidImage(
+            width: 220,
+            height: 100,
+            color: CGColor(gray: 0.8, alpha: 1)
+        )
+        let data = try ScreenshotRenderer.pngData(
+            image: image,
+            annotations: [
+                .label(
+                    text: "重点区域",
+                    anchor: CGPoint(x: 24, y: 50),
+                    direction: .left,
+                    color: .red,
+                    fontSize: 18,
+                    maximumWidth: 160
+                )
+            ]
+        )
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let rendered = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let pixels = try rgbaPixels(of: rendered)
+        let geometry = ScreenshotTextLayout.labelGeometry(
+            text: "重点区域",
+            anchor: CGPoint(x: 24, y: 50),
+            direction: .left,
+            fontSize: 18,
+            maximumWidth: 160
+        )
+        let locator = rgb(at: CGPoint(x: 24, y: 50), in: pixels, width: rendered.width, height: rendered.height)
+        let bubble = rgb(
+            at: CGPoint(x: geometry.bubbleRect.minX + 3, y: geometry.bubbleRect.midY),
+            in: pixels,
+            width: rendered.width,
+            height: rendered.height
+        )
+
+        XCTAssertGreaterThan(locator.red, 180)
+        XCTAssertLessThan(locator.green, 100)
+        XCTAssertLessThan(locator.blue, 100)
+        XCTAssertLessThan(bubble.red, 100)
+        XCTAssertLessThan(bubble.green, 100)
+        XCTAssertLessThan(bubble.blue, 100)
+    }
+
     private func makeTestImage() throws -> CGImage {
         guard let context = CGContext(
             data: nil,
@@ -202,10 +268,14 @@ final class ScreenshotRendererTests: XCTestCase {
     }
 
     private func makeSolidImage(color: CGColor) throws -> CGImage {
+        try makeSolidImage(width: 32, height: 32, color: color)
+    }
+
+    private func makeSolidImage(width: Int, height: Int, color: CGColor) throws -> CGImage {
         guard let context = CGContext(
             data: nil,
-            width: 32,
-            height: 32,
+            width: width,
+            height: height,
             bitsPerComponent: 8,
             bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
@@ -215,7 +285,7 @@ final class ScreenshotRendererTests: XCTestCase {
         }
 
         context.setFillColor(color)
-        context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         return try XCTUnwrap(context.makeImage())
     }
 

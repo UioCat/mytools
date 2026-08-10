@@ -1,5 +1,338 @@
 # Errors
 
+## [ERR-20260810-010] NSTextView 没有 undo action 方法
+
+**Logged**: 2026-08-10T17:03:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+首次实现编辑器按键路由时调用了不存在的 `NSTextView.undo(_:)`，导致 MacToolsCore 编译失败。
+
+### Error
+```
+value of type 'NSTextView' has no member 'undo'
+```
+
+### Context
+- AppKit 的原生撤销入口由响应者关联的 `UndoManager` 提供。
+- 失败发生在聚焦测试编译阶段，没有生成或运行错误二进制。
+
+### Suggested Fix
+通过 `textView.undoManager?.undo()` 执行当前文本响应者的撤销事务。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorKeyEventRouter.swift`
+
+### Resolution
+- **Resolved**: 2026-08-10T17:04:00+08:00
+- **Notes**: 改用 `UndoManager`；真实编辑器 responder 测试确认 Cmd+Z 撤销文本输入。
+
+---
+
+## [ERR-20260810-009] 真实编辑器 responder 测试发现 Cmd+Z 未撤销文本
+
+**Logged**: 2026-08-10T17:02:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+直接实例化生产 `ScreenshotEditorView` 后投递 Cmd+Z，文本仍保留，证明单靠禁用 SwiftUI 工具栏快捷键不能保证原生撤销。
+
+### Error
+```
+XCTAssertEqual failed: ("a") is not equal to ("")
+```
+
+### Context
+- 同一真实 `NSTextView` 能接收普通输入和 Delete。
+- 原实现只有纯命令策略，没有在选区面板本地事件监听中把编辑态命令交给第一响应者。
+- 该测试把此前 Review 的验证缺口转化为可复现功能缺陷。
+
+### Suggested Fix
+集中路由编辑器 keyDown：编辑态 Cmd+Z 调用当前文本响应者的 undo，Cmd+Return 插入换行，Escape 先检查 marked text；其余事件继续交给 responder chain。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorKeyEventRouter.swift`, `Tests/MacToolsCoreTests/ScreenshotEditorInteractionTests.swift`
+
+### Resolution
+- **Resolved**: 2026-08-10T17:04:00+08:00
+- **Notes**: 生产 overlay 接入统一 key-event router；真实 Menu/Button/Glass 布局和 responder 集成测试 21 项通过。
+
+---
+
+## [ERR-20260810-008] 两个前台 NSWindow 测试连续运行触发 xctest 崩溃
+
+**Logged**: 2026-08-10T16:47:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+新增紧凑工具栏布局测试创建并关闭前台 `NSWindow` 后，紧接着运行既有设置工具栏窗口测试会稳定触发 `xctest` signal 11。
+
+### Error
+```
+Process '.../MacToolsPackageTests.xctest' exited with unexpected signal code 11
+```
+
+### Context
+- 新增布局测试自身通过，崩溃发生在随后既有 `testToolbarHumanCadenceClickChangesEveryBoundPane` 启动时。
+- 单独把两个测试类串联运行可以稳定复现，符合仓库已有 AppKit 窗口动画释放崩溃记录。
+- 布局测量只需要 `NSHostingView` 完成 SwiftUI layout pass，不需要窗口置前或接受事件。
+
+### Suggested Fix
+对纯布局测量使用离屏 `NSHostingView`，仅需要真实事件投递的测试才创建 `NSWindow`，减少 AppKit 窗口动画和异步释放之间的生命周期竞争。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Tests/MacToolsCoreTests/ScreenCaptureOverlayLayoutTests.swift`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:48:00+08:00
+- **Notes**: 布局 harness 改为离屏 hosting view；两个测试类连续运行 18 项全部通过。
+
+---
+
+## [ERR-20260810-007] CGEvent 运行时探针未触发开发包窗口
+
+**Logged**: 2026-08-10T16:43:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+无像素导出的运行时探针发送 `Option+3` 和选区拖动后，没有观察到 `MacTools Dev` 的选区或编辑窗口。
+
+### Error
+```
+selection: count=0
+editor: count=0
+cancelled: count=0
+```
+
+### Context
+- 开发包已签名校验并启动，进程仍在运行。
+- 探针只读取当前进程窗口元数据，不采集或输出桌面像素。
+- 当前自动化宿主没有可验证的全局事件投递能力，且未修改辅助功能、输入监控或屏幕录制 TCC。
+
+### Suggested Fix
+在预先配置权限的受控 UI 自动化环境运行，或由用户按人工清单直接触发截图编辑器；不要为一次验证临时改动 TCC。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `docs/manual-verification.md`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:43:00+08:00
+- **Notes**: 停止继续注入系统事件，改用编辑命令策略测试与真实 SwiftUI Layout 测量补强自动化证据，并保留打包应用人工交互边界。
+
+---
+
+## [ERR-20260810-006] CoreText 跨字号字形测量并非严格线性
+
+**Logged**: 2026-08-10T16:22:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+标签缩放测试假定 32px 字形宽度严格等于 16px 的两倍，但系统字体 hinting 使气泡宽度相差 3px。
+
+### Error
+```
+XCTAssertEqualWithAccuracy failed: ("93.0") is not equal to ("96.0") +/- ("1.0")
+```
+
+### Context
+- 失败字段是 `bubbleRect.width`；高度、定位点直径和圆角缩放均符合预期。
+- 编辑预览与 PNG 对同一标注使用同一图像像素字号和 `ScreenshotTextLayout`，不依赖跨字号重新测量。
+
+### Suggested Fix
+跨 1×/2× 的文字宽度只断言有限容差；纯几何尺寸继续使用严格倍率断言。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Tests/MacToolsCoreTests/ScreenshotAnnotationTests.swift`, `Sources/MacToolsCore/ScreenCapture/ScreenshotTextLayout.swift`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:23:00+08:00
+- **Notes**: 气泡宽度容差调整为 4px（换算 2× 显示为 2pt），定位点和圆角仍保持精确倍率验证。
+
+---
+
+## [ERR-20260810-005] System Events 无权发送截图快捷键
+
+**Logged**: 2026-08-10T16:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+自动化运行时尝试发送 `Option+3`，但 macOS 拒绝 `osascript` 控制键盘输入。
+
+### Error
+```
+“System Events”遇到一个错误：“osascript”不允许发送按键。 (1002)
+```
+
+### Context
+- `MacTools Dev.app` 已打包、签名验证并启动。
+- 同一命令中的只读屏幕截图成功，但快捷键没有投递，因而没有进入截图编辑器。
+- 按项目隐私约束，没有为开发身份或 `osascript` 临时授予辅助功能/输入监控权限。
+
+### Suggested Fix
+在人工验证环境中直接按 `Option+3`，或预先为受控 UI 自动化宿主配置所需权限；不要在验证过程中自动修改 TCC。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `docs/manual-verification.md`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:20:00+08:00
+- **Notes**: 停止重试受限的系统按键自动化，将真实截图编辑器交互保留为明确的人工验证边界。
+
+---
+
+## [ERR-20260810-004] 稳定打包缺少受信任发布签名身份
+
+**Logged**: 2026-08-10T16:18:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+稳定模式打包在预检阶段找不到项目指定的受信任代码签名身份，因此没有生成稳定应用包。
+
+### Error
+```
+error: stable signing identity is unavailable or not trusted for code signing.
+error: expected MacTools Release Signing (25A3263958804C6D9429EB51B97BA2B16CA1FB67).
+```
+
+### Context
+- 命令：`MACOS_SIGNING_MODE=stable scripts/package_app.sh`
+- 隔离开发模式打包、ad-hoc 签名校验和启动已经成功。
+- 未修改系统信任、Keychain 或项目签名规则。
+
+### Suggested Fix
+在具备项目发布证书且信任有效的环境运行稳定打包；本地功能验证继续使用隔离开发身份，不要临时放宽稳定签名门禁。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `scripts/package_app.sh`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:18:00+08:00
+- **Notes**: 保留签名门禁，改用已成功验证的 `MacTools Dev.app` 继续非生产身份运行检查。
+
+---
+
+## [ERR-20260810-003] 打包启动被另一 MacTools 身份进程拦截
+
+**Logged**: 2026-08-10T16:14:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+稳定模式重建脚本检测到另一仓库路径的 MacTools 进程，按双身份保护规则拒绝继续。
+
+### Error
+```
+error: refusing to run both identities concurrently.
+error: quit the other MacTools process before rebuilding stable.
+```
+
+### Context
+- 运行中的进程来自另一份仓库的 `build/MacTools.app`，不是当前工作树产物。
+- 直接继续会让相同产品的不同签名或 TCC 身份同时运行，项目脚本明确禁止该状态。
+
+### Suggested Fix
+先按 bundle id 正常退出已运行的稳定实例，再以 `MACOS_SIGNING_MODE=development` 打包并启动当前工作树的隔离开发实例。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `scripts/rebuild_and_run_app.sh`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:16:00+08:00
+- **Notes**: 稳定实例已正常退出；开发模式打包、签名校验和启动均成功。
+
+---
+
+## [ERR-20260810-002] 多段 apply_patch 使用了不连续上下文
+
+**Logged**: 2026-08-10T16:12:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+同时修改完成按钮和画布手势的补丁错误携带了顶部修饰器上下文，导致补丁校验失败。
+
+### Error
+```
+apply_patch verification failed: Failed to find expected lines ...
+.onDeleteCommand(perform: deleteSelectedAnnotation)
+```
+
+### Context
+- 目标文件中的三个片段彼此不连续，但补丁最后一个 hunk 使用了属于顶部视图的匹配行。
+- `apply_patch` 在写入前整体拒绝了补丁，源码未发生部分修改。
+
+### Suggested Fix
+先用行号核对每个目标片段，再把互不相邻的修改拆成独立补丁。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorView.swift`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:13:00+08:00
+- **Notes**: 改为分别修改完成按钮和画布手势，不再复用跨区域上下文。
+
+---
+
+## [ERR-20260810-001] 标签气泡测试采样到文字抗锯齿像素
+
+**Logged**: 2026-08-10T16:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+新增的标签渲染测试在气泡中央采样，实际与白色标签文字重叠，导致深色气泡断言失败。
+
+### Error
+```
+XCTAssertLessThan failed: ("135") is not less than ("100")
+XCTAssertLessThan failed: ("138") is not less than ("100")
+XCTAssertLessThan failed: ("141") is not less than ("100")
+```
+
+### Context
+- 命令：`swift test --filter 'ScreenshotAnnotationTests|ScreenshotRendererTests|SettingsStoreTests'`
+- 标签锚点为 `(24, 50)`，测试在 `(52, 50)` 采样气泡；该位置也位于标签文本的首个字形区域。
+- 编译、文本渲染、模型和设置测试均通过，只有该像素断言失败。
+
+### Suggested Fix
+用共享 `ScreenshotTextLayout.labelGeometry` 选择气泡内边距中的稳定实心像素，并保留独立定位点颜色断言。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Tests/MacToolsCoreTests/ScreenshotRendererTests.swift`, `Sources/MacToolsCore/ScreenCapture/ScreenshotTextLayout.swift`
+
+### Resolution
+- **Resolved**: 2026-08-10T16:09:00+08:00
+- **Notes**: 共享几何确认气泡渲染正确；测试改为采样气泡左侧内边距，避开文字字形和圆角抗锯齿区域。
+
+---
+
 ## [ERR-20260725-005] 凭据字面量启发式误报测试占位值
 
 **Logged**: 2026-07-25T17:03:00+08:00

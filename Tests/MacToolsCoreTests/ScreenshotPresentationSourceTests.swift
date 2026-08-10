@@ -30,7 +30,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
             "Sources/MacTools/Platform/ScreenCapture/ScreenSelectionOverlayController.swift"
         )
         let editorViewSource = try sourceFile(
-            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorView.swift"
+            "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift"
         )
 
         let presentationStart = try XCTUnwrap(
@@ -104,20 +104,75 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("NSVisualEffectView"))
     }
 
-    func testScreenshotEditorUsesSingleRowToolbarAndExclusiveParameterPopovers() throws {
+    func testScreenshotEditorUsesResponsiveSingleRowToolbarAndExclusiveParameterPopovers() throws {
         let source = try sourceFile(
-            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorView.swift"
+            "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift"
         )
 
-        XCTAssertTrue(source.contains("private var editorToolbar: some View {\n        HStack"))
+        XCTAssertTrue(source.contains("ScreenCaptureEditorToolbarMetrics.ultraCompactBreakpoint"))
+        XCTAssertTrue(source.contains("ScreenCaptureEditorToolbarMetrics.compactBreakpoint"))
+        XCTAssertTrue(source.contains("ScreenCaptureCompactToolbarLayout"))
+        XCTAssertTrue(source.contains("drawingToolMenu"))
         XCTAssertTrue(source.contains("ScreenshotEditorParameterPopover"))
         XCTAssertTrue(source.contains("parameterPopoverBinding(.color)"))
         XCTAssertTrue(source.contains("parameterPopoverBinding(.lineWidth)"))
+        XCTAssertTrue(source.contains("parameterPopoverBinding(.fontSize)"))
+        XCTAssertTrue(source.contains("parameterPopoverBinding(.style)"))
         XCTAssertTrue(source.contains(".liquidGlassPanel("))
         XCTAssertFalse(source.contains(".buttonStyle(.bordered)"))
         XCTAssertFalse(source.contains(".buttonStyle(.borderedProminent)"))
         XCTAssertFalse(source.contains(".ultraThinMaterial"))
         XCTAssertFalse(source.contains(".thinMaterial"))
+    }
+
+    func testScreenshotEditorRoutesEscapeByEditingPhaseBeforeCancellingSession() throws {
+        let overlaySource = try sourceFile(
+            "Sources/MacTools/Platform/ScreenCapture/ScreenSelectionOverlayController.swift"
+        )
+        let controllerSource = try sourceFile(
+            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorPanelController.swift"
+        )
+        let editorSource = try sourceFile(
+            "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift"
+        )
+        let routerSource = try sourceFile(
+            "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorKeyEventRouter.swift"
+        )
+
+        let presentationStart = try XCTUnwrap(overlaySource.range(of: "func presentEditor("))
+        let presentationEnd = try XCTUnwrap(
+            overlaySource.range(
+                of: "private func prepareForNewSelection",
+                range: presentationStart.upperBound..<overlaySource.endIndex
+            )
+        )
+        let presentationBlock = overlaySource[presentationStart.lowerBound..<presentationEnd.lowerBound]
+        XCTAssertTrue(routerSource.contains("textView?.hasMarkedText() == true"))
+        XCTAssertTrue(routerSource.contains("textView.undoManager?.undo()"))
+        XCTAssertTrue(routerSource.contains("textView.insertNewline(nil)"))
+        XCTAssertTrue(overlaySource.contains("ScreenshotEditorKeyEventRouter.route("))
+        XCTAssertTrue(overlaySource.contains("case .forwardToResponder:"))
+        XCTAssertTrue(presentationBlock.contains("NSEvent.removeMonitor(globalEscapeEventMonitor)"))
+        XCTAssertTrue(controllerSource.contains("func handleEscape(hasMarkedText: Bool)"))
+        XCTAssertTrue(editorSource.contains("private func handleEscape(hasMarkedText: Bool)"))
+        XCTAssertTrue(editorSource.contains("ScreenshotEditorEscapePolicy.action("))
+    }
+
+    func testLabelPreviewAndEditorUseRendererCompatibleRegularFont() throws {
+        let source = try sourceFile(
+            "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift"
+        )
+
+        XCTAssertFalse(
+            source.contains(
+                ".font(.system(size: canvasLineWidth(fontSize, in: imageRect), weight: .medium))"
+            )
+        )
+        XCTAssertFalse(
+            source.contains(
+                ".font(.system(size: canvasLineWidth(draft.fontSize, in: imageRect), weight: .medium))"
+            )
+        )
     }
 
     func testPlainLiquidGlassButtonsUseTheSharedFullSurfaceHitTarget() throws {
@@ -128,7 +183,7 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
             "Sources/MacTools/Platform/ScreenCapture/ScreenSelectionOverlayController.swift"
         )
         let editorSource = try sourceFile(
-            "Sources/MacTools/Platform/ScreenCapture/ScreenshotEditorView.swift"
+            "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift"
         )
         let runtimeSource = try sourceFile(
             "Sources/MacTools/Application/RuntimeViews.swift"
