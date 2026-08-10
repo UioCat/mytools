@@ -1,5 +1,38 @@
 # Errors
 
+## [ERR-20260810-018] zsh path special parameter shadowed command search path
+
+**Logged**: 2026-08-10T20:08:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+文档校验脚本使用 `path` 作为循环变量，在 zsh 中意外覆盖了与 `PATH` 绑定的特殊数组，导致后续命令无法找到。
+
+### Error
+```
+zsh: command not found: git
+zsh: command not found: rg
+```
+
+### Context
+- 循环先成功检查了仓库路径，随后同一 shell 中的 `git` 和 `rg` 解析失败。
+- zsh 的小写 `path` 是与环境变量 `PATH` 同步的特殊参数，不应作为普通脚本变量。
+
+### Suggested Fix
+shell 脚本使用任务语义明确且不与 shell 特殊参数冲突的变量名，例如 `checked_file` 或 `target_path`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .interface-design/system.md
+
+### Resolution
+- **Resolved**: 2026-08-10T20:09:00+08:00
+- **Notes**: 改用 `checked_file` 后重新执行完整校验。
+
+---
+
 ## [ERR-20260810-017] AppKit marked text observation prototype names
 
 **Logged**: 2026-08-10T19:47:00+08:00
