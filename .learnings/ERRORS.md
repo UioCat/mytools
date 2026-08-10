@@ -1,5 +1,171 @@
 # Errors
 
+## [ERR-20260810-015] 截断标签像素测试误把字形结果当作完全相同
+
+**Logged**: 2026-08-10T18:22:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+窄标签防溢出回归测试最初要求长文本截断结果与直接绘制省略号的整张 PNG 像素完全相同；CoreText 的截断行排版细节不同，使该断言失败，即使所有差异都在合法文字裁切框内。
+
+### Error
+```
+XCTAssertEqual failed: rendered pixel buffers differ
+initializer for conditional binding must have Optional type, not 'CTLine'
+```
+
+### Context
+- renderer 的安全目标是任何文字像素都不得越出 `textRect`，不是要求两种 CoreText line 的内部抗锯齿与定位逐像素一致。
+- 截断失败回退改为非 Optional 的省略号后，原有 `if let` 也不再符合推断类型。
+
+### Suggested Fix
+直接断言最小文字框能容纳省略号，并比较两张图在允许文字区域之外没有任何差异；回退为非 Optional 后直接绘制该 line。
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/ScreenshotRendererTests.swift, Sources/MacToolsCore/ScreenCapture/ScreenshotRenderer.swift
+
+### Resolution
+- **Resolved**: 2026-08-10T18:23:00+08:00
+- **Notes**: 回归测试改为验证差异被严格限制在裁切框内；窄标签布局、渲染和真实编辑器聚焦测试全部通过。
+
+---
+
+## [ERR-20260810-014] 标签贴边平移产生亚像素浮点溢出
+
+**Logged**: 2026-08-10T18:09:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+最小合法画布中的标签约束成功后，重新计算的完整边界仍可能比画布下边界小约 `6.66e-16`，导致后续精确 `CGRect.contains` 错误拒绝显式翻转。
+
+### Error
+```
+Expected (17.28, -6.661338147750939e-16, 54.72, 43.519999999999996)
+inside (0.0, 0.0, 72.0, 44.0)
+```
+
+### Context
+- 首次平移使用两个浮点几何值相减，随后通过平移后的 anchor 重建 geometry，运算次序不同会留下极小舍入误差。
+- 视觉上没有可见溢出，但显式翻转路径会用精确 `CGRect.contains` 再次校验，因此会把可容纳的标签误判为空间不足。
+
+### Suggested Fix
+贴边平移时在剩余空间内保留极小安全内缩，并对只读完整包含校验使用同量级容差；回归测试需覆盖约束后立即显式翻转。
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/ScreenCapture/ScreenshotAnnotationEditingPolicy.swift
+
+### Resolution
+- **Resolved**: 2026-08-10T18:13:00+08:00
+- **Notes**: 平移保留最多 `0.001 pt` 安全内缩，精确输出边界重新落回画布内；最小画布创建和贴边翻转回归测试通过。
+
+---
+
+## [ERR-20260810-012] NSHostingView cacheDisplay 生成全黑截图
+
+**Logged**: 2026-08-10T17:48:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+真实截图编辑器交互测试通过，但通过 `NSHostingView.cacheDisplay` 导出的视觉快照只有黑色像素。
+
+### Error
+```
+screenshot-label-editor.png: 1600 × 1200, all-black image
+CGWindowListCreateImage is unavailable in macOS 15+: Please use ScreenCaptureKit instead.
+```
+
+### Context
+- `NSWindow` 已显示、文本输入与第一响应者断言通过，失败只发生在 layer-backed SwiftUI 内容离屏捕获。
+- 仓库已有快照使用 SwiftUI `ImageRenderer`，但该方式会重建视图，无法保留测试中交互形成的私有 `@State`。
+- 尝试评估旧 `CGWindowListCreateImage` 作为窗口捕获替代时，macOS 26 SDK 在编译期拒绝该 API。
+
+### Suggested Fix
+对现有 hosting view 的 layer 使用位图 CGContext 渲染；若仍无法捕获，则保留真实交互断言，并以共享渲染器明暗背景快照作为视觉证据。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Tests/MacToolsCoreTests/ScreenshotEditorInteractionTests.swift`
+
+### Resolution
+- **Resolved**: 2026-08-10T17:49:00+08:00
+- **Notes**: `CALayer.render(in:)` 复现全黑结果；移除无效快照导出，保留真实生产编辑器输入测试，并用共享 PNG 渲染器的明暗背景快照完成自动视觉检查。
+
+---
+
+## [ERR-20260810-013] NSTextField currentEditor exposes NSText protocol
+
+**Logged**: 2026-08-10T18:03:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The first native label-field implementation queried marked-text state directly on `NSTextField.currentEditor()`, which is typed as `NSText` and does not expose `hasMarkedText()`.
+
+### Error
+```
+value of type 'NSText' has no member 'hasMarkedText'
+```
+
+### Context
+- The active macOS field editor is an `NSTextView`, but AppKit deliberately returns it through the broader `NSText` API.
+- The marked-text guard is needed to avoid replacing an in-progress IME composition during SwiftUI updates.
+
+### Suggested Fix
+Cast the current editor to `NSTextView` before querying `hasMarkedText()` and treat a missing field editor as having no marked text.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift
+
+### Resolution
+- **Resolved**: 2026-08-10T18:03:00+08:00
+- **Notes**: Added the `NSTextView` conditional cast; focused layout and native-editor interaction tests pass.
+
+---
+
+## [ERR-20260810-011] AppKit 字体行高破坏标签的像素倍率缩放
+
+**Logged**: 2026-08-10T17:42:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+使用系统字体的实际 ascent/descent 作为标签容器高度后，16px 与 32px 标签不再保持严格的 1×/2× 几何比例。
+
+### Error
+```
+XCTAssertEqualWithAccuracy failed: ("56.0") is not equal to ("62.0") +/- ("1.0")
+```
+
+### Context
+- 聚焦测试稳定复现于 `testLabelGeometryScalesWithImagePixelScale`。
+- `.SFNS-Medium` 的 CoreText 行高在 16px 时为 19px、32px 时为 32px，受系统字体光学尺寸影响，并非线性倍率。
+- 标签预览会把画布 pt 字号换算为原图像素字号，因此容器几何必须按字号比例缩放；实际 ascent/descent 只应用于文字基线居中。
+
+### Suggested Fix
+气泡容器行高使用字号比例令牌；保留 CoreText ascent/descent 计算文字基线，不使用字体行高决定容器高度。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Sources/MacToolsCore/ScreenCapture/ScreenshotTextLayout.swift`, `Tests/MacToolsCoreTests/ScreenshotAnnotationTests.swift`
+- See Also: ERR-20260810-006
+
+### Resolution
+- **Resolved**: 2026-08-10T17:43:00+08:00
+- **Notes**: 标签容器恢复为按字号比例计算行高，字体指标仅用于基线居中。
+
+---
+
 ## [ERR-20260810-010] NSTextView 没有 undo action 方法
 
 **Logged**: 2026-08-10T17:03:00+08:00

@@ -158,21 +158,26 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         XCTAssertTrue(editorSource.contains("ScreenshotEditorEscapePolicy.action("))
     }
 
-    func testLabelPreviewAndEditorUseRendererCompatibleRegularFont() throws {
+    func testLabelPreviewAndEditorUseSharedReadableStyle() throws {
         let source = try sourceFile(
             "Sources/MacToolsCore/UI/ScreenCapture/ScreenshotEditorView.swift"
         )
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             source.contains(
                 ".font(.system(size: canvasLineWidth(fontSize, in: imageRect), weight: .medium))"
             )
         )
-        XCTAssertFalse(
-            source.contains(
-                ".font(.system(size: canvasLineWidth(draft.fontSize, in: imageRect), weight: .medium))"
-            )
-        )
+        XCTAssertTrue(source.contains("ScreenshotLabelTextField("))
+        XCTAssertTrue(source.contains("editor.textContainer?.lineFragmentPadding = 0"))
+        XCTAssertTrue(source.contains("field.alignment = .center"))
+        XCTAssertTrue(source.contains("labelColor(ScreenshotLabelStyle.backgroundColor)"))
+        XCTAssertTrue(source.contains("labelColor(ScreenshotLabelStyle.foregroundColor)"))
+        XCTAssertTrue(source.contains("ScreenshotLabelStyle.maximumBubbleWidth("))
+        XCTAssertTrue(source.contains("ScreenshotLabelStyle.resolvedMaximumBubbleWidth("))
+        XCTAssertTrue(source.contains("labelFontSize: annotationFontSize.points"))
+        XCTAssertFalse(source.contains("Color(red: 0.09, green: 0.10, blue: 0.12)"))
+        XCTAssertFalse(source.contains("min(240 * scale"))
     }
 
     func testPlainLiquidGlassButtonsUseTheSharedFullSurfaceHitTarget() throws {

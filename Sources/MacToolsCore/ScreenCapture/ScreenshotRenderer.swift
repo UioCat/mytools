@@ -294,46 +294,64 @@ public enum ScreenshotRenderer {
         let cornerRadius = min(geometry.cornerRadius, geometry.bubbleRect.height / 2)
 
         context.saveGState()
-        context.setFillColor(CGColor(red: 0.09, green: 0.10, blue: 0.12, alpha: 0.94))
-        context.addPath(
-            CGPath(
-                roundedRect: geometry.bubbleRect,
-                cornerWidth: cornerRadius,
-                cornerHeight: cornerRadius,
-                transform: nil
-            )
+        let bubblePath = CGPath(
+            roundedRect: geometry.bubbleRect,
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
         )
+        context.setShadow(
+            offset: CGSize(
+                width: 0,
+                height: ScreenshotLabelStyle.imageShadowYOffset(for: fontSize)
+            ),
+            blur: ScreenshotLabelStyle.shadowRadius(for: fontSize),
+            color: ScreenshotLabelStyle.shadowColor.cgColor
+        )
+        context.setFillColor(ScreenshotLabelStyle.backgroundColor.cgColor)
+        context.addPath(bubblePath)
         context.fillPath()
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        context.setStrokeColor(ScreenshotLabelStyle.borderColor.cgColor)
+        context.setLineWidth(ScreenshotLabelStyle.borderWidth(for: fontSize))
+        context.addPath(bubblePath)
+        context.strokePath()
         context.setFillColor(color.cgColor)
         context.fillEllipse(in: geometry.dotRect)
 
         let attributedText = ScreenshotTextLayout.attributedString(
             text: text,
             fontSize: fontSize,
-            color: CGColor(gray: 1, alpha: 1)
+            color: ScreenshotLabelStyle.foregroundColor.cgColor,
+            weight: .medium
         )
         let originalLine = CTLineCreateWithAttributedString(attributedText)
+        let originalLineWidth = CGFloat(CTLineGetTypographicBounds(originalLine, nil, nil, nil))
         let truncationToken = CTLineCreateWithAttributedString(
             ScreenshotTextLayout.attributedString(
                 text: "…",
                 fontSize: fontSize,
-                color: CGColor(gray: 1, alpha: 1)
+                color: ScreenshotLabelStyle.foregroundColor.cgColor,
+                weight: .medium
             )
         )
-        let line = CTLineCreateTruncatedLine(
-            originalLine,
-            Double(geometry.textRect.width),
-            .end,
-            truncationToken
-        ) ?? originalLine
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+        let line = originalLineWidth <= geometry.textRect.width
+            ? originalLine
+            : CTLineCreateTruncatedLine(
+                originalLine,
+                Double(geometry.textRect.width),
+                .end,
+                truncationToken
+            ) ?? truncationToken
+        context.saveGState()
+        context.clip(to: geometry.textRect)
+        let renderedLineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         context.textPosition = CGPoint(
-            x: geometry.textRect.minX,
-            y: geometry.textRect.midY - (ascent - descent) / 2
+            x: geometry.textRect.midX - renderedLineWidth / 2,
+            y: geometry.textBaselineY
         )
         CTLineDraw(line, context)
+        context.restoreGState()
         context.restoreGState()
     }
 

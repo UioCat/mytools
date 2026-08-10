@@ -1,6 +1,7 @@
 // 截图标注编辑器的 SwiftUI 平台界面。
 // 负责工具交互和草稿状态，最终像素合成委托给 MacToolsCore 渲染器。
 
+import AppKit
 import CoreGraphics
 import SwiftUI
 
@@ -54,6 +55,165 @@ extension EnvironmentValues {
     var screenshotCompactToolbarMeasurement: ScreenshotCompactToolbarMeasurementSink? {
         get { self[ScreenshotCompactToolbarMeasurementKey.self] }
         set { self[ScreenshotCompactToolbarMeasurementKey.self] = newValue }
+    }
+}
+
+/// 使用零行内边距的原生单行输入框，确保标签编辑态与 CoreText 测量宽度一致。
+private struct ScreenshotLabelTextField: NSViewRepresentable {
+    @Binding var text: String
+    let fontSize: CGFloat
+    let foregroundColor: ScreenshotLabelColorComponents
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(frame: .zero)
+        field.cell = ScreenshotLabelTextFieldCell(textCell: "")
+        field.delegate = context.coordinator
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.alignment = .center
+        field.maximumNumberOfLines = 1
+        field.lineBreakMode = .byTruncatingTail
+        field.placeholderString = "输入标签"
+        field.cell?.usesSingleLineMode = true
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
+        configure(field)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text,
+           !((field.currentEditor() as? NSTextView)?.hasMarkedText() ?? false) {
+            field.stringValue = text
+        }
+        configure(field)
+        context.coordinator.configureFieldEditor(for: field)
+    }
+
+    private func configure(_ field: NSTextField) {
+        field.font = .systemFont(ofSize: max(1, fontSize), weight: .medium)
+        field.textColor = NSColor(
+            calibratedRed: foregroundColor.red,
+            green: foregroundColor.green,
+            blue: foregroundColor.blue,
+            alpha: foregroundColor.alpha
+        )
+        field.alignment = .center
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: ScreenshotLabelTextField
+
+        init(parent: ScreenshotLabelTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else {
+                return
+            }
+            configureFieldEditor(for: field)
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else {
+                return
+            }
+            parent.text = field.stringValue.replacingOccurrences(of: "\n", with: " ")
+            configureFieldEditor(for: field)
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
+                return false
+            }
+            parent.onSubmit()
+            return true
+        }
+
+        func configureFieldEditor(for field: NSTextField) {
+            guard let editor = field.currentEditor() as? NSTextView else {
+                return
+            }
+            editor.textContainerInset = .zero
+            editor.textContainer?.lineFragmentPadding = 0
+            editor.alignment = .center
+            editor.drawsBackground = false
+        }
+    }
+}
+
+/// 去除 NSTextFieldCell 默认水平内缩，并按真实字体行高垂直居中。
+private final class ScreenshotLabelTextFieldCell: NSTextFieldCell {
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        centeredTextRect(in: rect)
+    }
+
+    override func titleRect(forBounds rect: NSRect) -> NSRect {
+        centeredTextRect(in: rect)
+    }
+
+    override func edit(
+        withFrame rect: NSRect,
+        in controlView: NSView,
+        editor textObject: NSText,
+        delegate: Any?,
+        event: NSEvent?
+    ) {
+        super.edit(
+            withFrame: centeredTextRect(in: rect),
+            in: controlView,
+            editor: textObject,
+            delegate: delegate,
+            event: event
+        )
+    }
+
+    override func select(
+        withFrame rect: NSRect,
+        in controlView: NSView,
+        editor textObject: NSText,
+        delegate: Any?,
+        start selectionStart: Int,
+        length selectionLength: Int
+    ) {
+        super.select(
+            withFrame: centeredTextRect(in: rect),
+            in: controlView,
+            editor: textObject,
+            delegate: delegate,
+            start: selectionStart,
+            length: selectionLength
+        )
+    }
+
+    private func centeredTextRect(in bounds: NSRect) -> NSRect {
+        let resolvedFont = font ?? .systemFont(ofSize: NSFont.systemFontSize)
+        let lineHeight = min(
+            bounds.height,
+            ceil(resolvedFont.ascender - resolvedFont.descender + resolvedFont.leading)
+        )
+        return NSRect(
+            x: bounds.minX,
+            y: bounds.midY - lineHeight / 2,
+            width: bounds.width,
+            height: lineHeight
+        )
     }
 }
 
@@ -156,7 +316,8 @@ public struct ScreenshotEditorView: View {
         _tool = State(
             initialValue: ScreenshotAnnotationEditingPolicy.canUse(
                 tool: settings.annotationTool,
-                canvasSize: imageFrame.size
+                canvasSize: imageFrame.size,
+                labelFontSize: settings.annotationFontSize.points
             ) ? settings.annotationTool : .line
         )
         _annotationColor = State(initialValue: settings.annotationColor.nearestPreset)
@@ -800,7 +961,8 @@ public struct ScreenshotEditorView: View {
     private func isToolAvailable(_ tool: ScreenshotAnnotationTool) -> Bool {
         ScreenshotAnnotationEditingPolicy.canUse(
             tool: tool,
-            canvasSize: imageFrame.size
+            canvasSize: imageFrame.size,
+            labelFontSize: annotationFontSize.points
         )
     }
 
@@ -1192,20 +1354,20 @@ public struct ScreenshotEditorView: View {
             let dotRect = canvasRect(from: geometry.dotRect, imageRect: imageRect)
             let textRect = canvasRect(from: geometry.textRect, imageRect: imageRect)
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: canvasLineWidth(geometry.cornerRadius, in: imageRect),
-                    style: .continuous
+                labelBubble(
+                    geometry: geometry,
+                    fontSize: fontSize,
+                    imageRect: imageRect,
+                    isEditing: false
                 )
-                    .fill(Color(red: 0.09, green: 0.10, blue: 0.12).opacity(0.94))
-                    .frame(width: bubbleRect.width, height: bubbleRect.height)
-                    .position(x: bubbleRect.midX, y: bubbleRect.midY)
                 Text(text)
-                    .font(.system(size: canvasLineWidth(fontSize, in: imageRect)))
-                    .foregroundStyle(.white)
+                    .font(.system(size: canvasLineWidth(fontSize, in: imageRect), weight: .medium))
+                    .foregroundStyle(labelColor(ScreenshotLabelStyle.foregroundColor))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(width: textRect.width, height: textRect.height)
-                    .position(x: textRect.midX, y: textRect.midY)
+                    .multilineTextAlignment(.center)
+                    .frame(width: textRect.width, height: bubbleRect.height, alignment: .center)
+                    .position(x: textRect.midX, y: bubbleRect.midY)
                 Circle()
                     .fill(swiftUIColor(color))
                     .frame(width: dotRect.width, height: dotRect.height)
@@ -1257,34 +1419,63 @@ public struct ScreenshotEditorView: View {
             let dotRect = canvasRect(from: geometry.dotRect, imageRect: imageRect)
             let textRect = canvasRect(from: geometry.textRect, imageRect: imageRect)
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: canvasLineWidth(geometry.cornerRadius, in: imageRect),
-                    style: .continuous
+                labelBubble(
+                    geometry: geometry,
+                    fontSize: draft.fontSize,
+                    imageRect: imageRect,
+                    isEditing: true
                 )
-                    .fill(Color(red: 0.09, green: 0.10, blue: 0.12).opacity(0.96))
-                    .frame(width: bubbleRect.width, height: bubbleRect.height)
-                    .overlay {
-                        RoundedRectangle(
-                            cornerRadius: canvasLineWidth(geometry.cornerRadius, in: imageRect),
-                            style: .continuous
-                        )
-                            .stroke(MacToolsGlassTheme.selectionBlue, lineWidth: 1.5)
-                    }
-                    .position(x: bubbleRect.midX, y: bubbleRect.midY)
-                TextField("输入标签", text: editingTextBinding)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: canvasLineWidth(draft.fontSize, in: imageRect)))
-                    .foregroundStyle(.white)
-                    .frame(width: textRect.width, height: textRect.height)
+                ScreenshotLabelTextField(
+                    text: editingTextBinding,
+                    fontSize: canvasLineWidth(draft.fontSize, in: imageRect),
+                    foregroundColor: ScreenshotLabelStyle.foregroundColor,
+                    onSubmit: commitEditing
+                )
+                    .frame(width: textRect.width, height: bubbleRect.height, alignment: .center)
                     .focused($isTextInputFocused)
-                    .onSubmit(commitEditing)
-                    .position(x: textRect.midX, y: textRect.midY)
+                    .position(x: textRect.midX, y: bubbleRect.midY)
                 Circle()
                     .fill(swiftUIColor(draft.color))
                     .frame(width: dotRect.width, height: dotRect.height)
                     .position(x: dotRect.midX, y: dotRect.midY)
             }
         }
+    }
+
+    private func labelBubble(
+        geometry: ScreenshotLabelGeometry,
+        fontSize: CGFloat,
+        imageRect: CGRect,
+        isEditing: Bool
+    ) -> some View {
+        let bubbleRect = canvasRect(from: geometry.bubbleRect, imageRect: imageRect)
+        let cornerRadius = canvasLineWidth(geometry.cornerRadius, in: imageRect)
+        let outlineColor = isEditing
+            ? MacToolsGlassTheme.selectionBlue
+            : labelColor(ScreenshotLabelStyle.borderColor)
+        let outlineWidth = isEditing
+            ? 1.5
+            : canvasLineWidth(ScreenshotLabelStyle.borderWidth(for: fontSize), in: imageRect)
+
+        return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(labelColor(ScreenshotLabelStyle.backgroundColor))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(outlineColor, lineWidth: outlineWidth)
+            }
+            .shadow(
+                color: labelColor(ScreenshotLabelStyle.shadowColor),
+                radius: canvasLineWidth(
+                    ScreenshotLabelStyle.shadowRadius(for: fontSize),
+                    in: imageRect
+                ),
+                y: canvasLineWidth(
+                    ScreenshotLabelStyle.shadowYOffset(for: fontSize),
+                    in: imageRect
+                )
+            )
+            .frame(width: bubbleRect.width, height: bubbleRect.height)
+            .position(x: bubbleRect.midX, y: bubbleRect.midY)
     }
 
     private var editingTextBinding: Binding<String> {
@@ -1405,7 +1596,8 @@ public struct ScreenshotEditorView: View {
         let scale = imageScale(for: imageRect)
         guard ScreenshotAnnotationEditingPolicy.canUse(
             tool: tool,
-            canvasSize: imageRect.size
+            canvasSize: imageRect.size,
+            labelFontSize: annotationFontSize.points
         ) else {
             errorMessage = tool == .text ? "选区过小，无法添加文本" : "选区过小，无法添加标签"
             return
@@ -1437,8 +1629,12 @@ public struct ScreenshotEditorView: View {
                 maximumWidth: width
             )
         case .label:
-            let maximumWidth = min(240 * scale, CGFloat(image.width) - 28 * scale)
-            let direction: ScreenshotLabelDirection = point.x + maximumWidth <= CGFloat(image.width)
+            let maximumWidth = ScreenshotLabelStyle.maximumBubbleWidth(
+                in: CGFloat(image.width),
+                fontSize: fontSize,
+                edgeInset: 8 * scale
+            )
+            let direction: ScreenshotLabelDirection = point.x <= CGFloat(image.width) / 2
                 ? .left
                 : .right
             let placeholder = ScreenshotAnnotation.label(
@@ -1696,13 +1892,20 @@ public struct ScreenshotEditorView: View {
                 fontSize: resolvedFontSize
             )
         case let .label(text, anchor, direction, existingColor, existingFontSize, maximumWidth):
+            let resolvedFontSize = requestedFontSize ?? existingFontSize
+            let resolvedMaximumWidth = ScreenshotLabelStyle.resolvedMaximumBubbleWidth(
+                existingMaximumWidth: maximumWidth,
+                in: CGFloat(image.width),
+                requestedFontSize: requestedFontSize,
+                edgeInset: 8 * scale
+            )
             candidate = .label(
                 text: text,
                 anchor: anchor,
                 direction: direction,
                 color: color ?? existingColor,
-                fontSize: requestedFontSize ?? existingFontSize,
-                maximumWidth: maximumWidth
+                fontSize: resolvedFontSize,
+                maximumWidth: resolvedMaximumWidth
             )
         default:
             return
@@ -1864,6 +2067,15 @@ public struct ScreenshotEditorView: View {
 
     /// 构建并返回 `swiftUIColor` 对应的 SwiftUI 界面内容或展示状态。
     private func swiftUIColor(_ color: ScreenshotAnnotationColor) -> Color {
+        Color(
+            red: Double(color.red),
+            green: Double(color.green),
+            blue: Double(color.blue),
+            opacity: Double(color.alpha)
+        )
+    }
+
+    private func labelColor(_ color: ScreenshotLabelColorComponents) -> Color {
         Color(
             red: Double(color.red),
             green: Double(color.green),

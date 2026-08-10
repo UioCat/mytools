@@ -214,9 +214,100 @@ final class ScreenshotRendererTests: XCTestCase {
         XCTAssertGreaterThan(locator.red, 180)
         XCTAssertLessThan(locator.green, 100)
         XCTAssertLessThan(locator.blue, 100)
-        XCTAssertLessThan(bubble.red, 100)
-        XCTAssertLessThan(bubble.green, 100)
-        XCTAssertLessThan(bubble.blue, 100)
+        XCTAssertGreaterThan(bubble.red, 220)
+        XCTAssertGreaterThan(bubble.green, 220)
+        XCTAssertGreaterThan(bubble.blue, 215)
+    }
+
+    func testRendererClipsLegacyLabelTextToAnEllipsisSizedTextRect() throws {
+        let image = try makeSolidImage(
+            width: 180,
+            height: 100,
+            color: CGColor(gray: 0.8, alpha: 1)
+        )
+        let common: (String) -> ScreenshotAnnotation = { text in
+            .label(
+                text: text,
+                anchor: CGPoint(x: 24, y: 50),
+                direction: .left,
+                color: .red,
+                fontSize: 24,
+                maximumWidth: 1
+            )
+        }
+        let longLabel = try ScreenshotRenderer.pngData(
+            image: image,
+            annotations: [common("这是一段放不下的完整标签文字")]
+        )
+        let ellipsisLabel = try ScreenshotRenderer.pngData(
+            image: image,
+            annotations: [common("…")]
+        )
+
+        let longPixels = try rgbaPixels(in: longLabel)
+        let ellipsisPixels = try rgbaPixels(in: ellipsisLabel)
+        let geometry = ScreenshotTextLayout.labelGeometry(
+            text: "这是一段放不下的完整标签文字",
+            anchor: CGPoint(x: 24, y: 50),
+            direction: .left,
+            fontSize: 24,
+            maximumWidth: 1
+        )
+        XCTAssertGreaterThanOrEqual(
+            geometry.textRect.width,
+            ScreenshotTextLayout.minimumSingleLineTruncationWidth(fontSize: 24)
+        )
+        XCTAssertFalse(
+            regionsDifferOutside(
+                longPixels,
+                ellipsisPixels,
+                width: image.width,
+                allowedRect: geometry.textRect.insetBy(dx: -1, dy: -1)
+            )
+        )
+    }
+
+    func testLabelStyleSnapshotShowsAdaptiveLabelsOnLightAndDarkBackgrounds() throws {
+        let image = try makeLabelPreviewImage(width: 900, height: 500)
+        let data = try ScreenshotRenderer.pngData(
+            image: image,
+            annotations: [
+                .label(
+                    text: "hello",
+                    anchor: CGPoint(x: 64, y: 120),
+                    direction: .left,
+                    color: .red,
+                    fontSize: 24,
+                    maximumWidth: 780
+                ),
+                .label(
+                    text: "文字水平与垂直居中",
+                    anchor: CGPoint(x: 64, y: 250),
+                    direction: .left,
+                    color: .blue,
+                    fontSize: 24,
+                    maximumWidth: 780
+                ),
+                .label(
+                    text: "宽度会随着这段文字自然增长，不再提前缩进",
+                    anchor: CGPoint(x: 836, y: 380),
+                    direction: .right,
+                    color: .green,
+                    fontSize: 24,
+                    maximumWidth: 780
+                )
+            ]
+        )
+
+        XCTAssertEqual(Array(data.prefix(8)), [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        if let outputDirectory = ProcessInfo.processInfo.environment["MACTOOLS_SCREENSHOT_LABEL_SNAPSHOT_DIR"] {
+            let directoryURL = URL(fileURLWithPath: outputDirectory, isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: true
+            )
+            try data.write(to: directoryURL.appendingPathComponent("screenshot-label-style.png"))
+        }
     }
 
     private func makeTestImage() throws -> CGImage {
@@ -237,6 +328,25 @@ final class ScreenshotRendererTests: XCTestCase {
         context.setFillColor(CGColor(red: 0.9, green: 0.35, blue: 0.15, alpha: 1))
         context.fill(CGRect(x: 16, y: 16, width: 8, height: 8))
 
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    private func makeLabelPreviewImage(width: Int, height: Int) throws -> CGImage {
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        )
+        context.setFillColor(CGColor(gray: 0.16, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height))
+        context.setFillColor(CGColor(gray: 0.92, alpha: 1))
+        context.fill(CGRect(x: width / 2, y: 0, width: width / 2, height: height))
         return try XCTUnwrap(context.makeImage())
     }
 
@@ -312,6 +422,13 @@ final class ScreenshotRendererTests: XCTestCase {
         return pixels
     }
 
+    private func rgbaPixels(in data: Data) throws -> [UInt8] {
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        return try rgbaPixels(
+            of: XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        )
+    }
+
     private func containsRGB(
         in pixels: [UInt8],
         matching predicate: (UInt8, UInt8, UInt8) -> Bool
@@ -364,6 +481,28 @@ final class ScreenshotRendererTests: XCTestCase {
         let height = lhs.count / (width * 4)
         for y in Int(rect.minY)..<Int(rect.maxY) {
             for x in Int(rect.minX)..<Int(rect.maxX) {
+                let row = height - 1 - y
+                let index = (row * width + x) * 4
+                if lhs[index..<(index + 4)] != rhs[index..<(index + 4)] {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func regionsDifferOutside(
+        _ lhs: [UInt8],
+        _ rhs: [UInt8],
+        width: Int,
+        allowedRect: CGRect
+    ) -> Bool {
+        let height = lhs.count / (width * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                guard !allowedRect.contains(CGPoint(x: x, y: y)) else {
+                    continue
+                }
                 let row = height - 1 - y
                 let index = (row * width + x) * 4
                 if lhs[index..<(index + 4)] != rhs[index..<(index + 4)] {

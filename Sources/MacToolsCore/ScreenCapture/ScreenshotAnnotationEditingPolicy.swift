@@ -76,19 +76,51 @@ public enum ScreenshotEditorEscapePolicy {
 
 public enum ScreenshotAnnotationEditingPolicy {
     public static let minimumTextCanvasSize = CGSize(width: 48, height: 32)
-    public static let minimumLabelCanvasSize = CGSize(width: 72, height: 32)
+    public static let minimumLabelCanvasSize = CGSize(
+        width: minimumLabelCanvasWidth(for: 16),
+        height: minimumLabelCanvasHeight(for: 16)
+    )
+
+    public static func minimumLabelCanvasWidth(for fontSize: CGFloat) -> CGFloat {
+        max(
+            72,
+            ceil(
+                16
+                    + ScreenshotLabelStyle.dotDiameter(for: fontSize)
+                    + ScreenshotLabelStyle.labelGap(for: fontSize)
+                    + ScreenshotLabelStyle.visualOutset(for: fontSize)
+                    + ScreenshotLabelStyle.horizontalPadding(for: fontSize) * 2
+                    + ScreenshotTextLayout.minimumSingleLineTruncationWidth(
+                        fontSize: fontSize
+                    )
+            )
+        )
+    }
+
+    public static func minimumLabelCanvasHeight(for fontSize: CGFloat) -> CGFloat {
+        ceil(
+            ScreenshotTextLayout.labelGeometry(
+                text: " ",
+                anchor: .zero,
+                direction: .left,
+                fontSize: fontSize,
+                maximumWidth: .greatestFiniteMagnitude
+            ).bounds.height
+        )
+    }
 
     public static func canUse(
         tool: ScreenshotAnnotationTool,
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        labelFontSize: CGFloat = 16
     ) -> Bool {
         switch tool {
         case .text:
             return canvasSize.width >= minimumTextCanvasSize.width
                 && canvasSize.height >= minimumTextCanvasSize.height
         case .label:
-            return canvasSize.width >= minimumLabelCanvasSize.width
-                && canvasSize.height >= minimumLabelCanvasSize.height
+            return canvasSize.width >= minimumLabelCanvasWidth(for: labelFontSize)
+                && canvasSize.height >= minimumLabelCanvasHeight(for: labelFontSize)
         case .line, .freehand, .arrow, .rectangle, .mosaic:
             return true
         }
@@ -175,7 +207,7 @@ public enum ScreenshotAnnotationEditingPolicy {
                     fontSize: fontSize,
                     maximumWidth: maximumWidth
                 )
-                guard bounds.contains(geometry.bounds) else {
+                guard contains(geometry.bounds, inside: bounds) else {
                     return nil
                 }
                 return annotation
@@ -235,23 +267,31 @@ public enum ScreenshotAnnotationEditingPolicy {
     }
 
     private static func translationToFit(_ rect: CGRect, inside bounds: CGRect) -> CGSize {
+        let horizontalSlack = max(0, bounds.width - rect.width)
+        let verticalSlack = max(0, bounds.height - rect.height)
+        let horizontalSafetyInset = min(0.001, horizontalSlack / 2)
+        let verticalSafetyInset = min(0.001, verticalSlack / 2)
         let dx: CGFloat
-        if rect.minX < bounds.minX {
-            dx = bounds.minX - rect.minX
-        } else if rect.maxX > bounds.maxX {
-            dx = bounds.maxX - rect.maxX
+        if rect.minX < bounds.minX + horizontalSafetyInset {
+            dx = bounds.minX + horizontalSafetyInset - rect.minX
+        } else if rect.maxX > bounds.maxX - horizontalSafetyInset {
+            dx = bounds.maxX - horizontalSafetyInset - rect.maxX
         } else {
             dx = 0
         }
 
         let dy: CGFloat
-        if rect.minY < bounds.minY {
-            dy = bounds.minY - rect.minY
-        } else if rect.maxY > bounds.maxY {
-            dy = bounds.maxY - rect.maxY
+        if rect.minY < bounds.minY + verticalSafetyInset {
+            dy = bounds.minY + verticalSafetyInset - rect.minY
+        } else if rect.maxY > bounds.maxY - verticalSafetyInset {
+            dy = bounds.maxY - verticalSafetyInset - rect.maxY
         } else {
             dy = 0
         }
         return CGSize(width: dx, height: dy)
+    }
+
+    private static func contains(_ rect: CGRect, inside bounds: CGRect) -> Bool {
+        bounds.insetBy(dx: -0.001, dy: -0.001).contains(rect)
     }
 }
