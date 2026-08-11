@@ -397,7 +397,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             toolbarFrame: toolbarFrame,
             settings: ScreenCaptureSettings(
                 annotationTool: .text,
-                annotationFontSize: .small
+                annotationFontSize: .large
             ),
             onSettingsChange: { _ in true },
             onCopy: { _ in },
@@ -439,25 +439,123 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         )
         runMainLoop()
 
-        let textView = try XCTUnwrap(window.firstResponder as? NSTextView)
-        let placeholderView = try XCTUnwrap(
-            textView.superview?.subviews
-                .compactMap { $0 as? NSTextView }
-                .first { !$0.isEditable && $0.string == "输入文本" }
+        let textView = try XCTUnwrap(
+            window.firstResponder as? ScreenshotPlainTextEditorTextView
         )
         let editorFont = try XCTUnwrap(textView.font)
-        let placeholderFont = try XCTUnwrap(placeholderView.font)
-        XCTAssertEqual(editorFont.pointSize, ScreenshotAnnotationFontSize.small.points)
-        XCTAssertEqual(placeholderFont.pointSize, editorFont.pointSize)
-        XCTAssertFalse(placeholderView.isHidden)
-        XCTAssertFalse(placeholderView.isAccessibilityElement())
+        let placeholderFont = try XCTUnwrap(
+            textView.placeholderAttributedText.attribute(
+                .font,
+                at: 0,
+                effectiveRange: nil
+            ) as? NSFont
+        )
+        XCTAssertEqual(editorFont.pointSize, ScreenshotAnnotationFontSize.large.points)
+        XCTAssertEqual(placeholderFont.pointSize, editorFont.pointSize * 0.8, accuracy: 0.1)
+        XCTAssertEqual(textView.placeholderAttributedText.string, "输入文本")
+        XCTAssertTrue(textView.isPlaceholderVisible)
         XCTAssertEqual(textView.accessibilityPlaceholderValue(), "输入文本")
+        XCTAssertEqual(ScreenshotPlainTextEditorMetrics.horizontalInset, 8)
         XCTAssertEqual(
-            placeholderView.frame.minX,
+            textView.frame.minX,
             ScreenshotPlainTextEditorMetrics.horizontalInset,
             accuracy: 0.1
         )
-        XCTAssertEqual(textView.frame.minX, placeholderView.frame.minX, accuracy: 0.1)
+        let singleLinePlaceholderSize = ScreenshotPlainTextEditorMetrics.placeholderLayoutSize(
+            inputFontSize: editorFont.pointSize,
+            maximumWidth: .greatestFiniteMagnitude
+        )
+        XCTAssertGreaterThanOrEqual(
+            textView.bounds.width,
+            singleLinePlaceholderSize.width
+                + ScreenshotPlainTextEditorMetrics.placeholderWidthSafety
+        )
+        XCTAssertLessThanOrEqual(textView.placeholderDrawingRect.maxX, textView.bounds.maxX)
+        for fontSize in ScreenshotAnnotationFontSize.allCases {
+            let placeholderFontSize = ScreenshotPlainTextEditorMetrics.placeholderFontSize(
+                for: fontSize.points
+            )
+            XCTAssertEqual(
+                placeholderFontSize,
+                fontSize.points * 0.8,
+                accuracy: 0.1
+            )
+            let placeholderWidth = NSAttributedString(
+                string: ScreenshotPlainTextEditorMetrics.placeholderText,
+                attributes: [.font: NSFont.systemFont(ofSize: placeholderFontSize)]
+            ).size().width
+            let contentSize = ScreenshotPlainTextEditorMetrics.placeholderContentSize(
+                inputFontSize: fontSize.points,
+                maximumWidth: imageFrame.width - 16,
+                minimumSize: CGSize(width: 48, height: 32),
+                displayScale: 1
+            )
+            XCTAssertGreaterThanOrEqual(
+                contentSize.width,
+                placeholderWidth + ScreenshotPlainTextEditorMetrics.placeholderWidthSafety
+            )
+        }
+        for displayScale in [CGFloat(1), 2] {
+            let narrowContentSize = ScreenshotPlainTextEditorMetrics.placeholderContentSize(
+                inputFontSize: ScreenshotAnnotationFontSize.large.points * displayScale,
+                maximumWidth: 64 * displayScale,
+                minimumSize: CGSize(width: 48 * displayScale, height: 32 * displayScale),
+                displayScale: displayScale
+            )
+            let narrowContainer = ScreenshotPlainTextEditorContainer(
+                frame: CGRect(
+                    origin: .zero,
+                    size: CGSize(
+                        width: narrowContentSize.width / displayScale
+                            + ScreenshotPlainTextEditorMetrics.horizontalInset * 2,
+                        height: narrowContentSize.height / displayScale
+                    )
+                )
+            )
+            let narrowEditor = narrowContainer.editor
+            narrowEditor.isRichText = false
+            narrowEditor.drawsBackground = false
+            narrowEditor.textContainerInset = .zero
+            narrowEditor.textContainer?.lineFragmentPadding = 0
+            narrowEditor.textContainer?.widthTracksTextView = true
+            narrowEditor.textContainer?.heightTracksTextView = false
+            narrowEditor.textContainer?.lineBreakMode = .byWordWrapping
+            narrowEditor.isVerticallyResizable = false
+            narrowEditor.font = .systemFont(ofSize: ScreenshotAnnotationFontSize.large.points)
+            narrowEditor.configurePlaceholder(
+                inputFontSize: ScreenshotAnnotationFontSize.large.points,
+                color: .secondaryLabelColor
+            )
+            narrowContainer.addSubview(narrowEditor)
+            narrowContainer.layout()
+            XCTAssertTrue(narrowEditor.string.isEmpty)
+            XCTAssertEqual(
+                ScreenshotPlainTextEditorMetrics.placeholderLayoutSize(
+                    inputFontSize: ScreenshotAnnotationFontSize.large.points,
+                    maximumWidth: narrowContainer.bounds.width
+                        - ScreenshotPlainTextEditorMetrics.horizontalInset * 2
+                ).height,
+                narrowEditor.placeholderDrawingRect.height
+            )
+            XCTAssertLessThanOrEqual(
+                narrowEditor.placeholderDrawingRect.maxX,
+                narrowEditor.bounds.maxX
+            )
+            XCTAssertGreaterThanOrEqual(
+                narrowEditor.placeholderDrawingRect.minY,
+                0,
+                "scale=\(displayScale) content=\(narrowContentSize) container=\(narrowContainer.bounds) editor=\(narrowEditor.bounds) font=\(String(describing: narrowEditor.font))"
+            )
+            XCTAssertLessThanOrEqual(
+                narrowEditor.placeholderDrawingRect.maxY,
+                narrowEditor.bounds.maxY,
+                "scale=\(displayScale) content=\(narrowContentSize) container=\(narrowContainer.bounds) editor=\(narrowEditor.bounds) font=\(String(describing: narrowEditor.font))"
+            )
+            XCTAssertGreaterThan(
+                narrowEditor.placeholderDrawingRect.height,
+                singleLinePlaceholderSize.height
+            )
+        }
         let singleLineHeight = ceil(
             editorFont.ascender - editorFont.descender + editorFont.leading
         )
@@ -472,9 +570,12 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             "空文本编辑器应在 32 pt 初始对象框内垂直居中"
         )
         let interactionView = try XCTUnwrap(textView.superview)
-        let topPaddingPoint = CGPoint(
-            x: imageFrame.minX + 102,
-            y: rootSize.height - (imageFrame.midY + 2)
+        let topPaddingPoint = interactionView.convert(
+            CGPoint(
+                x: ScreenshotPlainTextEditorMetrics.horizontalInset + 2,
+                y: 0.5
+            ),
+            to: nil
         )
         XCTAssertFalse(
             textView.bounds.contains(textView.convert(topPaddingPoint, from: nil)),
@@ -493,7 +594,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
         runMainLoop()
-        XCTAssertTrue(placeholderView.isHidden)
+        XCTAssertFalse(textView.isPlaceholderVisible)
         let updatedTextView = try XCTUnwrap(window.firstResponder as? NSTextView)
         XCTAssertEqual(updatedTextView.textContainerInset, .zero)
         let textContainer = try XCTUnwrap(updatedTextView.textContainer)
@@ -539,7 +640,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         )
         let expectedGrownWidth = ScreenshotTextLayout.fittedMultilineSize(
             text: "不该，不该，333",
-            fontSize: ScreenshotAnnotationFontSize.small.points,
+            fontSize: ScreenshotAnnotationFontSize.large.points,
             maximumWidth: imageFrame.width - 16,
             minimumSize: CGSize(width: 1, height: 1)
         ).width

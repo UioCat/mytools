@@ -45,12 +45,19 @@ struct ScreenshotTextDraft {
         }
         switch updated.kind {
         case .text:
-            let measured = ScreenshotTextLayout.fittedMultilineSize(
-                text: updated.text.isEmpty ? "输入文本" : updated.text,
-                fontSize: updated.fontSize,
-                maximumWidth: updated.maximumWidth,
-                minimumSize: CGSize(width: 1, height: 1)
-            )
+            let measured = updated.text.isEmpty
+                ? ScreenshotPlainTextEditorMetrics.placeholderContentSize(
+                    inputFontSize: updated.fontSize,
+                    maximumWidth: updated.maximumWidth,
+                    minimumSize: CGSize(width: 48 * scale, height: 32 * scale),
+                    displayScale: scale
+                )
+                : ScreenshotTextLayout.fittedMultilineSize(
+                    text: updated.text,
+                    fontSize: updated.fontSize,
+                    maximumWidth: updated.maximumWidth,
+                    minimumSize: CGSize(width: 1, height: 1)
+                )
             guard let frame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
                 updated.frame,
                 requiredSize: measured,
@@ -286,13 +293,131 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
 }
 
 enum ScreenshotPlainTextEditorMetrics {
-    static let horizontalInset: CGFloat = 3
+    static let placeholderText = "输入文本"
+    static let horizontalInset: CGFloat = 8
+    static let placeholderOpticalScale: CGFloat = 0.8
+    static let placeholderWidthSafety: CGFloat = 8
+    static let placeholderDrawingOptions: NSString.DrawingOptions = [
+        .usesLineFragmentOrigin,
+        .usesFontLeading
+    ]
+
+    static func placeholderFontSize(for inputFontSize: CGFloat) -> CGFloat {
+        max(1, inputFontSize) * placeholderOpticalScale
+    }
+
+    static func placeholderAttributedText(
+        inputFontSize: CGFloat,
+        color: NSColor
+    ) -> NSAttributedString {
+        NSAttributedString(
+            string: placeholderText,
+            attributes: [
+                .font: NSFont.systemFont(
+                    ofSize: placeholderFontSize(for: inputFontSize)
+                ),
+                .foregroundColor: color
+            ]
+        )
+    }
+
+    static func placeholderLayoutSize(
+        inputFontSize: CGFloat,
+        maximumWidth: CGFloat
+    ) -> CGSize {
+        let bounds = placeholderAttributedText(
+            inputFontSize: inputFontSize,
+            color: .secondaryLabelColor
+        ).boundingRect(
+            with: CGSize(
+                width: max(1, maximumWidth),
+                height: .greatestFiniteMagnitude
+            ),
+            options: placeholderDrawingOptions
+        )
+        return CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+    }
+
+    static func placeholderContentSize(
+        inputFontSize: CGFloat,
+        maximumWidth: CGFloat,
+        minimumSize: CGSize,
+        displayScale: CGFloat
+    ) -> CGSize {
+        let resolvedDisplayScale = max(1, displayScale)
+        let displayMaximumWidth = max(1, maximumWidth / resolvedDisplayScale)
+        let displayMinimumSize = CGSize(
+            width: minimumSize.width / resolvedDisplayScale,
+            height: minimumSize.height / resolvedDisplayScale
+        )
+        let displayMeasured = placeholderLayoutSize(
+            inputFontSize: inputFontSize / resolvedDisplayScale,
+            maximumWidth: max(1, displayMaximumWidth - placeholderWidthSafety)
+        )
+        return CGSize(
+            width: min(
+                displayMaximumWidth,
+                max(
+                    displayMinimumSize.width,
+                    displayMeasured.width + placeholderWidthSafety
+                )
+            ) * resolvedDisplayScale,
+            height: max(displayMinimumSize.height, displayMeasured.height)
+                * resolvedDisplayScale
+        )
+    }
+}
+
+/// 使用输入编辑器自身绘制占位，确保字号、基线和可访问性只有一个事实来源。
+final class ScreenshotPlainTextEditorTextView: NSTextView {
+    private(set) var placeholderAttributedText = NSAttributedString()
+    private var placeholderInputFontSize = NSFont.systemFontSize
+
+    var isPlaceholderVisible: Bool {
+        string.isEmpty
+    }
+
+    var placeholderDrawingRect: CGRect {
+        let size = ScreenshotPlainTextEditorMetrics.placeholderLayoutSize(
+            inputFontSize: placeholderInputFontSize,
+            maximumWidth: bounds.width
+        )
+        return CGRect(
+            x: bounds.minX,
+            y: bounds.midY - size.height / 2,
+            width: bounds.width,
+            height: size.height
+        )
+    }
+
+    func configurePlaceholder(inputFontSize: CGFloat, color: NSColor) {
+        placeholderInputFontSize = inputFontSize
+        placeholderAttributedText = ScreenshotPlainTextEditorMetrics.placeholderAttributedText(
+            inputFontSize: inputFontSize,
+            color: color
+        )
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if string.isEmpty {
+            placeholderAttributedText.draw(
+                with: placeholderDrawingRect,
+                options: ScreenshotPlainTextEditorMetrics.placeholderDrawingOptions
+            )
+        }
+        super.draw(dirtyRect)
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        needsDisplay = true
+    }
 }
 
 /// 在对象框内垂直居中原生文本视图，同时保持零文本内缩和左对齐。
-private final class ScreenshotPlainTextEditorContainer: NSView {
-    let placeholder = NSTextView(frame: .zero)
-    let editor = NSTextView(frame: .zero)
+final class ScreenshotPlainTextEditorContainer: NSView {
+    let editor = ScreenshotPlainTextEditorTextView(frame: .zero)
 
     override var isFlipped: Bool {
         true
@@ -317,12 +442,17 @@ private final class ScreenshotPlainTextEditorContainer: NSView {
         let fontSize = editor.font?.pointSize ?? NSFont.systemFontSize
         let horizontalInset = ScreenshotPlainTextEditorMetrics.horizontalInset
         let contentWidth = max(1, bounds.width - horizontalInset * 2)
-        let contentHeight = ScreenshotTextLayout.fittedMultilineSize(
-            text: editor.string.isEmpty ? " " : editor.string,
-            fontSize: fontSize,
-            maximumWidth: contentWidth,
-            minimumSize: CGSize(width: 1, height: 1)
-        ).height
+        let contentHeight = editor.string.isEmpty
+            ? ScreenshotPlainTextEditorMetrics.placeholderLayoutSize(
+                inputFontSize: fontSize,
+                maximumWidth: contentWidth
+            ).height
+            : ScreenshotTextLayout.fittedMultilineSize(
+                text: editor.string,
+                fontSize: fontSize,
+                maximumWidth: contentWidth,
+                minimumSize: CGSize(width: 1, height: 1)
+            ).height
         let resolvedHeight = min(bounds.height, contentHeight)
         let contentFrame = CGRect(
             x: bounds.minX + horizontalInset,
@@ -330,8 +460,6 @@ private final class ScreenshotPlainTextEditorContainer: NSView {
             width: contentWidth,
             height: resolvedHeight
         )
-        placeholder.frame = contentFrame
-        placeholder.isHidden = !editor.string.isEmpty
         editor.frame = contentFrame
     }
 
@@ -360,31 +488,23 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> ScreenshotPlainTextEditorContainer {
         let container = ScreenshotPlainTextEditorContainer(frame: .zero)
-        let placeholder = container.placeholder
         let editor = container.editor
         editor.delegate = context.coordinator
-        for textView in [placeholder, editor] {
-            textView.isRichText = false
-            textView.importsGraphics = false
-            textView.drawsBackground = false
-            textView.textContainerInset = .zero
-            textView.textContainer?.lineFragmentPadding = 0
-            textView.textContainer?.widthTracksTextView = true
-            textView.textContainer?.heightTracksTextView = false
-            textView.textContainer?.lineBreakMode = .byWordWrapping
-            textView.alignment = .left
-        }
-        placeholder.string = "输入文本"
-        placeholder.isEditable = false
-        placeholder.isSelectable = false
-        placeholder.allowsUndo = false
-        placeholder.setAccessibilityElement(false)
+        editor.isRichText = false
+        editor.importsGraphics = false
+        editor.drawsBackground = false
+        editor.textContainerInset = .zero
+        editor.textContainer?.lineFragmentPadding = 0
+        editor.textContainer?.widthTracksTextView = true
+        editor.textContainer?.heightTracksTextView = false
+        editor.textContainer?.lineBreakMode = .byWordWrapping
+        editor.alignment = .left
         editor.isEditable = true
         editor.isSelectable = true
+        editor.isVerticallyResizable = false
         editor.allowsUndo = true
-        editor.setAccessibilityPlaceholderValue("输入文本")
-        configure(editor, placeholder: placeholder)
-        container.addSubview(placeholder)
+        editor.setAccessibilityPlaceholderValue(ScreenshotPlainTextEditorMetrics.placeholderText)
+        configure(editor)
         container.addSubview(editor)
         container.refreshEditorLayout()
         context.coordinator.installOutsideClickMonitor(
@@ -401,7 +521,7 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         if editor.string != text, !editor.hasMarkedText() {
             editor.string = text
         }
-        configure(editor, placeholder: container.placeholder)
+        configure(editor)
         container.refreshEditorLayout()
         context.coordinator.observeTextStorage(for: editor)
     }
@@ -415,19 +535,17 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         coordinator.removeOutsideClickMonitor()
     }
 
-    private func configure(_ editor: NSTextView, placeholder: NSTextView) {
+    private func configure(_ editor: ScreenshotPlainTextEditorTextView) {
         let font = NSFont.systemFont(ofSize: max(1, fontSize))
         editor.font = font
-        placeholder.font = font
         editor.textColor = NSColor(
             calibratedRed: color.red,
             green: color.green,
             blue: color.blue,
             alpha: color.alpha
         )
-        placeholder.textColor = .secondaryLabelColor
         editor.alignment = .left
-        placeholder.alignment = .left
+        editor.configurePlaceholder(inputFontSize: font.pointSize, color: .secondaryLabelColor)
     }
 
     @MainActor
@@ -1964,7 +2082,7 @@ public struct ScreenshotEditorView: View {
                 case .text:
                     if let frame = fittedTextFrame(
                         for: draft,
-                        text: draft.text.isEmpty ? "输入文本" : draft.text
+                        text: draft.text
                     ) {
                         draft.frame = frame
                     }
@@ -1985,12 +2103,20 @@ public struct ScreenshotEditorView: View {
         for draft: ScreenshotTextDraft,
         text: String
     ) -> CGRect? {
-        let contentSize = ScreenshotTextLayout.fittedMultilineSize(
-            text: text,
-            fontSize: draft.fontSize,
-            maximumWidth: draft.maximumWidth,
-            minimumSize: CGSize(width: 1, height: 1)
-        )
+        let scale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
+        let contentSize = text.isEmpty
+            ? ScreenshotPlainTextEditorMetrics.placeholderContentSize(
+                inputFontSize: draft.fontSize,
+                maximumWidth: draft.maximumWidth,
+                minimumSize: CGSize(width: 48 * scale, height: 32 * scale),
+                displayScale: scale
+            )
+            : ScreenshotTextLayout.fittedMultilineSize(
+                text: text,
+                fontSize: draft.fontSize,
+                maximumWidth: draft.maximumWidth,
+                minimumSize: CGSize(width: 1, height: 1)
+            )
         return ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
             draft.frame,
             requiredSize: contentSize,
@@ -2112,11 +2238,11 @@ public struct ScreenshotEditorView: View {
         switch tool {
         case .text:
             let maximumWidth = textContentBounds.width
-            let placeholderSize = ScreenshotTextLayout.fittedMultilineSize(
-                text: "输入文本",
-                fontSize: fontSize,
+            let placeholderSize = ScreenshotPlainTextEditorMetrics.placeholderContentSize(
+                inputFontSize: fontSize,
                 maximumWidth: maximumWidth,
-                minimumSize: CGSize(width: 48 * scale, height: 32 * scale)
+                minimumSize: CGSize(width: 48 * scale, height: 32 * scale),
+                displayScale: scale
             )
             let initialFrame = CGRect(
                 x: point.x,
