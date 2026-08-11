@@ -295,7 +295,6 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
 enum ScreenshotPlainTextEditorMetrics {
     static let placeholderText = "输入文本"
     static let horizontalInset: CGFloat = 8
-    static let placeholderOpticalScale: CGFloat = 0.8
     static let placeholderWidthSafety: CGFloat = 8
     static let placeholderDrawingOptions: NSString.DrawingOptions = [
         .usesLineFragmentOrigin,
@@ -303,7 +302,7 @@ enum ScreenshotPlainTextEditorMetrics {
     ]
 
     static func placeholderFontSize(for inputFontSize: CGFloat) -> CGFloat {
-        max(1, inputFontSize) * placeholderOpticalScale
+        max(1, inputFontSize)
     }
 
     static func placeholderAttributedText(

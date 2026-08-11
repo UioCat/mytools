@@ -451,7 +451,8 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             ) as? NSFont
         )
         XCTAssertEqual(editorFont.pointSize, ScreenshotAnnotationFontSize.large.points)
-        XCTAssertEqual(placeholderFont.pointSize, editorFont.pointSize * 0.8, accuracy: 0.1)
+        XCTAssertEqual(placeholderFont.pointSize, editorFont.pointSize, accuracy: 0.1)
+        XCTAssertEqual(placeholderFont.fontName, editorFont.fontName)
         XCTAssertEqual(textView.placeholderAttributedText.string, "输入文本")
         XCTAssertTrue(textView.isPlaceholderVisible)
         XCTAssertEqual(textView.accessibilityPlaceholderValue(), "输入文本")
@@ -477,7 +478,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             )
             XCTAssertEqual(
                 placeholderFontSize,
-                fontSize.points * 0.8,
+                fontSize.points,
                 accuracy: 0.1
             )
             let placeholderWidth = NSAttributedString(
