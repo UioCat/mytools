@@ -395,7 +395,10 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             image: try makeSolidImage(width: 400, height: 300),
             imageFrame: imageFrame,
             toolbarFrame: toolbarFrame,
-            settings: .defaults,
+            settings: ScreenCaptureSettings(
+                annotationTool: .text,
+                annotationFontSize: .small
+            ),
             onSettingsChange: { _ in true },
             onCopy: { _ in },
             onCancel: {},
@@ -437,7 +440,24 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         runMainLoop()
 
         let textView = try XCTUnwrap(window.firstResponder as? NSTextView)
+        let placeholderView = try XCTUnwrap(
+            textView.superview?.subviews
+                .compactMap { $0 as? NSTextView }
+                .first { !$0.isEditable && $0.string == "输入文本" }
+        )
         let editorFont = try XCTUnwrap(textView.font)
+        let placeholderFont = try XCTUnwrap(placeholderView.font)
+        XCTAssertEqual(editorFont.pointSize, ScreenshotAnnotationFontSize.small.points)
+        XCTAssertEqual(placeholderFont.pointSize, editorFont.pointSize)
+        XCTAssertFalse(placeholderView.isHidden)
+        XCTAssertFalse(placeholderView.isAccessibilityElement())
+        XCTAssertEqual(textView.accessibilityPlaceholderValue(), "输入文本")
+        XCTAssertEqual(
+            placeholderView.frame.minX,
+            ScreenshotPlainTextEditorMetrics.horizontalInset,
+            accuracy: 0.1
+        )
+        XCTAssertEqual(textView.frame.minX, placeholderView.frame.minX, accuracy: 0.1)
         let singleLineHeight = ceil(
             editorFont.ascender - editorFont.descender + editorFont.leading
         )
@@ -473,6 +493,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
         runMainLoop()
+        XCTAssertTrue(placeholderView.isHidden)
         let updatedTextView = try XCTUnwrap(window.firstResponder as? NSTextView)
         XCTAssertEqual(updatedTextView.textContainerInset, .zero)
         let textContainer = try XCTUnwrap(updatedTextView.textContainer)
@@ -516,7 +537,13 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             grownTextView.bounds.width,
             accuracy: 0.5
         )
-        XCTAssertGreaterThan(grownTextView.bounds.width, 120)
+        let expectedGrownWidth = ScreenshotTextLayout.fittedMultilineSize(
+            text: "不该，不该，333",
+            fontSize: ScreenshotAnnotationFontSize.small.points,
+            maximumWidth: imageFrame.width - 16,
+            minimumSize: CGSize(width: 1, height: 1)
+        ).width
+        XCTAssertEqual(grownTextView.bounds.width, expectedGrownWidth, accuracy: 1)
         XCTAssertLessThan(
             grownGlyphBounds.height,
             30,

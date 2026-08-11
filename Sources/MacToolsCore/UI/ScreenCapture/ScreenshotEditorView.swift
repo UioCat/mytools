@@ -285,8 +285,13 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
     }
 }
 
+enum ScreenshotPlainTextEditorMetrics {
+    static let horizontalInset: CGFloat = 3
+}
+
 /// 在对象框内垂直居中原生文本视图，同时保持零文本内缩和左对齐。
 private final class ScreenshotPlainTextEditorContainer: NSView {
+    let placeholder = NSTextView(frame: .zero)
     let editor = NSTextView(frame: .zero)
 
     override var isFlipped: Bool {
@@ -310,19 +315,24 @@ private final class ScreenshotPlainTextEditorContainer: NSView {
     override func layout() {
         super.layout()
         let fontSize = editor.font?.pointSize ?? NSFont.systemFontSize
+        let horizontalInset = ScreenshotPlainTextEditorMetrics.horizontalInset
+        let contentWidth = max(1, bounds.width - horizontalInset * 2)
         let contentHeight = ScreenshotTextLayout.fittedMultilineSize(
             text: editor.string.isEmpty ? " " : editor.string,
             fontSize: fontSize,
-            maximumWidth: max(1, bounds.width),
+            maximumWidth: contentWidth,
             minimumSize: CGSize(width: 1, height: 1)
         ).height
         let resolvedHeight = min(bounds.height, contentHeight)
-        editor.frame = CGRect(
-            x: bounds.minX,
+        let contentFrame = CGRect(
+            x: bounds.minX + horizontalInset,
             y: bounds.midY - resolvedHeight / 2,
-            width: bounds.width,
+            width: contentWidth,
             height: resolvedHeight
         )
+        placeholder.frame = contentFrame
+        placeholder.isHidden = !editor.string.isEmpty
+        editor.frame = contentFrame
     }
 
     func refreshEditorLayout() {
@@ -350,20 +360,31 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> ScreenshotPlainTextEditorContainer {
         let container = ScreenshotPlainTextEditorContainer(frame: .zero)
+        let placeholder = container.placeholder
         let editor = container.editor
         editor.delegate = context.coordinator
+        for textView in [placeholder, editor] {
+            textView.isRichText = false
+            textView.importsGraphics = false
+            textView.drawsBackground = false
+            textView.textContainerInset = .zero
+            textView.textContainer?.lineFragmentPadding = 0
+            textView.textContainer?.widthTracksTextView = true
+            textView.textContainer?.heightTracksTextView = false
+            textView.textContainer?.lineBreakMode = .byWordWrapping
+            textView.alignment = .left
+        }
+        placeholder.string = "输入文本"
+        placeholder.isEditable = false
+        placeholder.isSelectable = false
+        placeholder.allowsUndo = false
+        placeholder.setAccessibilityElement(false)
         editor.isEditable = true
         editor.isSelectable = true
-        editor.isRichText = false
-        editor.importsGraphics = false
-        editor.drawsBackground = false
         editor.allowsUndo = true
-        editor.textContainerInset = .zero
-        editor.textContainer?.lineFragmentPadding = 0
-        editor.textContainer?.widthTracksTextView = true
-        editor.textContainer?.heightTracksTextView = false
-        editor.textContainer?.lineBreakMode = .byWordWrapping
-        configure(editor)
+        editor.setAccessibilityPlaceholderValue("输入文本")
+        configure(editor, placeholder: placeholder)
+        container.addSubview(placeholder)
         container.addSubview(editor)
         container.refreshEditorLayout()
         context.coordinator.installOutsideClickMonitor(
@@ -380,7 +401,7 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         if editor.string != text, !editor.hasMarkedText() {
             editor.string = text
         }
-        configure(editor)
+        configure(editor, placeholder: container.placeholder)
         container.refreshEditorLayout()
         context.coordinator.observeTextStorage(for: editor)
     }
@@ -394,15 +415,19 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         coordinator.removeOutsideClickMonitor()
     }
 
-    private func configure(_ editor: NSTextView) {
-        editor.font = .systemFont(ofSize: max(1, fontSize))
+    private func configure(_ editor: NSTextView, placeholder: NSTextView) {
+        let font = NSFont.systemFont(ofSize: max(1, fontSize))
+        editor.font = font
+        placeholder.font = font
         editor.textColor = NSColor(
             calibratedRed: color.red,
             green: color.green,
             blue: color.blue,
             alpha: color.alpha
         )
+        placeholder.textColor = .secondaryLabelColor
         editor.alignment = .left
+        placeholder.alignment = .left
     }
 
     @MainActor
@@ -1836,20 +1861,17 @@ public struct ScreenshotEditorView: View {
         switch draft.kind {
         case .text:
             let rect = canvasRect(from: draft.frame, imageRect: imageRect)
-            ZStack(alignment: .leading) {
-                if draft.text.isEmpty {
-                    Text("输入文本")
-                        .foregroundStyle(.secondary)
-                }
-                ScreenshotPlainTextEditor(
-                    text: editingTextBinding,
-                    fontSize: canvasLineWidth(draft.fontSize, in: imageRect),
-                    color: draft.color,
-                    onCommit: commitEditing
-                )
-                    .focused($isTextInputFocused)
-            }
-            .frame(width: rect.width, height: rect.height)
+            ScreenshotPlainTextEditor(
+                text: editingTextBinding,
+                fontSize: canvasLineWidth(draft.fontSize, in: imageRect),
+                color: draft.color,
+                onCommit: commitEditing
+            )
+            .focused($isTextInputFocused)
+            .frame(
+                width: rect.width + ScreenshotPlainTextEditorMetrics.horizontalInset * 2,
+                height: rect.height
+            )
             .background(Color.black.opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
             .overlay {
                 RoundedRectangle(cornerRadius: 5)
