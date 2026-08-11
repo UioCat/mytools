@@ -5,6 +5,84 @@ import XCTest
 @testable import MacToolsCore
 
 final class ScreenshotEditorInteractionTests: XCTestCase {
+    func testEditingDraftStyleUpdateRecoversOversizedTextAndPreservesFailureRollback() throws {
+        let imageBounds = CGRect(x: 0, y: 0, width: 400, height: 120)
+        let textContentBounds = imageBounds.insetBy(dx: 8, dy: 8)
+        let draft = ScreenshotTextDraft(
+            id: nil,
+            kind: .text,
+            text: "一\n二\n三\n四\n五",
+            frame: CGRect(x: 40, y: 64, width: 48, height: 48),
+            anchor: .zero,
+            direction: .left,
+            color: .blue,
+            fontSize: 24,
+            maximumWidth: textContentBounds.width
+        )
+
+        XCTAssertNil(
+            draft.updatingStyle(
+                fontSize: 24,
+                imageBounds: imageBounds,
+                textContentBounds: textContentBounds,
+                imageWidth: imageBounds.width,
+                scale: 1
+            )
+        )
+        let recovered = try XCTUnwrap(
+            draft.updatingStyle(
+                color: .red,
+                fontSize: 12,
+                imageBounds: imageBounds,
+                textContentBounds: textContentBounds,
+                imageWidth: imageBounds.width,
+                scale: 1
+            )
+        )
+        XCTAssertEqual(recovered.color, .red)
+        XCTAssertEqual(recovered.fontSize, 12)
+        XCTAssertTrue(textContentBounds.contains(recovered.frame))
+        XCTAssertLessThan(recovered.frame.height, textContentBounds.height)
+        XCTAssertEqual(draft.color, .blue)
+        XCTAssertEqual(draft.fontSize, 24)
+    }
+
+    func testEditingLabelStyleUpdateKeepsResizedGeometryInsideImage() throws {
+        let imageBounds = CGRect(x: 0, y: 0, width: 400, height: 160)
+        let draft = ScreenshotTextDraft(
+            id: nil,
+            kind: .label,
+            text: "边缘标签",
+            frame: .zero,
+            anchor: CGPoint(x: 390, y: 80),
+            direction: .left,
+            color: .blue,
+            fontSize: 12,
+            maximumWidth: 180
+        )
+        let updated = try XCTUnwrap(
+            draft.updatingStyle(
+                color: .orange,
+                fontSize: 24,
+                imageBounds: imageBounds,
+                textContentBounds: imageBounds.insetBy(dx: 8, dy: 8),
+                imageWidth: imageBounds.width,
+                scale: 1
+            )
+        )
+        let geometry = ScreenshotTextLayout.labelGeometry(
+            text: updated.text,
+            anchor: updated.anchor,
+            direction: updated.direction,
+            fontSize: updated.fontSize,
+            maximumWidth: updated.maximumWidth
+        )
+
+        XCTAssertEqual(updated.color, .orange)
+        XCTAssertEqual(updated.fontSize, 24)
+        XCTAssertTrue(imageBounds.contains(geometry.bounds))
+    }
+
     @MainActor
     func testFocusedTextEditorConsumesCommandsAndIMEscapeBeforeScreenshotActions() throws {
         let rootSize = CGSize(width: 800, height: 600)

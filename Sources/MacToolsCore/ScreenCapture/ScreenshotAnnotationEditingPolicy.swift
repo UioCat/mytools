@@ -39,14 +39,14 @@ public enum ScreenshotEditorCommandPolicy {
         for command: ScreenshotEditorCommand,
         isEditing: Bool,
         hasSelection: Bool,
-        hasAnnotations: Bool
+        canUndo: Bool
     ) -> ScreenshotEditorCommandAction {
         if isEditing {
             return .forwardToInput
         }
         switch command {
         case .undo:
-            return hasAnnotations ? .undoAnnotation : .ignore
+            return canUndo ? .undoAnnotation : .ignore
         case .delete:
             return hasSelection ? .deleteSelection : .ignore
         case .complete:

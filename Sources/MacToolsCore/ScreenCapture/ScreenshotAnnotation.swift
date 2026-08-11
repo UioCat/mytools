@@ -268,6 +268,10 @@ public struct ScreenshotAnnotationStore: Equatable, Sendable {
         items.map(\.annotation)
     }
 
+    public var canUndo: Bool {
+        !undoStack.isEmpty
+    }
+
     /// 创建 `ScreenshotAnnotationStore`，保存传入依赖并建立初始状态。
     public init() {}
 

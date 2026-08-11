@@ -13,12 +13,12 @@ private enum ScreenshotEditorParameterPopover {
     case style
 }
 
-private enum ScreenshotTextDraftKind {
+enum ScreenshotTextDraftKind {
     case text
     case label
 }
 
-private struct ScreenshotTextDraft {
+struct ScreenshotTextDraft {
     let id: UUID?
     let kind: ScreenshotTextDraftKind
     var text: String
@@ -28,6 +28,66 @@ private struct ScreenshotTextDraft {
     var color: ScreenshotAnnotationColor
     var fontSize: CGFloat
     var maximumWidth: CGFloat
+
+    func updatingStyle(
+        color: ScreenshotAnnotationColor? = nil,
+        fontSize: CGFloat? = nil,
+        imageBounds: CGRect,
+        textContentBounds: CGRect,
+        imageWidth: CGFloat,
+        scale: CGFloat
+    ) -> ScreenshotTextDraft? {
+        var updated = self
+        updated.color = color ?? updated.color
+        updated.fontSize = fontSize ?? updated.fontSize
+        guard fontSize != nil else {
+            return updated
+        }
+        switch updated.kind {
+        case .text:
+            let measured = ScreenshotTextLayout.fittedMultilineSize(
+                text: updated.text.isEmpty ? "输入文本" : updated.text,
+                fontSize: updated.fontSize,
+                maximumWidth: updated.maximumWidth,
+                minimumSize: CGSize(width: 1, height: 1)
+            )
+            guard let frame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
+                updated.frame,
+                requiredSize: measured,
+                imageBounds: textContentBounds
+            ) else {
+                return nil
+            }
+            updated.frame = frame
+        case .label:
+            updated.maximumWidth = ScreenshotLabelStyle.normalizedMaximumBubbleWidth(
+                existingMaximumWidth: updated.maximumWidth,
+                in: imageWidth,
+                fontSize: updated.fontSize,
+                edgeInset: 8 * scale
+            )
+            let candidate = ScreenshotAnnotation.label(
+                text: updated.text.isEmpty ? "输入标签" : updated.text,
+                anchor: updated.anchor,
+                direction: updated.direction,
+                color: updated.color,
+                fontSize: updated.fontSize,
+                maximumWidth: updated.maximumWidth
+            )
+            guard let constrained = ScreenshotAnnotationEditingPolicy.constrained(
+                candidate,
+                to: imageBounds,
+                canFlipLabel: true
+            ),
+            case let .label(_, anchor, direction, _, _, maximumWidth) = constrained else {
+                return nil
+            }
+            updated.anchor = anchor
+            updated.direction = direction
+            updated.maximumWidth = maximumWidth
+        }
+        return updated
+    }
 }
 
 private struct ScreenshotCompactToolbarFramePreferenceKey: PreferenceKey {
@@ -2195,7 +2255,7 @@ public struct ScreenshotEditorView: View {
             for: command,
             isEditing: editingDraft != nil,
             hasSelection: selectedAnnotationID != nil,
-            hasAnnotations: !annotationStore.annotations.isEmpty
+            canUndo: annotationStore.canUndo
         )
     }
 
@@ -2236,17 +2296,44 @@ public struct ScreenshotEditorView: View {
         } ?? .medium
     }
 
+    private func syncStyleControls(with draft: ScreenshotTextDraft) {
+        annotationColor = draft.color
+        let displayPoints = draft.fontSize
+            / imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
+        annotationFontSize = ScreenshotAnnotationFontSize.allCases.min {
+            abs($0.points - displayPoints) < abs($1.points - displayPoints)
+        } ?? .medium
+    }
+
     private func updateSelectedAnnotation(
         color: ScreenshotAnnotationColor? = nil,
         fontSize: ScreenshotAnnotationFontSize? = nil
     ) {
-        guard editingDraft == nil,
-              let selectedAnnotationID,
+        let scale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
+        let requestedFontSize = fontSize.map { $0.points * scale }
+        if let draft = editingDraft {
+            guard let updatedDraft = draft.updatingStyle(
+                color: color,
+                fontSize: requestedFontSize,
+                imageBounds: imageBounds,
+                textContentBounds: textContentBounds,
+                imageWidth: CGFloat(image.width),
+                scale: scale
+            ) else {
+                errorMessage = draft.kind == .text
+                    ? "文本内容超出截图高度，请减小字号"
+                    : "标签超出截图范围，请减小字号"
+                syncStyleControls(with: draft)
+                return
+            }
+            editingDraft = updatedDraft
+            errorMessage = nil
+            return
+        }
+        guard let selectedAnnotationID,
               let item = annotationStore.item(id: selectedAnnotationID) else {
             return
         }
-        let scale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
-        let requestedFontSize = fontSize.map { $0.points * scale }
         let candidate: ScreenshotAnnotation
         switch item.annotation {
         case let .text(text, frame, existingColor, existingFontSize):

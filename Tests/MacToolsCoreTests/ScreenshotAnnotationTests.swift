@@ -171,6 +171,32 @@ final class ScreenshotAnnotationTests: XCTestCase {
         XCTAssertEqual(store.annotations, [label])
     }
 
+    func testDeletingLastAnnotationKeepsEditorUndoAvailable() {
+        var store = ScreenshotAnnotationStore()
+        let label = ScreenshotAnnotation.label(
+            text: "重点区域",
+            anchor: CGPoint(x: 36, y: 24),
+            direction: .left,
+            color: .orange,
+            fontSize: 16,
+            maximumWidth: 180
+        )
+        let id = store.append(label)
+
+        XCTAssertEqual(store.remove(id: id), label)
+        XCTAssertTrue(store.annotations.isEmpty)
+        XCTAssertTrue(store.canUndo)
+        XCTAssertEqual(
+            ScreenshotEditorCommandPolicy.action(
+                for: .undo,
+                isEditing: false,
+                hasSelection: false,
+                canUndo: store.canUndo
+            ),
+            .undoAnnotation
+        )
+    }
+
     func testLabelLayoutFlipsBubbleAroundIndependentLocatorDot() {
         let left = ScreenshotTextLayout.labelGeometry(
             text: "标签",
@@ -815,7 +841,7 @@ final class ScreenshotAnnotationTests: XCTestCase {
                     for: command,
                     isEditing: true,
                     hasSelection: true,
-                    hasAnnotations: true
+                    canUndo: true
                 ),
                 .forwardToInput
             )
@@ -828,7 +854,7 @@ final class ScreenshotAnnotationTests: XCTestCase {
                 for: .undo,
                 isEditing: false,
                 hasSelection: false,
-                hasAnnotations: true
+                canUndo: true
             ),
             .undoAnnotation
         )
@@ -837,7 +863,7 @@ final class ScreenshotAnnotationTests: XCTestCase {
                 for: .delete,
                 isEditing: false,
                 hasSelection: true,
-                hasAnnotations: true
+                canUndo: true
             ),
             .deleteSelection
         )
@@ -846,7 +872,7 @@ final class ScreenshotAnnotationTests: XCTestCase {
                 for: .complete,
                 isEditing: false,
                 hasSelection: true,
-                hasAnnotations: true
+                canUndo: true
             ),
             .completeSession
         )
@@ -855,7 +881,7 @@ final class ScreenshotAnnotationTests: XCTestCase {
                 for: .undo,
                 isEditing: false,
                 hasSelection: false,
-                hasAnnotations: false
+                canUndo: false
             ),
             .ignore
         )

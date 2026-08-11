@@ -3,7 +3,7 @@
 ## [ERR-20260810-018] zsh path special parameter shadowed command search path
 
 **Logged**: 2026-08-10T20:08:00+08:00
-**Priority**: low
+**Priority**: medium
 **Status**: resolved
 **Area**: docs
 
@@ -85,17 +85,18 @@ NSCocoaErrorDomain Code=260: child.pid 不存在
 - 失败用例为 `ReleaseWorkflowSourceTests/testBoundedCommandTerminatesHangingProcessTree`。
 - 本次改动仅涉及截图文本与标签排版，截图专项 65 项同时全部通过。
 - 未修改或放宽发布脚本测试，保持原测试继续覆盖进程树清理。
+- 2026-08-11 合并前完整测试再次出现相同竞态；截图聚焦测试 44 项仍全部通过。
 
 ### Suggested Fix
 遇到同类失败时先单独原样重跑确认稳定性；若持续复现，再为 PID 文件创建增加确定性的就绪同步，而不是延长固定等待时间。
 
 ### Metadata
-- Reproducible: no
+- Reproducible: unknown
 - Related Files: Tests/MacToolsCoreTests/ReleaseWorkflowSourceTests.swift
 
 ### Resolution
 - **Resolved**: 2026-08-10T19:23:00+08:00
-- **Notes**: 单独重跑通过；继续执行第二次完整测试验证。
+- **Notes**: 单独重跑通过；2026-08-11 复发后精确用例再次通过，继续执行第二次完整测试验证。
 
 ---
 
