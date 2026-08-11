@@ -386,7 +386,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testCommittedPlainTextViewHugsShortContentInProductionEditor() throws {
+    func testPlainTextEditorCentersShortContentAndHugsCommittedTextInProductionEditor() throws {
         let rootSize = CGSize(width: 800, height: 600)
         let imageFrame = CGRect(x: 200, y: 100, width: 400, height: 300)
         let toolbarFrame = CGRect(x: 162, y: 450, width: 476, height: 68)
@@ -437,6 +437,37 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         runMainLoop()
 
         let textView = try XCTUnwrap(window.firstResponder as? NSTextView)
+        let editorFont = try XCTUnwrap(textView.font)
+        let singleLineHeight = ceil(
+            editorFont.ascender - editorFont.descender + editorFont.leading
+        )
+        let textViewFrame = textView.convert(textView.bounds, to: nil)
+        let expectedObjectMidY = rootSize.height - (imageFrame.midY + 16)
+        XCTAssertEqual(textView.alignment, .left)
+        XCTAssertLessThanOrEqual(textView.bounds.height, singleLineHeight)
+        XCTAssertEqual(
+            textViewFrame.midY,
+            expectedObjectMidY,
+            accuracy: 1,
+            "空文本编辑器应在 32 pt 初始对象框内垂直居中"
+        )
+        let interactionView = try XCTUnwrap(textView.superview)
+        let topPaddingPoint = CGPoint(
+            x: imageFrame.minX + 102,
+            y: rootSize.height - (imageFrame.midY + 2)
+        )
+        XCTAssertFalse(
+            textView.bounds.contains(textView.convert(topPaddingPoint, from: nil)),
+            "测试点应位于居中文本行之外"
+        )
+        XCTAssertTrue(
+            ScreenshotPlainTextEditorInteraction.containsWindowPoint(
+                topPaddingPoint,
+                in: interactionView
+            ),
+            "文本行上方的留白仍应属于编辑对象的交互范围"
+        )
+        XCTAssertTrue(window.firstResponder === textView)
         textView.insertText(
             "333",
             replacementRange: NSRange(location: NSNotFound, length: 0)

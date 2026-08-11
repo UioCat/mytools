@@ -285,6 +285,58 @@ private struct ScreenshotLabelTextField: NSViewRepresentable {
     }
 }
 
+/// 在对象框内垂直居中原生文本视图，同时保持零文本内缩和左对齐。
+private final class ScreenshotPlainTextEditorContainer: NSView {
+    let editor = NSTextView(frame: .zero)
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        guard let window else {
+            return false
+        }
+        if window.firstResponder === editor {
+            return true
+        }
+        return window.makeFirstResponder(editor)
+    }
+
+    override func layout() {
+        super.layout()
+        let fontSize = editor.font?.pointSize ?? NSFont.systemFontSize
+        let contentHeight = ScreenshotTextLayout.fittedMultilineSize(
+            text: editor.string.isEmpty ? " " : editor.string,
+            fontSize: fontSize,
+            maximumWidth: max(1, bounds.width),
+            minimumSize: CGSize(width: 1, height: 1)
+        ).height
+        let resolvedHeight = min(bounds.height, contentHeight)
+        editor.frame = CGRect(
+            x: bounds.minX,
+            y: bounds.midY - resolvedHeight / 2,
+            width: bounds.width,
+            height: resolvedHeight
+        )
+    }
+
+    func refreshEditorLayout() {
+        needsLayout = true
+    }
+}
+
+enum ScreenshotPlainTextEditorInteraction {
+    @MainActor
+    static func containsWindowPoint(_ point: CGPoint, in interactionView: NSView) -> Bool {
+        interactionView.bounds.contains(interactionView.convert(point, from: nil))
+    }
+}
+
 /// 零内缩多行编辑器，使普通文本编辑态与 CoreText 的内容边界一致。
 private struct ScreenshotPlainTextEditor: NSViewRepresentable {
     @Binding var text: String
@@ -296,8 +348,9 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    func makeNSView(context: Context) -> NSTextView {
-        let editor = NSTextView(frame: .zero)
+    func makeNSView(context: Context) -> ScreenshotPlainTextEditorContainer {
+        let container = ScreenshotPlainTextEditorContainer(frame: .zero)
+        let editor = container.editor
         editor.delegate = context.coordinator
         editor.isEditable = true
         editor.isSelectable = true
@@ -310,23 +363,33 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         editor.textContainer?.widthTracksTextView = true
         editor.textContainer?.heightTracksTextView = false
         editor.textContainer?.lineBreakMode = .byWordWrapping
-        editor.autoresizingMask = [.width, .height]
         configure(editor)
-        context.coordinator.installOutsideClickMonitor(for: editor)
+        container.addSubview(editor)
+        container.refreshEditorLayout()
+        context.coordinator.installOutsideClickMonitor(
+            for: editor,
+            interactionView: container
+        )
         context.coordinator.observeTextStorage(for: editor)
-        return editor
+        return container
     }
 
-    func updateNSView(_ editor: NSTextView, context: Context) {
+    func updateNSView(_ container: ScreenshotPlainTextEditorContainer, context: Context) {
+        let editor = container.editor
         context.coordinator.parent = self
         if editor.string != text, !editor.hasMarkedText() {
             editor.string = text
         }
         configure(editor)
+        container.refreshEditorLayout()
         context.coordinator.observeTextStorage(for: editor)
     }
 
-    static func dismantleNSView(_ editor: NSTextView, coordinator: Coordinator) {
+    static func dismantleNSView(
+        _ container: ScreenshotPlainTextEditorContainer,
+        coordinator: Coordinator
+    ) {
+        let editor = container.editor
         coordinator.stopObservingTextStorage(for: editor)
         coordinator.removeOutsideClickMonitor()
     }
@@ -359,6 +422,7 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
                 return
             }
             parent.text = editor.string
+            (editor.superview as? ScreenshotPlainTextEditorContainer)?.refreshEditorLayout()
         }
 
         @objc private func handleTextStorageDidProcessEditing(_ notification: Notification) {
@@ -380,6 +444,7 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
                 if self.parent.text != editor.string {
                     self.parent.text = editor.string
                 }
+                (editor.superview as? ScreenshotPlainTextEditorContainer)?.refreshEditorLayout()
             }
         }
 
@@ -417,15 +482,22 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
             }
         }
 
-        func installOutsideClickMonitor(for editor: NSTextView) {
+        func installOutsideClickMonitor(
+            for editor: NSTextView,
+            interactionView: NSView
+        ) {
             removeOutsideClickMonitor()
             self.editor = editor
             outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) {
-                [weak self, weak editor] event in
+                [weak self, weak editor, weak interactionView] event in
                 guard let self,
                       let editor,
+                      let interactionView,
                       event.window === editor.window,
-                      !editor.bounds.contains(editor.convert(event.locationInWindow, from: nil)) else {
+                      !ScreenshotPlainTextEditorInteraction.containsWindowPoint(
+                          event.locationInWindow,
+                          in: interactionView
+                      ) else {
                     return event
                 }
                 DispatchQueue.main.async { [weak self] in
@@ -1764,7 +1836,7 @@ public struct ScreenshotEditorView: View {
         switch draft.kind {
         case .text:
             let rect = canvasRect(from: draft.frame, imageRect: imageRect)
-            ZStack(alignment: .topLeading) {
+            ZStack(alignment: .leading) {
                 if draft.text.isEmpty {
                     Text("输入文本")
                         .foregroundStyle(.secondary)
