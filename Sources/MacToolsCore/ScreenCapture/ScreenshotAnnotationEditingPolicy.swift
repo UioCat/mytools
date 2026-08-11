@@ -166,6 +166,31 @@ public enum ScreenshotAnnotationEditingPolicy {
         return constrainedRect(resized, to: bounds)
     }
 
+    public static func resizedTextFramePreservingContentOrigin(
+        _ frame: CGRect,
+        requiredSize: CGSize,
+        previousContentHeight: CGFloat,
+        nextContentHeight: CGFloat,
+        imageBounds: CGRect
+    ) -> CGRect? {
+        let bounds = imageBounds.standardized
+        let frame = frame.standardized
+        guard requiredSize.width > 0,
+              requiredSize.height > 0,
+              requiredSize.width <= bounds.width,
+              requiredSize.height <= bounds.height else {
+            return nil
+        }
+        let contentCenterOffset = (previousContentHeight - nextContentHeight) / 2
+        let resized = CGRect(
+            x: frame.minX,
+            y: frame.midY + contentCenterOffset - requiredSize.height / 2,
+            width: requiredSize.width,
+            height: requiredSize.height
+        )
+        return constrainedRect(resized, to: bounds)
+    }
+
     public static func hitTarget(
         at point: CGPoint,
         in annotation: ScreenshotAnnotation,

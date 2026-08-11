@@ -503,6 +503,23 @@ final class ScreenshotAnnotationTests: XCTestCase {
         XCTAssertEqual(resized.origin.y, 72)
     }
 
+    func testTextResizePreservesContentOriginWhenPlaceholderVisibilityChanges() throws {
+        let original = CGRect(x: 20, y: 40, width: 160, height: 32)
+        let resized = try XCTUnwrap(
+            ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingContentOrigin(
+                original,
+                requiredSize: CGSize(width: 96, height: 24),
+                previousContentHeight: 29,
+                nextContentHeight: 24,
+                imageBounds: CGRect(x: 0, y: 0, width: 240, height: 160)
+            )
+        )
+
+        XCTAssertEqual(resized.minX, original.minX)
+        XCTAssertEqual(resized.midY, original.midY + 2.5)
+        XCTAssertEqual(resized.size, CGSize(width: 96, height: 24))
+    }
+
     func testMovedLabelChoosesFittingDirectionAndStaysInsideImage() throws {
         let imageBounds = CGRect(x: 0, y: 0, width: 220, height: 100)
         let label = ScreenshotAnnotation.label(
