@@ -478,7 +478,7 @@ struct RuntimeTranslationModuleView: View {
                 speechButton(for: originalSpeechRequest, textRole: "原文")
             }
 
-            ZStack(alignment: .topLeading) {
+            ZStack(alignment: .leading) {
                 if TranslationInputPlaceholderPolicy.isPlaceholderVisible(
                     inputText: inputText,
                     isComposingText: isInputComposingText
@@ -487,7 +487,6 @@ struct RuntimeTranslationModuleView: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(MacToolsGlassTheme.textTertiary)
                         .padding(.leading, inputEditorLayout.placeholderLeadingPadding)
-                        .padding(.top, inputEditorLayout.placeholderTopPadding)
                         .allowsHitTesting(false)
                 }
 
@@ -711,11 +710,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
-        textView.textContainerInset = NSSize(
-            width: layout.textContainerWidthInset,
-            height: layout.textContainerHeightInset
-        )
-        textView.textContainer?.lineFragmentPadding = layout.lineFragmentPadding
+        textView.apply(layout: layout)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.minSize = NSSize(width: 0, height: 0)
@@ -745,13 +740,10 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onMarkedTextStateChange = context.coordinator.setComposingText(_:)
         textView.textColor = .labelColor
-        textView.textContainerInset = NSSize(
-            width: layout.textContainerWidthInset,
-            height: layout.textContainerHeightInset
-        )
-        textView.textContainer?.lineFragmentPadding = layout.lineFragmentPadding
+        textView.apply(layout: layout)
         if !textView.hasMarkedText(), textView.string != text {
             textView.string = text
+            textView.updateVerticalContentInset()
         }
     }
 
@@ -791,6 +783,60 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
 private final class TranslationInputTextView: NSTextView {
     var onSubmit: () -> Void = {}
     var onMarkedTextStateChange: (Bool) -> Void = { _ in }
+    private var editorLayout = TranslationInputEditorLayout.standard
+
+    /// 同步可测试的编辑器布局策略，并立即刷新当前文本的垂直位置。
+    func apply(layout: TranslationInputEditorLayout) {
+        editorLayout = layout
+        textContainer?.lineFragmentPadding = layout.lineFragmentPadding
+        updateVerticalContentInset()
+    }
+
+    /// 在编辑区尺寸变化时重新计算短内容的居中位置。
+    override func layout() {
+        super.layout()
+        updateVerticalContentInset()
+    }
+
+    /// 根据真实排版高度更新 NSTextView 的上下内边距。
+    func updateVerticalContentInset() {
+        guard let textContainer,
+              let layoutManager else {
+            return
+        }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let usedHeight = layoutManager.usedRect(for: textContainer).height
+        let lineHeight = font.map(layoutManager.defaultLineHeight(for:)) ?? 0
+        let contentHeight = max(ceil(usedHeight), ceil(lineHeight))
+        let viewportHeight = enclosingScrollView?.contentView.bounds.height ?? bounds.height
+        let verticalInset = editorLayout.verticalContentInset(
+            viewportHeight: viewportHeight,
+            contentHeight: contentHeight
+        )
+        let documentHeight = editorLayout.documentHeight(
+            viewportHeight: viewportHeight,
+            contentHeight: contentHeight
+        )
+        let needsInsetUpdate = abs(textContainerInset.height - verticalInset) > 0.5
+            || textContainerInset.width != editorLayout.textContainerWidthInset
+        let needsDocumentResize = abs(frame.height - documentHeight) > 0.5
+
+        if needsInsetUpdate {
+            textContainerInset = NSSize(
+                width: editorLayout.textContainerWidthInset,
+                height: verticalInset
+            )
+        }
+
+        if needsDocumentResize {
+            setFrameSize(NSSize(width: frame.width, height: documentHeight))
+        }
+
+        if needsInsetUpdate || needsDocumentResize {
+            needsDisplay = true
+        }
+    }
 
     /// 应用 `setMarkedText` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -813,6 +859,7 @@ private final class TranslationInputTextView: NSTextView {
     /// 响应 `didChangeText` 对应的系统或界面回调，并同步当前交互状态。
     override func didChangeText() {
         super.didChangeText()
+        updateVerticalContentInset()
         notifyMarkedTextState()
     }
 

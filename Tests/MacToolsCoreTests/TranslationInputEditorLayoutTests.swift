@@ -11,6 +11,41 @@ final class TranslationInputEditorLayoutTests: XCTestCase {
         XCTAssertEqual(layout.caretLeadingOffset, layout.placeholderLeadingOffset)
     }
 
+    func testShortInputIsVerticallyCenteredInTheEditorViewport() {
+        let layout = TranslationInputEditorLayout.standard
+
+        XCTAssertEqual(
+            layout.verticalContentInset(viewportHeight: 120, contentHeight: 20),
+            50
+        )
+    }
+
+    func testTallInputKeepsTheMinimumVerticalInset() {
+        let layout = TranslationInputEditorLayout.standard
+
+        XCTAssertEqual(
+            layout.verticalContentInset(viewportHeight: 120, contentHeight: 112),
+            layout.textContainerHeightInset
+        )
+        XCTAssertEqual(
+            layout.verticalContentInset(viewportHeight: 0, contentHeight: 20),
+            layout.textContainerHeightInset
+        )
+    }
+
+    func testPastedTallInputUsesOnlyItsRequiredScrollableDocumentHeight() {
+        let layout = TranslationInputEditorLayout.standard
+
+        XCTAssertEqual(
+            layout.documentHeight(viewportHeight: 120, contentHeight: 20),
+            120
+        )
+        XCTAssertEqual(
+            layout.documentHeight(viewportHeight: 120, contentHeight: 204),
+            220
+        )
+    }
+
     func testTranslationTextAreasCanCompressIntoTheDefaultWorkspaceHeight() {
         let layout = TranslationWorkspaceLayout.standard
 

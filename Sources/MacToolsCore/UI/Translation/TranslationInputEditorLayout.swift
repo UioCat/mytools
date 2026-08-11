@@ -41,6 +41,46 @@ public struct TranslationInputEditorLayout: Equatable, Sendable {
     public var placeholderLeadingOffset: CGFloat {
         placeholderLeadingPadding
     }
+
+    /// 短内容在可见编辑区内垂直居中；内容接近或超过可见高度时保留最小边距。
+    public func verticalContentInset(
+        viewportHeight: CGFloat,
+        contentHeight: CGFloat
+    ) -> CGFloat {
+        guard viewportHeight.isFinite,
+              contentHeight.isFinite,
+              viewportHeight > 0,
+              contentHeight >= 0 else {
+            return textContainerHeightInset
+        }
+
+        return max(
+            textContainerHeightInset,
+            (viewportHeight - contentHeight) / 2
+        )
+    }
+
+    /// 返回与当前 inset 匹配的文档高度，避免短内容切换为长内容后保留旧滚动空白。
+    public func documentHeight(
+        viewportHeight: CGFloat,
+        contentHeight: CGFloat
+    ) -> CGFloat {
+        guard viewportHeight.isFinite,
+              contentHeight.isFinite,
+              viewportHeight >= 0,
+              contentHeight >= 0 else {
+            return max(0, viewportHeight.isFinite ? viewportHeight : 0)
+        }
+
+        let verticalInset = verticalContentInset(
+            viewportHeight: viewportHeight,
+            contentHeight: contentHeight
+        )
+        return max(
+            viewportHeight,
+            contentHeight + 2 * verticalInset
+        )
+    }
 }
 
 /// 封装 `TranslationWorkspaceLayout` 在 SwiftUI 展示层中的值语义和相关操作。
