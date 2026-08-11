@@ -1,4 +1,6 @@
+import AppKit
 import CoreGraphics
+import SwiftUI
 import XCTest
 @testable import MacToolsCore
 
@@ -42,6 +44,62 @@ final class ScreenCaptureOverlayLayoutTests: XCTestCase {
         XCTAssertEqual(frame, CGRect(x: 12, y: 20, width: 476, height: 68))
     }
 
+    func testCompactEditorToolbarControlsFitWithinNarrowDisplayWidth() {
+        XCTAssertEqual(ScreenCaptureEditorToolbarMetrics.compactBreakpoint, 720)
+        XCTAssertEqual(ScreenCaptureEditorToolbarMetrics.ultraCompactBreakpoint, 476)
+        XCTAssertEqual(
+            ScreenCaptureEditorToolbarMetrics.contentWidth(controlCount: 11),
+            468
+        )
+        XCTAssertLessThanOrEqual(
+            ScreenCaptureEditorToolbarMetrics.contentWidth(controlCount: 11),
+            ScreenCaptureEditorToolbarMetrics.ultraCompactBreakpoint
+        )
+    }
+
+    @MainActor
+    func testCompactToolbarRendersActualEditorControlsWithoutClipping() throws {
+        let measurement = ScreenshotCompactToolbarMeasurementSink()
+        let editor = ScreenshotEditorView(
+            image: try makeSolidImage(width: 400, height: 300),
+            imageFrame: CGRect(x: 200, y: 120, width: 400, height: 300),
+            toolbarFrame: CGRect(x: 162, y: 450, width: 476, height: 68),
+            settings: .defaults,
+            onSettingsChange: { _ in true },
+            onCopy: { _ in },
+            onCancel: {},
+            registerEscapeHandler: { _ in },
+            clearEscapeHandler: {}
+        )
+        .environment(\.screenshotCompactToolbarMeasurement, measurement)
+        .frame(width: 800, height: 600)
+        let hostingView = NSHostingView(rootView: editor)
+        hostingView.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
+
+        hostingView.layoutSubtreeIfNeeded()
+        hostingView.displayIfNeeded()
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(
+            Set(measurement.frames.keys),
+            Set(
+                ScreenshotAnnotationTool.allCases.map { "tool-\($0.rawValue)" }
+                    + ["undo", "style", "cancel", "done"]
+            )
+        )
+        let frames = measurement.frames.values.sorted { $0.minX < $1.minX }
+        XCTAssertEqual(frames.count, 11)
+        for frame in frames {
+            XCTAssertEqual(frame.width, 40, accuracy: 0.01)
+            XCTAssertEqual(frame.height, 40, accuracy: 0.01)
+            XCTAssertGreaterThanOrEqual(frame.minX, 0)
+            XCTAssertLessThanOrEqual(frame.maxX, 476)
+        }
+        for (leading, trailing) in zip(frames, frames.dropFirst()) {
+            XCTAssertEqual(trailing.minX - leading.maxX, 2, accuracy: 0.01)
+        }
+    }
+
     func testRecordingControlIsPinnedToTopCenterOfSelectedDisplay() {
         let frame = ScreenCaptureOverlayLayout.recordingControlFrame(
             visibleFrame: CGRect(x: -1_440, y: 0, width: 1_440, height: 900)
@@ -56,5 +114,22 @@ final class ScreenCaptureOverlayLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(frame, CGRect(x: 672, y: 812, width: 176, height: 48))
+    }
+
+    private func makeSolidImage(width: Int, height: Int) throws -> CGImage {
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        )
+        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return try XCTUnwrap(context.makeImage())
     }
 }

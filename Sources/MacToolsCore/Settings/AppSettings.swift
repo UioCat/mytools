@@ -389,22 +389,26 @@ public struct ScreenCaptureSettings: Codable, Equatable, Sendable {
     public var annotationTool: ScreenshotAnnotationTool
     public var annotationColor: ScreenshotAnnotationColor
     public var annotationLineWidth: ScreenshotAnnotationLineWidth
+    public var annotationFontSize: ScreenshotAnnotationFontSize
 
     public static let defaults = ScreenCaptureSettings(
         annotationTool: .line,
         annotationColor: .blue,
-        annotationLineWidth: .medium
+        annotationLineWidth: .medium,
+        annotationFontSize: .medium
     )
 
     /// 创建 `ScreenCaptureSettings`，保存传入依赖并建立初始状态。
     public init(
         annotationTool: ScreenshotAnnotationTool = .line,
         annotationColor: ScreenshotAnnotationColor = .blue,
-        annotationLineWidth: ScreenshotAnnotationLineWidth = .medium
+        annotationLineWidth: ScreenshotAnnotationLineWidth = .medium,
+        annotationFontSize: ScreenshotAnnotationFontSize = .medium
     ) {
         self.annotationTool = annotationTool
         self.annotationColor = annotationColor.nearestPreset
         self.annotationLineWidth = annotationLineWidth
+        self.annotationFontSize = annotationFontSize
     }
 
     /// 描述 `CodingKeys` 在设置与凭据领域中可取的状态、选项或错误。
@@ -412,6 +416,7 @@ public struct ScreenCaptureSettings: Codable, Equatable, Sendable {
         case annotationTool
         case annotationColor
         case annotationLineWidth
+        case annotationFontSize
     }
 
     /// 创建 `ScreenCaptureSettings`，保存传入依赖并建立初始状态。
@@ -430,6 +435,10 @@ public struct ScreenCaptureSettings: Codable, Equatable, Sendable {
             ScreenshotAnnotationLineWidth.self,
             forKey: .annotationLineWidth
         )) ?? Self.defaults.annotationLineWidth
+        self.annotationFontSize = (try? container.decodeIfPresent(
+            ScreenshotAnnotationFontSize.self,
+            forKey: .annotationFontSize
+        )) ?? Self.defaults.annotationFontSize
     }
 }
 

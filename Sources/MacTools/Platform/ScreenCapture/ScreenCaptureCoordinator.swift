@@ -179,7 +179,13 @@ final class ScreenCaptureCoordinator {
 
                 let handoffStartedAt = DispatchTime.now().uptimeNanoseconds
                 guard let editorView = editor.preparedContentView(),
-                      overlay.presentEditor(editorView, for: selection) else {
+                      overlay.presentEditor(
+                          editorView,
+                          for: selection,
+                          escapeHandler: { [weak editor] hasMarkedText in
+                              editor?.handleEscape(hasMarkedText: hasMarkedText) ?? .cancelSession
+                          }
+                      ) else {
                     throw ScreenCaptureError.editorPresentationFailed
                 }
                 logger.info(

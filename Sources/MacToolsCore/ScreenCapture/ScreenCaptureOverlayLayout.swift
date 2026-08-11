@@ -3,6 +3,21 @@
 
 import CoreGraphics
 
+public enum ScreenCaptureEditorToolbarMetrics {
+    public static let compactBreakpoint: CGFloat = 720
+    public static let ultraCompactBreakpoint: CGFloat = 476
+    public static let controlSize: CGFloat = 40
+    public static let compactSpacing: CGFloat = 2
+    public static let compactPadding: CGFloat = 4
+
+    public static func contentWidth(controlCount: Int) -> CGFloat {
+        let count = max(0, controlCount)
+        return CGFloat(count) * controlSize
+            + CGFloat(max(0, count - 1)) * compactSpacing
+            + compactPadding * 2
+    }
+}
+
 /// 描述 `ScreenCaptureOverlayLayout` 在截图录屏核心领域中可取的状态、选项或错误。
 public enum ScreenCaptureOverlayLayout {
     public static let modeToolbarSize = CGSize(width: 196, height: 44)

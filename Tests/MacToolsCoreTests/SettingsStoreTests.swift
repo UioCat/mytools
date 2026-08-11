@@ -24,6 +24,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.screenCapture.annotationColor, .blue)
         XCTAssertEqual(settings.screenCapture.annotationLineWidth, .medium)
         XCTAssertEqual(settings.screenCapture.annotationTool, .line)
+        XCTAssertEqual(settings.screenCapture.annotationFontSize, .medium)
         XCTAssertEqual(settings.appearanceMode, .followSystem)
         XCTAssertFalse(settings.sync.isEnabled)
         XCTAssertEqual(settings.sync.clipboardScope, .favoritesAndPinned)
@@ -195,7 +196,8 @@ final class SettingsStoreTests: XCTestCase {
         settings.screenCapture = ScreenCaptureSettings(
             annotationTool: .freehand,
             annotationColor: .purple,
-            annotationLineWidth: .thick
+            annotationLineWidth: .thick,
+            annotationFontSize: .large
         )
         settings.windowLayout.modeShortcuts = [
             WindowLayoutModeShortcuts(
@@ -421,7 +423,8 @@ final class SettingsStoreTests: XCTestCase {
         {
           "annotationColor": { "red": 0.8, "green": 0.1, "blue": 0.2, "alpha": 1 },
           "annotationLineWidth": "extra-thick",
-          "annotationTool": "ellipse"
+          "annotationTool": "ellipse",
+          "annotationFontSize": "huge"
         }
         """
 
@@ -437,9 +440,11 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(colorOnly.annotationColor, .green)
         XCTAssertEqual(colorOnly.annotationLineWidth, .medium)
         XCTAssertEqual(colorOnly.annotationTool, .line)
+        XCTAssertEqual(colorOnly.annotationFontSize, .medium)
         XCTAssertEqual(unknownWidth.annotationColor, .red)
         XCTAssertEqual(unknownWidth.annotationLineWidth, .medium)
         XCTAssertEqual(unknownWidth.annotationTool, .line)
+        XCTAssertEqual(unknownWidth.annotationFontSize, .medium)
     }
 
     func testLegacyWindowLayoutCustomButtonsAreNotVisibleButtons() {
