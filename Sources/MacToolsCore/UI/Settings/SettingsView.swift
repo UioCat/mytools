@@ -15,10 +15,13 @@ public struct SettingsView: View {
     public let translationCredentialUnavailable: Bool
     public let permissionSummary: PermissionSummary
     public let softwareUpdateState: SoftwareUpdateSettingsState
+    public let launchAtLoginState: LaunchAtLoginSettingsState
     public let openSystemSettings: () -> Void
     public let checkForUpdates: () -> Void
     public let setAutomaticallyChecksForUpdates: (Bool) -> Void
     public let setAutomaticallyDownloadsUpdates: (Bool) -> Void
+    public let setLaunchAtLoginEnabled: (Bool) -> Void
+    public let openLoginItemsSettings: () -> Void
     public let openPermissionSettings: (AppPermission) -> Void
     public let resetPermissionDecisions: () async throws -> Void
     public let openClipboardStorageFolder: () -> Void
@@ -65,10 +68,13 @@ public struct SettingsView: View {
         translationCredentialUnavailable: Bool = false,
         permissionSummary: PermissionSummary,
         softwareUpdateState: SoftwareUpdateSettingsState = .unavailable,
+        launchAtLoginState: LaunchAtLoginSettingsState = .disabled,
         openSystemSettings: @escaping () -> Void,
         checkForUpdates: @escaping () -> Void = {},
         setAutomaticallyChecksForUpdates: @escaping (Bool) -> Void = { _ in },
         setAutomaticallyDownloadsUpdates: @escaping (Bool) -> Void = { _ in },
+        setLaunchAtLoginEnabled: @escaping (Bool) -> Void = { _ in },
+        openLoginItemsSettings: @escaping () -> Void = {},
         openPermissionSettings: @escaping (AppPermission) -> Void = { _ in },
         resetPermissionDecisions: @escaping () async throws -> Void = {},
         openClipboardStorageFolder: @escaping () -> Void = {},
@@ -95,10 +101,13 @@ public struct SettingsView: View {
         self.translationCredentialUnavailable = translationCredentialUnavailable
         self.permissionSummary = permissionSummary
         self.softwareUpdateState = softwareUpdateState
+        self.launchAtLoginState = launchAtLoginState
         self.openSystemSettings = openSystemSettings
         self.checkForUpdates = checkForUpdates
         self.setAutomaticallyChecksForUpdates = setAutomaticallyChecksForUpdates
         self.setAutomaticallyDownloadsUpdates = setAutomaticallyDownloadsUpdates
+        self.setLaunchAtLoginEnabled = setLaunchAtLoginEnabled
+        self.openLoginItemsSettings = openLoginItemsSettings
         self.openPermissionSettings = openPermissionSettings
         self.resetPermissionDecisions = resetPermissionDecisions
         self.openClipboardStorageFolder = openClipboardStorageFolder
@@ -364,6 +373,14 @@ public struct SettingsView: View {
                 selectedMode: $appearanceMode,
                 saveMessage: $appearanceSaveMessage,
                 saveAppearanceMode: saveAppearanceMode
+            )
+
+            SettingsSectionDivider()
+
+            LaunchAtLoginSettingsEditor(
+                state: launchAtLoginState,
+                setEnabled: setLaunchAtLoginEnabled,
+                openSystemSettings: openLoginItemsSettings
             )
 
             SettingsSectionDivider()

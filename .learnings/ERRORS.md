@@ -33,6 +33,169 @@ shell 脚本使用任务语义明确且不与 shell 特殊参数冲突的变量�
 
 ---
 
+## [ERR-20260816-005] 显式暂存已跟踪的忽略目录返回失败
+
+**Logged**: 2026-08-16T01:18:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+单次 `git add` 同时列出普通任务文件和 `.learnings/ERRORS.md` 时，文件已全部暂存，但 Git 仍因 `.learnings` 目录命中忽略规则返回非零状态。
+
+### Error
+```
+The following paths are ignored by one of your .gitignore files:
+.learnings
+```
+
+### Context
+- `.learnings/ERRORS.md` 已受版本控制，但其父目录同时在忽略规则中。
+- 命令返回非零状态前已暂存所有显式列出的任务文件，不能根据退出码假定暂存区未变化。
+
+### Suggested Fix
+先使用 `git status --short` 和 `git diff --cached --name-status` 核对实际暂存结果；对已跟踪的忽略文件使用 `git add -u -- <path>` 更新，无需使用 `-f`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `.gitignore`, `.learnings/ERRORS.md`
+
+### Resolution
+- **Resolved**: 2026-08-16T01:18:00+08:00
+- **Notes**: 确认任务文件均已暂存，随后用 `git add -u` 更新该已跟踪记录。
+
+---
+
+## [ERR-20260816-001] 稳定 UI 验证缺少受信任发布签名身份
+
+**Logged**: 2026-08-16T00:56:10+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+登录项功能的稳定打包 UI 验证被固定发布签名身份预检拦截，未生成或替换正式应用。
+
+### Error
+```
+error: stable signing identity is unavailable or not trusted for code signing.
+error: expected MacTools Release Signing (25A3263958804C6D9429EB51B97BA2B16CA1FB67).
+```
+
+### Context
+- 命令：`MACTOOLS_UI_VERIFICATION_OPEN_SETTINGS=1 scripts/rebuild_and_run_app.sh`
+- 脚本默认进入 stable 模式，并在停止或替换现有应用前完成签名身份预检。
+- 本次环境仍不具备固定发布身份，功能验证需要使用隔离的 development 打包身份。
+
+### Suggested Fix
+需要验证正式身份时，在已安装并信任固定发布证书的环境运行；普通 UI 与系统 API 验证使用 `MACOS_SIGNING_MODE=development`，不得放宽稳定签名门禁。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `scripts/rebuild_and_run_app.sh`, `scripts/package_app.sh`
+- See Also: ERR-20260810-004
+
+### Resolution
+- **Resolved**: 2026-08-16T00:56:10+08:00
+- **Notes**: 稳定模式未改变系统或应用状态；后续改用 development 打包身份继续验证。
+
+---
+
+## [ERR-20260816-002] 临时打包目录无法下载 GRDB 子模块
+
+**Logged**: 2026-08-16T00:57:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: infra
+
+### Summary
+development 打包在全新 SwiftPM scratch 目录解析 GRDB 时缺少 `SQLiteLib` 子模块，当前终端 DNS 无法访问 GitHub。
+
+### Error
+```
+fatal: unable to access 'https://github.com/swiftlyfalling/SQLiteLib.git/': Could not resolve host: github.com
+Failed to clone 'SQLiteCustom/src' a second time, aborting
+```
+
+### Context
+- 命令：`MACOS_SIGNING_MODE=development MACTOOLS_UI_VERIFICATION_OPEN_SETTINGS=1 scripts/rebuild_and_run_app.sh`
+- 普通 `.build` 调试缓存可编译当前目标，但 `scripts/package_app.sh` 每次使用新的 scratch 目录并重新创建 GRDB checkout。
+- 本机 SwiftPM 仓库缓存不包含 `SQLiteCustom/src`，当前网络无法补齐该子模块。
+
+### Suggested Fix
+网络恢复后重跑 development 打包；若该问题频繁发生，评估在不改变依赖来源和完整性校验的前提下，为发布脚本增加可验证的离线依赖缓存准备流程。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `scripts/package_app.sh`, `Package.resolved`
+
+---
+
+## [ERR-20260816-003] 手工 development 验证产物遗漏 Sparkle 运行时搜索路径
+
+**Logged**: 2026-08-16T00:59:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+复用旧 development 应用壳并替换 Release 可执行文件后，首次启动因没有重放打包脚本的 `install_name_tool` 步骤而退出。
+
+### Error
+```
+dyld: Library not loaded: @rpath/Sparkle.framework/Versions/B/Sparkle
+Reason: tried: .../Contents/MacOS/Sparkle.framework/... (no such file)
+```
+
+### Context
+- 全新 scratch 打包受网络阻断后，使用普通 `.build` Release 产物继续本地 UI 验证。
+- `swift build` 产物本身没有 `@executable_path/../Frameworks`，该路径通常由 `scripts/package_app.sh` 添加。
+
+### Suggested Fix
+手工组装仅作为验证降级路径时，逐项重放 `package_app.sh` 的 rpath、嵌入框架、签名和校验步骤；正式产物仍必须由打包脚本生成。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `scripts/package_app.sh`
+
+### Resolution
+- **Resolved**: 2026-08-16T00:59:00+08:00
+- **Notes**: 添加 `@executable_path/../Frameworks` 后重新签名，`codesign --verify --deep --strict` 通过且 development 应用成功启动。
+
+---
+
+## [ERR-20260816-004] 行为重构后源码字符串断言过时
+
+**Logged**: 2026-08-16T01:12:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+登录项失败归约抽取为纯函数后，旧源码测试仍匹配具体赋值文本，导致真实行为测试通过但组合聚焦测试失败。
+
+### Error
+```
+LaunchAtLoginSettingsTests.testPlatformServiceUsesMainAppAndMapsEveryKnownStatus: XCTAssertTrue failed
+```
+
+### Context
+- 旧断言要求源码包含 `state = .requiresApproval`。
+- 重构后的等价实现返回 `.requiresApproval`，并已有可执行测试覆盖开启失败进入系统批准状态。
+
+### Suggested Fix
+源码测试只约束模块边界和系统 API 接线；状态转换与动作次数使用注入后端的行为测试验证，不匹配具体实现语句。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `Tests/MacToolsCoreTests/LaunchAtLoginSettingsTests.swift`, `Tests/MacToolsTests/SystemLaunchAtLoginServiceTests.swift`
+
+### Resolution
+- **Resolved**: 2026-08-16T01:12:00+08:00
+- **Notes**: 删除已由确定性行为测试替代的具体赋值字符串断言。
+
+---
+
 ## [ERR-20260810-017] AppKit marked text observation prototype names
 
 **Logged**: 2026-08-10T19:47:00+08:00

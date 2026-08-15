@@ -32,6 +32,7 @@ final class AppEnvironment {
     private let defaultClipboardCacheDirectory: URL
     private let pasteActionService: PasteActionService
     private let softwareUpdateService = SystemUpdateService()
+    private let launchAtLoginService = SystemLaunchAtLoginService()
     private let permissionService = PermissionService(
         decisionResetter: TCCPermissionDecisionResetter()
     )
@@ -120,6 +121,7 @@ final class AppEnvironment {
             syncModel: syncModel,
             translationCredentialModel: translationCredentialModel,
             softwareUpdateService: softwareUpdateService,
+            launchAtLoginService: launchAtLoginService,
             speechController: translationSpeechController,
             permissionService: permissionService,
             defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,

@@ -66,6 +66,7 @@ struct RuntimeMainWorkspaceView: View {
     @ObservedObject var syncModel: SyncViewModel
     @ObservedObject var translationCredentialModel: TranslationCredentialViewModel
     @ObservedObject var softwareUpdateService: SystemUpdateService
+    @ObservedObject var launchAtLoginService: SystemLaunchAtLoginService
     let speechController: TranslationSpeechController
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
@@ -97,6 +98,7 @@ struct RuntimeMainWorkspaceView: View {
         syncModel: SyncViewModel,
         translationCredentialModel: TranslationCredentialViewModel,
         softwareUpdateService: SystemUpdateService,
+        launchAtLoginService: SystemLaunchAtLoginService,
         speechController: TranslationSpeechController,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
@@ -123,6 +125,7 @@ struct RuntimeMainWorkspaceView: View {
         self.syncModel = syncModel
         self.translationCredentialModel = translationCredentialModel
         self.softwareUpdateService = softwareUpdateService
+        self.launchAtLoginService = launchAtLoginService
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
         self.onSaveTranslationSettings = onSaveTranslationSettings
@@ -156,6 +159,7 @@ struct RuntimeMainWorkspaceView: View {
                 syncModel: syncModel,
                 translationCredentialUnavailable: translationCredentialUnavailable,
                 softwareUpdateService: softwareUpdateService,
+                launchAtLoginService: launchAtLoginService,
                 permissionService: permissionService,
                 defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
                 onSaveClipboardSettings: { clipboardSettings in
@@ -285,6 +289,7 @@ struct RuntimeSettingsView: View {
     let settings: AppSettings
     @ObservedObject var syncModel: SyncViewModel
     @ObservedObject var softwareUpdateService: SystemUpdateService
+    @ObservedObject var launchAtLoginService: SystemLaunchAtLoginService
     let translationCredentialUnavailable: Bool
     let permissionService: PermissionService
     let defaultClipboardCacheDirectory: URL
@@ -310,6 +315,7 @@ struct RuntimeSettingsView: View {
         syncModel: SyncViewModel,
         translationCredentialUnavailable: Bool,
         softwareUpdateService: SystemUpdateService,
+        launchAtLoginService: SystemLaunchAtLoginService,
         permissionService: PermissionService,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> Void,
@@ -331,6 +337,7 @@ struct RuntimeSettingsView: View {
         self.permissionService = permissionService
         self.syncModel = syncModel
         self.softwareUpdateService = softwareUpdateService
+        self.launchAtLoginService = launchAtLoginService
         self.translationCredentialUnavailable = translationCredentialUnavailable
         self.defaultClipboardCacheDirectory = defaultClipboardCacheDirectory
         self.onSaveClipboardSettings = onSaveClipboardSettings
@@ -360,10 +367,13 @@ struct RuntimeSettingsView: View {
             translationCredentialUnavailable: translationCredentialUnavailable,
             permissionSummary: permissionSummary,
             softwareUpdateState: softwareUpdateService.state,
+            launchAtLoginState: launchAtLoginService.state,
             openSystemSettings: permissionService.openSystemSettings,
             checkForUpdates: softwareUpdateService.checkForUpdates,
             setAutomaticallyChecksForUpdates: softwareUpdateService.setAutomaticallyChecksForUpdates,
             setAutomaticallyDownloadsUpdates: softwareUpdateService.setAutomaticallyDownloadsUpdates,
+            setLaunchAtLoginEnabled: launchAtLoginService.setEnabled,
+            openLoginItemsSettings: launchAtLoginService.openSystemSettings,
             openPermissionSettings: permissionService.requestPermissionAndOpenSystemSettings(for:),
             resetPermissionDecisions: {
                 try await permissionService.resetPermissionDecisions()
@@ -386,9 +396,11 @@ struct RuntimeSettingsView: View {
         )
         .onAppear {
             permissionSummary = permissionService.summary()
+            launchAtLoginService.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             permissionSummary = permissionService.summary()
+            launchAtLoginService.refresh()
         }
     }
 }
