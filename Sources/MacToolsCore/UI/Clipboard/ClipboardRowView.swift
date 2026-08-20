@@ -11,8 +11,11 @@ public struct ClipboardRowView: View {
     public let index: Int
     public let isSelected: Bool
     public let showsBackground: Bool
+    public let availableTags: [String]
     public let onFavoriteToggle: () -> Void
+    public let onTagsChange: ([String]) -> Void
     @State private var isFavoriteButtonHovered = false
+    @State private var isTagEditorPresented = false
     @State private var loadedImagePreview: ClipboardLoadedImagePreview?
 
     /// 创建 `ClipboardRowView`，保存传入依赖并建立初始状态。
@@ -21,7 +24,9 @@ public struct ClipboardRowView: View {
         self.index = 1
         self.isSelected = false
         self.showsBackground = true
+        self.availableTags = []
         self.onFavoriteToggle = {}
+        self.onTagsChange = { _ in }
     }
 
     /// 创建 `ClipboardRowView`，保存传入依赖并建立初始状态。
@@ -30,13 +35,17 @@ public struct ClipboardRowView: View {
         index: Int = 1,
         isSelected: Bool,
         showsBackground: Bool = true,
-        onFavoriteToggle: @escaping () -> Void
+        availableTags: [String] = [],
+        onFavoriteToggle: @escaping () -> Void,
+        onTagsChange: @escaping ([String]) -> Void = { _ in }
     ) {
         self.item = item
         self.index = index
         self.isSelected = isSelected
         self.showsBackground = showsBackground
+        self.availableTags = availableTags
         self.onFavoriteToggle = onFavoriteToggle
+        self.onTagsChange = onTagsChange
     }
 
     @ViewBuilder
@@ -96,7 +105,7 @@ public struct ClipboardRowView: View {
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
 
-            favoriteButton
+            rowActions
         }
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
         .padding(.horizontal, 14)
@@ -150,7 +159,7 @@ public struct ClipboardRowView: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
 
-                favoriteButton
+                rowActions
             }
         }
         .padding(.horizontal, 14)
@@ -210,6 +219,44 @@ public struct ClipboardRowView: View {
         .animation(.easeOut(duration: 0.12), value: isFavoriteButtonHovered)
         .help(presentation.helpText)
         .accessibilityLabel(Text(presentation.accessibilityLabel))
+    }
+
+    /// 收藏条目展示标签入口；普通历史仍只保留收藏操作。
+    @ViewBuilder
+    private var rowActions: some View {
+        HStack(spacing: 4) {
+            if item.isFavorite {
+                tagButton
+            }
+            favoriteButton
+        }
+    }
+
+    private var tagButton: some View {
+        Button {
+            isTagEditorPresented = true
+        } label: {
+            Image(systemName: item.tags.isEmpty ? "tag" : "tag.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(
+                    width: MacToolsControlMetrics.inlineIconSize.width,
+                    height: MacToolsControlMetrics.inlineIconSize.height
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            item.tags.isEmpty ? MacToolsGlassTheme.textTertiary : MacToolsGlassTheme.selectionBlue
+        )
+        .help(item.tags.isEmpty ? "添加标签" : "编辑标签")
+        .accessibilityLabel(item.tags.isEmpty ? "添加标签" : "编辑标签")
+        .popover(isPresented: $isTagEditorPresented, arrowEdge: .trailing) {
+            ClipboardTagEditorView(
+                availableTags: availableTags,
+                initialTags: item.tags,
+                onSave: onTagsChange
+            )
+        }
     }
 
     private var imagePreviewSource: ClipboardImagePreviewSource? {

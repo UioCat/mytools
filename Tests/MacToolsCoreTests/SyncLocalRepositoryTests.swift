@@ -177,6 +177,46 @@ final class SyncLocalRepositoryTests: XCTestCase {
         )
     }
 
+    func testFavoriteTagsRoundTripThroughSyncBundle() throws {
+        let source = try makeReplica(deviceID: "device-a")
+        let target = try makeReplica(deviceID: "device-b")
+        defer {
+            try? FileManager.default.removeItem(at: source.workingDirectory)
+            try? FileManager.default.removeItem(at: target.workingDirectory)
+        }
+        let item = textItem(id: UUID(), text: "tagged sync item")
+        try source.clipboard.upsert(item)
+        try source.clipboard.setFavorite(id: item.id, isFavorite: true)
+        try source.clipboard.setTags(id: item.id, tags: ["Work", "代码"])
+
+        let bundle = try source.sync.exportBundle(
+            deviceID: "device-a",
+            generation: 1,
+            revision: 1,
+            scope: .allHistory,
+            at: Date(timeIntervalSince1970: 500)
+        )
+        let record = try XCTUnwrap(bundle.clipboard.records.first)
+        XCTAssertEqual(record.tags, ["Work", "代码"])
+        XCTAssertEqual(record.tagsClock.counter, 1)
+
+        let contents = Dictionary(
+            uniqueKeysWithValues: bundle.contents.map {
+                ($0.contentID, $0.data)
+            }
+        )
+        try target.sync.apply(
+            clipboard: bundle.clipboard,
+            contents: contents,
+            payloadStore: target.payloadStore,
+            historyLimit: 500
+        )
+
+        let imported = try XCTUnwrap(target.clipboard.item(id: item.id))
+        XCTAssertEqual(imported.tags, ["Work", "代码"])
+        XCTAssertEqual(imported.tagsClock, record.tagsClock)
+    }
+
     func testExcludedClipboardContentStaysPendingWhenOtherRecordsAreAcknowledged() throws {
         let replica = try makeReplica(deviceID: "device-a")
         defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }

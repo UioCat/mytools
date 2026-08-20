@@ -95,6 +95,17 @@ final class ClipboardPanelModel: ObservableObject {
         }
     }
 
+    /// 保存收藏标签并刷新当前剪贴板面板。
+    func setTags(_ tags: [String], for item: ClipboardItem) {
+        do {
+            try repository.setTags(id: item.id, tags: tags)
+            onLocalChange()
+            refresh()
+        } catch {
+            logger.error("favorite tags update failed: \(error)")
+        }
+    }
+
     /// 移除 `delete` 指定的应用运行时与 AppKit 集成数据，并维护关联状态。
     func delete(_ item: ClipboardItem) {
         do {

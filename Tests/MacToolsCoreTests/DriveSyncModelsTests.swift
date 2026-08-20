@@ -29,7 +29,9 @@ final class DriveSyncModelsTests: XCTestCase {
                     useCount: 2,
                     isPinned: false,
                     isFavorite: true,
+                    tags: ["Work", "代码"],
                     favoriteClock: ClipboardFieldClock(counter: 4, deviceID: "device-b"),
+                    tagsClock: ClipboardFieldClock(counter: 5, deviceID: "device-b"),
                     pinnedClock: .zero
                 )
             ]
@@ -45,6 +47,40 @@ final class DriveSyncModelsTests: XCTestCase {
             try SyncSnapshotCodec.decode(SyncClipboardSnapshot.self, from: first),
             snapshot
         )
+    }
+
+    func testOldClipboardRecordWithoutTagsDecodesWithEmptyDefaults() throws {
+        let record = SyncClipboardRecord(
+            recordName: "legacy-record",
+            contentID: String(repeating: "b", count: 64),
+            kind: .text,
+            displayTitle: "Legacy",
+            searchableText: "Legacy",
+            sourceApp: nil,
+            createdAt: Date(timeIntervalSince1970: 100),
+            lastCapturedAt: Date(timeIntervalSince1970: 100),
+            lastUsedAt: nil,
+            retentionAt: Date(timeIntervalSince1970: 100),
+            useCount: 0,
+            isPinned: false,
+            isFavorite: true,
+            tags: ["Will be removed"],
+            favoriteClock: .zero,
+            tagsClock: ClipboardFieldClock(counter: 1, deviceID: "device-a"),
+            pinnedClock: .zero
+        )
+        let encoded = try SyncSnapshotCodec.encode(record)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        object.removeValue(forKey: "tags")
+        object.removeValue(forKey: "tagsClock")
+        let legacyData = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        let decoded = try SyncSnapshotCodec.decode(SyncClipboardRecord.self, from: legacyData)
+
+        XCTAssertEqual(decoded.tags, [])
+        XCTAssertEqual(decoded.tagsClock, .zero)
     }
 
     func testRetentionEvictsOldestOrdinaryContentAtGlobalLimit() {

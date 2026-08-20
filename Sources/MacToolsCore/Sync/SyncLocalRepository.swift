@@ -390,7 +390,9 @@ public final class SyncLocalRepository: @unchecked Sendable {
                     useCount: item.useCount,
                     isPinned: item.isPinned,
                     isFavorite: item.isFavorite,
+                    tags: item.tags,
                     favoriteClock: item.favoriteClock,
+                    tagsClock: item.tagsClock,
                     pinnedClock: item.pinnedClock
                 )
             )
@@ -552,11 +554,13 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 useCount: record.useCount,
                 isPinned: record.isPinned,
                 isFavorite: record.isFavorite,
+                tags: record.tags,
                 lastCapturedAt: record.lastCapturedAt,
                 retentionAt: record.retentionAt,
                 payloadID: payload?.id,
                 syncGeneration: snapshot.generation,
                 favoriteClock: record.favoriteClock,
+                tagsClock: record.tagsClock,
                 pinnedClock: record.pinnedClock
             )
             _ = try clipboardRepository.upsert(

@@ -333,6 +333,13 @@ public final class MacToolsDatabase: @unchecked Sendable {
                 table.rename(column: "cloudRecordName", to: "tombstoneID")
             }
         }
+        migrator.registerMigration("addClipboardTagsV10") { db in
+            try db.alter(table: "clipboard_items") { table in
+                table.add(column: "tagsJSON", .text).notNull().defaults(to: "[]")
+                table.add(column: "tagsClock", .integer).notNull().defaults(to: 0)
+                table.add(column: "tagsDeviceID", .text).notNull().defaults(to: "")
+            }
+        }
         return migrator
     }
 }

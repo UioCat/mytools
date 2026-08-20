@@ -12,6 +12,21 @@ final class ClipboardListViewTests: XCTestCase {
         XCTAssertEqual(ClipboardPanelMode.allCases.map(\.title), ["全部", "文本", "图像", "收藏"])
     }
 
+    func testClipboardCategoryPresentationKeepsStableGlassNodeAcrossSelection() {
+        XCTAssertEqual(
+            ClipboardCategoryButtonPresentation(isSelected: false, isPressed: false).interactionState,
+            .idle
+        )
+        XCTAssertEqual(
+            ClipboardCategoryButtonPresentation(isSelected: true, isPressed: false).interactionState,
+            .selected
+        )
+        XCTAssertEqual(
+            ClipboardCategoryButtonPresentation(isSelected: false, isPressed: true).interactionState,
+            .selected
+        )
+    }
+
     func testClipboardCategoryArrowNavigationMovesBetweenAdjacentModes() {
         XCTAssertEqual(
             ClipboardPanelModeNavigator.mode(adjacentTo: .all, direction: .next),
@@ -43,6 +58,21 @@ final class ClipboardListViewTests: XCTestCase {
         XCTAssertEqual(ClipboardPanelModeNavigator.direction(forKeyCode: 124), .next)
         XCTAssertNil(ClipboardPanelModeNavigator.direction(forKeyCode: 125))
         XCTAssertNil(ClipboardPanelModeNavigator.direction(forKeyCode: 126))
+    }
+
+    func testPanelKeyboardMonitorIgnoresTagPopoverWindow() {
+        XCTAssertTrue(
+            ClipboardKeyboardEventRoutingPolicy.shouldHandle(
+                eventWindowNumber: 42,
+                panelWindowNumber: 42
+            )
+        )
+        XCTAssertFalse(
+            ClipboardKeyboardEventRoutingPolicy.shouldHandle(
+                eventWindowNumber: 84,
+                panelWindowNumber: 42
+            )
+        )
     }
 
     func testFirstMouseClickSelectsAndSecondClickOnSameItemPastes() {
@@ -235,6 +265,67 @@ final class ClipboardListViewTests: XCTestCase {
         XCTAssertNil(emptyState.selectedItem)
     }
 
+    func testFavoriteTagSummaryAndQuickFilterCombineWithSearch() {
+        let workRelease = makeItem(
+            text: "release notes",
+            isFavorite: true,
+            tags: ["Work", "Pinned"]
+        )
+        let workDraft = makeItem(
+            text: "draft",
+            isFavorite: true,
+            tags: ["Work"]
+        )
+        let personalRelease = makeItem(
+            text: "release photo",
+            isFavorite: true,
+            tags: ["Personal"]
+        )
+        let ordinary = makeItem(text: "release ordinary", tags: ["Work"])
+        let items = [workRelease, workDraft, personalRelease, ordinary]
+
+        let state = ClipboardPanelRenderState(
+            items: items,
+            mode: .favorites,
+            query: "release",
+            selectedTag: "work",
+            selectedItemID: nil
+        )
+
+        XCTAssertEqual(state.filteredItems.map(\.id), [workRelease.id])
+        XCTAssertEqual(
+            state.itemSummary.tagCounts,
+            [
+                ClipboardTagCount(name: "Personal", count: 1),
+                ClipboardTagCount(name: "Pinned", count: 1),
+                ClipboardTagCount(name: "Work", count: 2)
+            ]
+        )
+        XCTAssertTrue(state.itemSummary.containsTag("WORK"))
+        XCTAssertFalse(state.itemSummary.containsTag("Missing"))
+    }
+
+    func testTagCatalogKeepsMoreThanOneItemsMaximumTagCount() {
+        let tags = (0...ClipboardTagPolicy.maximumTagCount).map { "tag-\($0)" }
+
+        let list = ClipboardListView(
+            items: [],
+            selectedItemID: nil,
+            mode: .favorites,
+            availableTags: tags,
+            onSelect: { _ in },
+            onFavoriteToggle: { _ in },
+            onDelete: { _ in }
+        )
+
+        XCTAssertEqual(ClipboardTagPolicy.normalizedCatalog(tags), tags)
+        XCTAssertEqual(list.availableTags, tags)
+        XCTAssertEqual(
+            ClipboardTagPolicy.normalized(tags).count,
+            ClipboardTagPolicy.maximumTagCount
+        )
+    }
+
     func testImagePreviewCacheConfigurationKeepsMemoryBounded() {
         XCTAssertEqual(ClipboardImagePreviewCache.Configuration.standard.countLimit, 120)
         XCTAssertEqual(
@@ -377,7 +468,8 @@ final class ClipboardListViewTests: XCTestCase {
         text: String = "Snippet",
         displayTitle: String? = nil,
         searchableText: String? = nil,
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        tags: [String] = []
     ) -> ClipboardItem {
         ClipboardItem(
             id: id,
@@ -393,7 +485,8 @@ final class ClipboardListViewTests: XCTestCase {
             lastUsedAt: nil,
             useCount: 0,
             isPinned: false,
-            isFavorite: isFavorite
+            isFavorite: isFavorite,
+            tags: tags
         )
     }
 

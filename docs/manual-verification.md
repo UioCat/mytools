@@ -8,6 +8,8 @@
 - Confirm the sidebar shows the current blue-purple ribbon icon without the slogan.
 - Confirm the equal-width category row below search contains exactly `全部`, `文本`, `图像`, and `收藏`; files and folders remain available through `全部`.
 - Click each category and use the Left/Right arrow keys to verify adjacent transitions and both wrap-around transitions.
+- Rapidly switch between adjacent and non-adjacent categories with the mouse and Left/Right arrow keys; confirm the selected glass surface changes in place without stretching, dragging, morphing across buttons, or leaving a residual highlight.
+- Favorite a clipboard item, open its tag control, add multiple tags, save, and confirm the `收藏` category shows an inline `全部收藏` quick filter plus one count chip per tag. While the tag editor is open, use Left/Right, Return, and Escape and confirm input stays within the Popover without switching categories, pasting, or dismissing the main panel. Select different chips and confirm only matching favorites remain; combine a tag chip with search and confirm both filters apply. Remove and restore the favorite state and confirm its saved tags return unchanged.
 - Click a clipboard item once and confirm it only becomes selected; click the same item again and confirm it performs the Enter action and pastes at the previously focused cursor location.
 - After selecting with the keyboard or changing category/search, click the highlighted item once and confirm it only re-arms mouse selection instead of pasting immediately.
 - Fill clipboard history beyond one screen, then hold the Up/Down arrow keys; confirm every newly selected row is automatically brought into view, including rows before and after a large image preview.

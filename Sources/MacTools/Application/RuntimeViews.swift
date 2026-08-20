@@ -268,6 +268,9 @@ struct RuntimeClipboardModuleView: View {
             onFavoriteToggle: { item in
                 model.toggleFavorite(item)
             },
+            onTagsChange: { item, tags in
+                model.setTags(tags, for: item)
+            },
             onDelete: { item in
                 model.delete(item)
             },

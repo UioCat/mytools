@@ -364,6 +364,33 @@ struct LiquidGlassFloatingSelectionModifier: ViewModifier {
     }
 }
 
+/// 在固定视图节点上切换选中材质，避免相邻玻璃表面之间产生形变过渡。
+struct LiquidGlassStableFloatingSelectionModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let isVisible: Bool
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        content
+            .nativeLiquidGlassSurface(
+                style: isVisible
+                    ? .floatingSelection(cornerRadius: cornerRadius)
+                    : .identity(cornerRadius: cornerRadius)
+            )
+            .overlay {
+                if isVisible {
+                    shape
+                        .stroke(Color.white.opacity(0.30), lineWidth: 1.25)
+                    shape
+                        .stroke(MacToolsGlassTheme.selectionBlue.opacity(0.24), lineWidth: 0.75)
+                }
+            }
+            .shadow(color: Color.black.opacity(isVisible ? 0.10 : 0), radius: 8, x: 0, y: 3)
+            .shadow(color: Color.black.opacity(isVisible ? 0.04 : 0), radius: 2, x: 0, y: 1)
+    }
+}
+
 /// 将统一交互状态映射到稳定的 Liquid Glass 节点和语义表面。
 private struct LiquidGlassInteractionSurfaceModifier: ViewModifier {
     let state: LiquidGlassInteractionState
@@ -561,6 +588,19 @@ public extension View {
     /// 构建并返回 `liquidGlassFloatingSelection` 对应的 SwiftUI 界面内容或展示状态。
     func liquidGlassFloatingSelection(cornerRadius: CGFloat = 12) -> some View {
         modifier(LiquidGlassFloatingSelectionModifier(cornerRadius: cornerRadius))
+    }
+
+    /// 保持玻璃节点稳定，仅原地切换浮动选中表面的可见状态。
+    func liquidGlassStableFloatingSelection(
+        cornerRadius: CGFloat = 12,
+        isVisible: Bool
+    ) -> some View {
+        modifier(
+            LiquidGlassStableFloatingSelectionModifier(
+                cornerRadius: cornerRadius,
+                isVisible: isVisible
+            )
+        )
     }
 
     /// 应用统一的默认、悬停、选中或聚焦表面，同时保持玻璃节点层级稳定。

@@ -34,6 +34,7 @@ extension ClipboardItem: FetchableRecord {
             useCount: row["useCount"],
             isPinned: row["isPinned"],
             isFavorite: row["isFavorite"],
+            tags: ClipboardTagPolicy.tags(fromStorageValue: row["tagsJSON"]),
             lastCapturedAt: row["lastCapturedAt"],
             retentionAt: row["retentionAt"],
             payloadID: row["payloadID"],
@@ -41,6 +42,10 @@ extension ClipboardItem: FetchableRecord {
             favoriteClock: ClipboardFieldClock(
                 counter: row["favoriteClock"],
                 deviceID: row["favoriteDeviceID"]
+            ),
+            tagsClock: ClipboardFieldClock(
+                counter: row["tagsClock"],
+                deviceID: row["tagsDeviceID"]
             ),
             pinnedClock: ClipboardFieldClock(
                 counter: row["pinnedClock"],

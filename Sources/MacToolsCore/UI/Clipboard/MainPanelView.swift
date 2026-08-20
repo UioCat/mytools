@@ -81,18 +81,34 @@ enum ClipboardPanelModeNavigator {
 }
 
 /// 封装 `ClipboardPanelItemSummary` 在 SwiftUI 展示层中的值语义和相关操作。
+struct ClipboardTagCount: Equatable, Identifiable {
+    let name: String
+    let count: Int
+
+    var id: String { ClipboardTagPolicy.comparisonKey(for: name) }
+}
+
+/// 汇总收藏数量、可清理状态和收藏标签计数。
 struct ClipboardPanelItemSummary: Equatable {
     let favoriteCount: Int
     let hasClearableItems: Bool
+    let tagCounts: [ClipboardTagCount]
 
     /// 创建 `ClipboardPanelItemSummary`，保存传入依赖并建立初始状态。
     init(items: [ClipboardItem]) {
         var favoriteCount = 0
         var hasClearableItems = false
+        var tagNamesByKey: [String: String] = [:]
+        var countsByKey: [String: Int] = [:]
 
         for item in items {
             if item.isFavorite {
                 favoriteCount += 1
+                for tag in item.tags {
+                    let key = ClipboardTagPolicy.comparisonKey(for: tag)
+                    tagNamesByKey[key] = tagNamesByKey[key] ?? tag
+                    countsByKey[key, default: 0] += 1
+                }
             } else {
                 hasClearableItems = true
             }
@@ -100,6 +116,20 @@ struct ClipboardPanelItemSummary: Equatable {
 
         self.favoriteCount = favoriteCount
         self.hasClearableItems = hasClearableItems
+        self.tagCounts = tagNamesByKey
+            .map { key, name in
+                ClipboardTagCount(name: name, count: countsByKey[key, default: 0])
+            }
+            .sorted {
+                ClipboardTagPolicy.comparisonKey(for: $0.name)
+                    < ClipboardTagPolicy.comparisonKey(for: $1.name)
+            }
+    }
+
+    /// 判断当前收藏记录是否仍使用指定标签。
+    func containsTag(_ tag: String) -> Bool {
+        let key = ClipboardTagPolicy.comparisonKey(for: tag)
+        return tagCounts.contains { $0.id == key }
     }
 }
 
@@ -114,10 +144,16 @@ struct ClipboardPanelRenderState {
         items: [ClipboardItem],
         mode: ClipboardPanelMode,
         query: String,
+        selectedTag: String? = nil,
         selectedItemID: ClipboardItem.ID?
     ) {
         self.itemSummary = ClipboardPanelItemSummary(items: items)
-        self.filteredItems = Self.filteredItems(items: items, mode: mode, query: query)
+        self.filteredItems = Self.filteredItems(
+            items: items,
+            mode: mode,
+            query: query,
+            selectedTag: selectedTag
+        )
         self.selectedItem = Self.selectedItem(in: filteredItems, selectedItemID: selectedItemID)
     }
 
@@ -125,7 +161,8 @@ struct ClipboardPanelRenderState {
     static func filteredItems(
         items: [ClipboardItem],
         mode: ClipboardPanelMode,
-        query: String
+        query: String,
+        selectedTag: String? = nil
     ) -> [ClipboardItem] {
         let modeItems: [ClipboardItem]
         switch mode {
@@ -139,14 +176,26 @@ struct ClipboardPanelRenderState {
             modeItems = items.filter(\.isFavorite)
         }
 
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else {
-            return modeItems
+        let tagFilteredItems: [ClipboardItem]
+        if mode == .favorites, let selectedTag {
+            tagFilteredItems = modeItems.filter {
+                ClipboardTagPolicy.contains(selectedTag, in: $0.tags)
+            }
+        } else {
+            tagFilteredItems = modeItems
         }
 
-        return modeItems.filter { item in
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return tagFilteredItems
+        }
+
+        return tagFilteredItems.filter { item in
             item.displayTitle.localizedCaseInsensitiveContains(trimmedQuery)
                 || item.searchableText.localizedCaseInsensitiveContains(trimmedQuery)
+                || (mode == .favorites && item.tags.contains {
+                    $0.localizedCaseInsensitiveContains(trimmedQuery)
+                })
         }
     }
 
@@ -194,6 +243,7 @@ public struct MainPanelView: View {
     @State private var selectedItemID: ClipboardItem.ID?
     @State private var armedMouseItemID: ClipboardItem.ID?
     @State private var mode: ClipboardPanelMode = .all
+    @State private var selectedTag: String?
     @FocusState private var isSearchFocused: Bool
 
     public let items: [ClipboardItem]
@@ -201,6 +251,7 @@ public struct MainPanelView: View {
     public let searchFocusToken: Int
     public let onSelect: (ClipboardItem, ClipboardSelectionAction) -> Void
     public let onFavoriteToggle: (ClipboardItem) -> Void
+    public let onTagsChange: (ClipboardItem, [String]) -> Void
     public let onDelete: (ClipboardItem) -> Void
     public let onClear: () -> Void
     public let onDismiss: () -> Void
@@ -213,6 +264,7 @@ public struct MainPanelView: View {
         self.searchFocusToken = 0
         self.onSelect = { item, _ in onSelect(item) }
         self.onFavoriteToggle = { _ in }
+        self.onTagsChange = { _, _ in }
         self.onDelete = { _ in }
         self.onClear = {}
         self.onDismiss = {}
@@ -226,6 +278,7 @@ public struct MainPanelView: View {
         searchFocusToken: Int = 0,
         onSelect: @escaping (ClipboardItem, ClipboardSelectionAction) -> Void,
         onFavoriteToggle: @escaping (ClipboardItem) -> Void = { _ in },
+        onTagsChange: @escaping (ClipboardItem, [String]) -> Void = { _, _ in },
         onDelete: @escaping (ClipboardItem) -> Void = { _ in },
         onClear: @escaping () -> Void = {},
         onDismiss: @escaping () -> Void = {},
@@ -236,6 +289,7 @@ public struct MainPanelView: View {
         self.searchFocusToken = searchFocusToken
         self.onSelect = onSelect
         self.onFavoriteToggle = onFavoriteToggle
+        self.onTagsChange = onTagsChange
         self.onDelete = onDelete
         self.onClear = onClear
         self.onDismiss = onDismiss
@@ -261,6 +315,10 @@ public struct MainPanelView: View {
 
             categoryBar(itemSummary: renderState.itemSummary)
 
+            if mode == .favorites {
+                tagFilterBar(itemSummary: renderState.itemSummary)
+            }
+
             Divider()
                 .overlay(MacToolsGlassTheme.divider)
                 .padding(.horizontal, 4)
@@ -275,9 +333,17 @@ public struct MainPanelView: View {
         }
         .onChange(of: items) {
             resetMouseClickConfirmation()
+            normalizeTagSelection()
             normalizeSelection()
         }
         .onChange(of: mode) {
+            resetMouseClickConfirmation()
+            if mode != .favorites {
+                selectedTag = nil
+            }
+            normalizeSelection()
+        }
+        .onChange(of: selectedTag) {
             resetMouseClickConfirmation()
             normalizeSelection()
         }
@@ -300,8 +366,10 @@ public struct MainPanelView: View {
             items: renderState.filteredItems,
             selectedItemID: renderState.selectedItem?.id,
             mode: mode,
+            availableTags: renderState.itemSummary.tagCounts.map(\.name),
             onSelect: handleItemClick,
             onFavoriteToggle: onFavoriteToggle,
+            onTagsChange: onTagsChange,
             onDelete: onDelete
         )
         .overlay(alignment: .bottomTrailing) {
@@ -422,6 +490,57 @@ public struct MainPanelView: View {
         .liquidGlassGroup(spacing: 8)
     }
 
+    /// 构建收藏页的标签快捷筛选条。
+    private func tagFilterBar(itemSummary: ClipboardPanelItemSummary) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                tagFilterButton(title: "全部收藏", count: itemSummary.favoriteCount, tag: nil)
+                ForEach(itemSummary.tagCounts) { tagCount in
+                    tagFilterButton(
+                        title: tagCount.name,
+                        count: tagCount.count,
+                        tag: tagCount.name
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .liquidGlassGroup(spacing: 6)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    /// 构建单个标签筛选按钮，并保持玻璃节点位置稳定。
+    private func tagFilterButton(title: String, count: Int, tag: String?) -> some View {
+        let isSelected = selectedTag.map(ClipboardTagPolicy.comparisonKey(for:))
+            == tag.map(ClipboardTagPolicy.comparisonKey(for:))
+
+        return Button {
+            selectedTag = tag
+        } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                Text("\(count)")
+                    .monospacedDigit()
+                    .foregroundStyle(MacToolsGlassTheme.textTertiary)
+            }
+            .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(
+                isSelected ? MacToolsGlassTheme.selectionBlue : MacToolsGlassTheme.textSecondary
+            )
+            .padding(.horizontal, 10)
+            .frame(minHeight: 28)
+            .liquidGlassButtonHitTarget(cornerRadius: 10)
+            .liquidGlassInteractionSurface(
+                state: isSelected ? .selected : .idle,
+                cornerRadius: 10
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("按标签 \(title) 筛选")
+        .accessibilityValue(isSelected ? "已选择" : "")
+    }
+
     /// 构建并返回 `sidebarToggleButton` 对应的 SwiftUI 界面内容或展示状态。
     private func sidebarToggleButton(_ chrome: MainWorkspaceSidebarChrome) -> some View {
         Button {
@@ -467,6 +586,7 @@ public struct MainPanelView: View {
             items: items,
             mode: mode,
             query: query,
+            selectedTag: selectedTag,
             selectedItemID: selectedItemID
         )
     }
@@ -551,6 +671,15 @@ public struct MainPanelView: View {
         selectedItemID = visibleItems.first?.id
     }
 
+    /// 标签不存在时回退到全部收藏，避免保留不可见筛选条件。
+    private func normalizeTagSelection() {
+        guard let selectedTag,
+              currentRenderState.itemSummary.containsTag(selectedTag) else {
+            self.selectedTag = nil
+            return
+        }
+    }
+
     /// 将当前过滤结果的第一项设为键盘选择项。
     private func selectFirstItem() {
         selectedItemID = filteredItems.first?.id
@@ -560,6 +689,7 @@ public struct MainPanelView: View {
     private func resetPanelState() {
         query = ""
         mode = .all
+        selectedTag = nil
         resetMouseClickConfirmation()
         selectFirstItem()
     }
@@ -614,6 +744,11 @@ private struct ClipboardCategoryButtonStyle: ButtonStyle {
 
     /// 构造并返回 `makeBody` 所描述的 SwiftUI 展示层对象。
     func makeBody(configuration: Configuration) -> some View {
+        let presentation = ClipboardCategoryButtonPresentation(
+            isSelected: isSelected,
+            isPressed: configuration.isPressed
+        )
+
         configuration.label
             .frame(
                 minWidth: MacToolsControlMetrics.clipboardCategoryMinimumWidth,
@@ -621,27 +756,27 @@ private struct ClipboardCategoryButtonStyle: ButtonStyle {
             )
             .liquidGlassButtonHitTarget(cornerRadius: 12)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .modifier(
-                ClipboardCategoryButtonSurfaceModifier(
-                    isVisible: isSelected || configuration.isPressed
-                )
+            .liquidGlassStableFloatingSelection(
+                cornerRadius: 12,
+                isVisible: presentation.interactionState == .selected
             )
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
-/// 封装 `ClipboardCategoryButtonSurfaceModifier` 在 SwiftUI 展示层中的值语义和相关操作。
-private struct ClipboardCategoryButtonSurfaceModifier: ViewModifier {
-    let isVisible: Bool
+/// 将分类按钮状态映射到固定位置的 Liquid Glass 节点。
+struct ClipboardCategoryButtonPresentation: Equatable {
+    let interactionState: LiquidGlassInteractionState
 
-    /// 构建并返回 `body` 对应的 SwiftUI 界面内容或展示状态。
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if isVisible {
-            content.liquidGlassFloatingSelection(cornerRadius: 12)
-        } else {
-            content
-        }
+    init(isSelected: Bool, isPressed: Bool) {
+        self.interactionState = isSelected || isPressed ? .selected : .idle
+    }
+}
+
+/// 只让主面板窗口处理自己的按键，避免 Popover 输入被分类快捷键截获。
+enum ClipboardKeyboardEventRoutingPolicy {
+    static func shouldHandle(eventWindowNumber: Int, panelWindowNumber: Int) -> Bool {
+        eventWindowNumber == panelWindowNumber
     }
 }
 
@@ -677,7 +812,12 @@ private final class KeyboardEventMonitorNSView: NSView {
 
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self,
-                  self.window?.isVisible == true,
+                  let window = self.window,
+                  window.isVisible,
+                  ClipboardKeyboardEventRoutingPolicy.shouldHandle(
+                      eventWindowNumber: event.windowNumber,
+                      panelWindowNumber: window.windowNumber
+                  ),
                   self.onKeyDown?(event) == true else {
                 return event
             }

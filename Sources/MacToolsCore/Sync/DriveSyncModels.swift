@@ -144,7 +144,9 @@ public struct SyncClipboardRecord: Codable, Equatable, Sendable {
     public var useCount: Int
     public var isPinned: Bool
     public var isFavorite: Bool
+    public var tags: [String]
     public var favoriteClock: ClipboardFieldClock
+    public var tagsClock: ClipboardFieldClock
     public var pinnedClock: ClipboardFieldClock
 
     /// 创建 `SyncClipboardRecord`，保存传入依赖并建立初始状态。
@@ -162,7 +164,9 @@ public struct SyncClipboardRecord: Codable, Equatable, Sendable {
         useCount: Int,
         isPinned: Bool,
         isFavorite: Bool,
+        tags: [String] = [],
         favoriteClock: ClipboardFieldClock,
+        tagsClock: ClipboardFieldClock = .zero,
         pinnedClock: ClipboardFieldClock
     ) {
         self.recordName = recordName
@@ -178,8 +182,57 @@ public struct SyncClipboardRecord: Codable, Equatable, Sendable {
         self.useCount = useCount
         self.isPinned = isPinned
         self.isFavorite = isFavorite
+        self.tags = ClipboardTagPolicy.normalized(tags)
         self.favoriteClock = favoriteClock
+        self.tagsClock = tagsClock
         self.pinnedClock = pinnedClock
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case recordName
+        case contentID
+        case kind
+        case displayTitle
+        case searchableText
+        case sourceApp
+        case createdAt
+        case lastCapturedAt
+        case lastUsedAt
+        case retentionAt
+        case useCount
+        case isPinned
+        case isFavorite
+        case tags
+        case favoriteClock
+        case tagsClock
+        case pinnedClock
+    }
+
+    /// 解码同步记录；旧快照缺少标签字段时使用空集合和零时钟。
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.recordName = try container.decode(String.self, forKey: .recordName)
+        self.contentID = try container.decode(String.self, forKey: .contentID)
+        self.kind = try container.decode(ClipboardContentKind.self, forKey: .kind)
+        self.displayTitle = try container.decode(String.self, forKey: .displayTitle)
+        self.searchableText = try container.decode(String.self, forKey: .searchableText)
+        self.sourceApp = try container.decodeIfPresent(String.self, forKey: .sourceApp)
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.lastCapturedAt = try container.decode(Date.self, forKey: .lastCapturedAt)
+        self.lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
+        self.retentionAt = try container.decode(Date.self, forKey: .retentionAt)
+        self.useCount = try container.decode(Int.self, forKey: .useCount)
+        self.isPinned = try container.decode(Bool.self, forKey: .isPinned)
+        self.isFavorite = try container.decode(Bool.self, forKey: .isFavorite)
+        self.tags = ClipboardTagPolicy.normalized(
+            try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        )
+        self.favoriteClock = try container.decode(ClipboardFieldClock.self, forKey: .favoriteClock)
+        self.tagsClock = try container.decodeIfPresent(
+            ClipboardFieldClock.self,
+            forKey: .tagsClock
+        ) ?? .zero
+        self.pinnedClock = try container.decode(ClipboardFieldClock.self, forKey: .pinnedClock)
     }
 }
 

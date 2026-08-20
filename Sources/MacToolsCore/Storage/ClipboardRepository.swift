@@ -6,7 +6,7 @@ import GRDB
 
 /// 管理 `ClipboardRepository` 在本地存储领域中的生命周期、依赖和可变状态。
 public final class ClipboardRepository: @unchecked Sendable {
-    private let database: MacToolsDatabase
+    let database: MacToolsDatabase
     private let payloadStore: PayloadStore?
     private let garbageCollector: PayloadGarbageCollector?
 
@@ -42,6 +42,7 @@ public final class ClipboardRepository: @unchecked Sendable {
                 sql: """
                 SELECT id, createdAt, lastCapturedAt, lastUsedAt, retentionAt, payloadID,
                        isFavorite, favoriteClock, favoriteDeviceID,
+                       tagsJSON, tagsClock, tagsDeviceID,
                        isPinned, pinnedClock, pinnedDeviceID, syncGeneration
                 FROM clipboard_items
                 WHERE contentHash = ?
@@ -89,6 +90,22 @@ public final class ClipboardRepository: @unchecked Sendable {
             )
             let favoriteClock = favoriteUsesIncoming ? item.favoriteClock : existingFavoriteClock
             let isFavorite = favoriteUsesIncoming ? item.isFavorite : existingIsFavorite
+            let existingTags = ClipboardTagPolicy.tags(
+                fromStorageValue: existing?["tagsJSON"] ?? "[]"
+            )
+            let existingTagsClock = ClipboardFieldClock(
+                counter: existing?["tagsClock"] ?? 0,
+                deviceID: existing?["tagsDeviceID"] ?? ""
+            )
+            let normalizedIncomingTags = ClipboardTagPolicy.normalized(item.tags)
+            let tagsUseIncoming = existing == nil
+                || item.tagsClock.wins(over: existingTagsClock)
+                || (item.tagsClock == existingTagsClock
+                    && existingTags.isEmpty
+                    && !normalizedIncomingTags.isEmpty)
+            let tags = tagsUseIncoming ? normalizedIncomingTags : existingTags
+            let tagsClock = tagsUseIncoming ? item.tagsClock : existingTagsClock
+            let tagsJSON = try ClipboardTagPolicy.storageValue(for: tags)
             let existingPinnedClock = ClipboardFieldClock(
                 counter: existing?["pinnedClock"] ?? 0,
                 deviceID: existing?["pinnedDeviceID"] ?? ""
@@ -113,9 +130,9 @@ public final class ClipboardRepository: @unchecked Sendable {
                     sourceApp, contentHash, createdAt, lastCapturedAt, lastUsedAt,
                     retentionAt, useCount, isPinned, isFavorite, payloadID,
                     syncGeneration, favoriteClock, favoriteDeviceID,
-                    pinnedClock, pinnedDeviceID
+                    tagsJSON, tagsClock, tagsDeviceID, pinnedClock, pinnedDeviceID
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(contentHash) DO UPDATE SET
                     kind = excluded.kind,
                     displayTitle = excluded.displayTitle,
@@ -133,6 +150,9 @@ public final class ClipboardRepository: @unchecked Sendable {
                     syncGeneration = excluded.syncGeneration,
                     favoriteClock = excluded.favoriteClock,
                     favoriteDeviceID = excluded.favoriteDeviceID,
+                    tagsJSON = excluded.tagsJSON,
+                    tagsClock = excluded.tagsClock,
+                    tagsDeviceID = excluded.tagsDeviceID,
                     pinnedClock = excluded.pinnedClock,
                     pinnedDeviceID = excluded.pinnedDeviceID
                 """,
@@ -156,6 +176,9 @@ public final class ClipboardRepository: @unchecked Sendable {
                     syncGeneration,
                     favoriteClock.counter,
                     favoriteClock.deviceID,
+                    tagsJSON,
+                    tagsClock.counter,
+                    tagsClock.deviceID,
                     pinnedClock.counter,
                     pinnedClock.deviceID
                 ]
@@ -337,46 +360,6 @@ public final class ClipboardRepository: @unchecked Sendable {
                 arguments: [payloadRootPath, payloadRootPath, id.uuidString]
             )
         }
-    }
-
-    /// 更新收藏值和逻辑时钟，并在需要时重新裁剪普通历史与发布同步变更。
-    public func setFavorite(id: UUID, isFavorite: Bool, historyLimit: Int? = nil) throws {
-        try database.writer.write { db in
-            let deviceID = try self.deviceID(in: db)
-            try db.execute(
-                sql: """
-                UPDATE clipboard_items
-                SET isFavorite = ?, favoriteClock = favoriteClock + 1, favoriteDeviceID = ?
-                WHERE id = ?
-                """,
-                arguments: [isFavorite, deviceID, id.uuidString]
-            )
-            if !isFavorite, let historyLimit {
-                _ = try pruneNormalHistory(in: db, limit: historyLimit)
-            }
-            try enqueueSyncChangeIfSyncable(recordName: id.uuidString, operation: "save", in: db)
-        }
-        collectPayloadGarbageAfterCommit()
-    }
-
-    /// 更新置顶值和逻辑时钟，并把字段变化写入本机副本与同步 outbox。
-    public func setPinned(id: UUID, isPinned: Bool, historyLimit: Int? = nil) throws {
-        try database.writer.write { db in
-            let deviceID = try self.deviceID(in: db)
-            try db.execute(
-                sql: """
-                UPDATE clipboard_items
-                SET isPinned = ?, pinnedClock = pinnedClock + 1, pinnedDeviceID = ?
-                WHERE id = ?
-                """,
-                arguments: [isPinned, deviceID, id.uuidString]
-            )
-            if !isPinned, let historyLimit {
-                _ = try pruneNormalHistory(in: db, limit: historyLimit)
-            }
-            try enqueueSyncChangeIfSyncable(recordName: id.uuidString, operation: "save", in: db)
-        }
-        collectPayloadGarbageAfterCommit()
     }
 
     /// 移除 `delete` 指定的本地存储领域数据，并维护关联状态。
@@ -579,7 +562,7 @@ public final class ClipboardRepository: @unchecked Sendable {
     }
 
     /// 汇总或整理 `pruneNormalHistory` 涉及的本地存储领域数据，并维护容量与保留规则。
-    private func pruneNormalHistory(in db: Database, limit: Int) throws -> [UUID] {
+    func pruneNormalHistory(in db: Database, limit: Int) throws -> [UUID] {
         let boundedLimit = max(limit, 0)
         let normalCount = try Int.fetchOne(
             db,
@@ -730,7 +713,7 @@ public final class ClipboardRepository: @unchecked Sendable {
     }
 
     /// 仅为远端协议支持的剪贴板类型发布同步变更。
-    private func enqueueSyncChangeIfSyncable(
+    func enqueueSyncChangeIfSyncable(
         recordName: String,
         operation: String,
         in db: Database
@@ -915,7 +898,7 @@ public final class ClipboardRepository: @unchecked Sendable {
     }
 
     /// 读取或创建本机设备标识，保证字段时钟和副本归属稳定。
-    private func deviceID(in db: Database) throws -> String {
+    func deviceID(in db: Database) throws -> String {
         if let data = try Data.fetchOne(
             db,
             sql: "SELECT value FROM device_overrides WHERE key = 'sync.deviceID'"
@@ -940,7 +923,7 @@ public final class ClipboardRepository: @unchecked Sendable {
     }
 
     /// 汇总或整理 `collectPayloadGarbageAfterCommit` 涉及的本地存储领域数据，并维护容量与保留规则。
-    private func collectPayloadGarbageAfterCommit() {
+    func collectPayloadGarbageAfterCommit() {
         try? garbageCollector?.collect()
     }
 

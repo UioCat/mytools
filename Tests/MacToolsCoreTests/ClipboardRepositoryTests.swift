@@ -1,3 +1,4 @@
+import GRDB
 import XCTest
 @testable import MacToolsCore
 
@@ -171,6 +172,129 @@ final class ClipboardRepositoryTests: XCTestCase {
         XCTAssertEqual(favorites.count, 1)
         XCTAssertEqual(favorites[0].id, item.id)
         XCTAssertTrue(favorites[0].isFavorite)
+    }
+
+    func testFavoriteTagsAreNormalizedPersistedAndRetainedWhenUnfavorited() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let item = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000023")!,
+            title: "tagged favorite",
+            createdAt: Date(timeIntervalSince1970: 100),
+            isFavorite: true
+        )
+        try repository.upsert(item)
+
+        try repository.setTags(
+            id: item.id,
+            tags: [" 代码 ", "Work", "work", "", String(repeating: "a", count: 30)]
+        )
+
+        let tagged = try XCTUnwrap(repository.item(id: item.id))
+        XCTAssertEqual(tagged.tags, [String(repeating: "a", count: 24), "Work", "代码"])
+        XCTAssertEqual(tagged.tagsClock.counter, 1)
+        XCTAssertFalse(tagged.tagsClock.deviceID.isEmpty)
+
+        try repository.setFavorite(id: item.id, isFavorite: false)
+
+        XCTAssertEqual(try XCTUnwrap(repository.item(id: item.id)).tags, tagged.tags)
+    }
+
+    func testCorruptedStoredTagsFallBackToEmptyWithoutHidingClipboardItem() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let item = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000025")!,
+            title: "corrupted tags",
+            createdAt: Date(timeIntervalSince1970: 100),
+            isFavorite: true
+        )
+        try repository.upsert(item)
+        try database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE clipboard_items SET tagsJSON = ? WHERE id = ?",
+                arguments: ["not-json", item.id.uuidString]
+            )
+        }
+
+        let restored = try XCTUnwrap(repository.item(id: item.id))
+
+        XCTAssertEqual(restored.id, item.id)
+        XCTAssertEqual(restored.tags, [])
+    }
+
+    func testNewerRemoteTagsClockWinsDuringUpsert() throws {
+        let database = try ClipboardDatabase.inMemory()
+        let repository = ClipboardRepository(database: database)
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000024")!
+        var item = ClipboardItem.testItem(
+            id: id,
+            title: "clocked tags",
+            createdAt: Date(timeIntervalSince1970: 1),
+            contentHash: "clocked-tags"
+        )
+        try repository.upsert(item)
+        try repository.setTags(id: id, tags: ["Local"])
+
+        item.tags = ["Remote"]
+        item.tagsClock = ClipboardFieldClock(counter: 2, deviceID: "remote")
+        try repository.upsert(item, enqueuesSyncChange: false)
+
+        let merged = try XCTUnwrap(repository.item(id: id))
+        XCTAssertEqual(merged.tags, ["Remote"])
+        XCTAssertEqual(merged.tagsClock, item.tagsClock)
+    }
+
+    func testOldClipboardItemEncodingWithoutTagsUsesEmptyDefaults() throws {
+        let item = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000026")!,
+            title: "legacy encoding",
+            createdAt: Date(timeIntervalSince1970: 100),
+            tags: ["Removed before decode"],
+            tagsClock: ClipboardFieldClock(counter: 1, deviceID: "device-a")
+        )
+        let encoded = try JSONEncoder().encode(item)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        object.removeValue(forKey: "tags")
+        object.removeValue(forKey: "tagsClock")
+        let legacyData = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        let decoded = try JSONDecoder().decode(ClipboardItem.self, from: legacyData)
+
+        XCTAssertEqual(decoded.tags, [])
+        XCTAssertEqual(decoded.tagsClock, .zero)
+    }
+
+    func testClipboardTagsMigrationPreservesExistingRowsWithEmptyDefaults() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardTagsMigration-\(UUID().uuidString)", isDirectory: true)
+        let databaseURL = directory.appendingPathComponent("Clipboard.sqlite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var database: ClipboardDatabase? = try ClipboardDatabase.at(databaseURL)
+        let item = ClipboardItem.testItem(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000025")!,
+            title: "pre-tags row",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        try ClipboardRepository(database: try XCTUnwrap(database)).upsert(item)
+        try database?.writer.write { db in
+            try db.execute(sql: "ALTER TABLE clipboard_items DROP COLUMN tagsJSON")
+            try db.execute(sql: "ALTER TABLE clipboard_items DROP COLUMN tagsClock")
+            try db.execute(sql: "ALTER TABLE clipboard_items DROP COLUMN tagsDeviceID")
+            try db.execute(
+                sql: "DELETE FROM grdb_migrations WHERE identifier = 'addClipboardTagsV10'"
+            )
+        }
+        database = nil
+
+        let migratedDatabase = try ClipboardDatabase.at(databaseURL)
+        let migrated = try XCTUnwrap(ClipboardRepository(database: migratedDatabase).item(id: item.id))
+
+        XCTAssertEqual(migrated.tags, [])
+        XCTAssertEqual(migrated.tagsClock, .zero)
     }
 
     func testDeleteRemovesClipboardItem() throws {
@@ -465,7 +589,9 @@ private extension ClipboardItem {
         useCount: Int = 0,
         isPinned: Bool = false,
         isFavorite: Bool = false,
-        contentHash: String? = nil
+        contentHash: String? = nil,
+        tags: [String] = [],
+        tagsClock: ClipboardFieldClock = .zero
     ) -> ClipboardItem {
         ClipboardItem(
             id: id,
@@ -482,7 +608,9 @@ private extension ClipboardItem {
             lastUsedAt: lastUsedAt,
             useCount: useCount,
             isPinned: isPinned,
-            isFavorite: isFavorite
+            isFavorite: isFavorite,
+            tags: tags,
+            tagsClock: tagsClock
         )
     }
 }

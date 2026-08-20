@@ -8,8 +8,10 @@ public struct ClipboardListView: View {
     public let items: [ClipboardItem]
     public let selectedItemID: ClipboardItem.ID?
     public let mode: ClipboardPanelMode
+    public let availableTags: [String]
     public let onSelect: (ClipboardItem) -> Void
     public let onFavoriteToggle: (ClipboardItem) -> Void
+    public let onTagsChange: (ClipboardItem, [String]) -> Void
     public let onDelete: (ClipboardItem) -> Void
 
     /// 创建 `ClipboardListView`，保存传入依赖并建立初始状态。
@@ -17,8 +19,10 @@ public struct ClipboardListView: View {
         self.items = items
         self.selectedItemID = nil
         self.mode = .all
+        self.availableTags = []
         self.onSelect = onSelect
         self.onFavoriteToggle = { _ in }
+        self.onTagsChange = { _, _ in }
         self.onDelete = { _ in }
     }
 
@@ -27,15 +31,19 @@ public struct ClipboardListView: View {
         items: [ClipboardItem],
         selectedItemID: ClipboardItem.ID?,
         mode: ClipboardPanelMode,
+        availableTags: [String] = [],
         onSelect: @escaping (ClipboardItem) -> Void,
         onFavoriteToggle: @escaping (ClipboardItem) -> Void,
+        onTagsChange: @escaping (ClipboardItem, [String]) -> Void = { _, _ in },
         onDelete: @escaping (ClipboardItem) -> Void
     ) {
         self.items = items
         self.selectedItemID = selectedItemID
         self.mode = mode
+        self.availableTags = ClipboardTagPolicy.normalizedCatalog(availableTags)
         self.onSelect = onSelect
         self.onFavoriteToggle = onFavoriteToggle
+        self.onTagsChange = onTagsChange
         self.onDelete = onDelete
     }
 
@@ -54,8 +62,12 @@ public struct ClipboardListView: View {
                                 index: index + 1,
                                 isSelected: isSelected,
                                 showsBackground: isSelected,
+                                availableTags: availableTags,
                                 onFavoriteToggle: {
                                     onFavoriteToggle(item)
+                                },
+                                onTagsChange: { tags in
+                                    onTagsChange(item, tags)
                                 }
                             )
                             .frame(maxWidth: .infinity, alignment: .leading)
