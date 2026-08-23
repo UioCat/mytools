@@ -1,5 +1,37 @@
 # Errors
 
+## [ERR-20260823-031] direct_temp_delete_rejected
+
+**Logged**: 2026-08-23T18:47:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+发布核验临时产物清理命令包含直接删除参数，被安全策略在执行前整段拒绝。
+
+### Error
+```
+Rejected: rm -f style commands are not permitted. Use a safer approach.
+```
+
+### Context
+- 命令目标均为本次创建的精确临时路径，但同一脚本包含递归删除和强制删除。
+- 拒绝发生在进程创建前，worktree、下载产物和仓库状态均未改变。
+
+### Suggested Fix
+临时 Git worktree 使用 `git worktree remove --force`；普通临时产物移动到明确的废纸篓路径，保留恢复能力。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-08-23T18:48:00+08:00
+- **Notes**: worktree 通过 Git 移除，公开资产核验目录和测试下载移动到废纸篓，工作树保持干净。
+
+---
+
 ## [ERR-20260823-030] zsh_unquoted_query_url_glob
 
 **Logged**: 2026-08-23T18:41:00+08:00
