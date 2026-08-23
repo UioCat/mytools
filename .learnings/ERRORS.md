@@ -33,6 +33,38 @@ shell 脚本使用任务语义明确且不与 shell 特殊参数冲突的变量�
 
 ---
 
+## [ERR-20260823-027] git_push_refspec_variable_boundary
+
+**Logged**: 2026-08-23T17:27:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+预检分支推送命令未给 SHA 变量加花括号，zsh 将变量名与 refspec 后缀连在一起。
+
+### Error
+```
+error: src refspec <sha>fs/heads/codex/anonymous-signing-preflight does not match any
+```
+
+### Context
+- 失败发生在本地 refspec 解析阶段，没有向远端写入任何引用。
+- 正确形式为 `${CANDIDATE_SHA}:refs/heads/codex/anonymous-signing-preflight`。
+
+### Suggested Fix
+变量紧邻冒号等 refspec 文本时始终使用 `${...}` 明确变量边界，并在推送后核对远端分支 SHA。
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/release-guide.md
+
+### Resolution
+- **Resolved**: 2026-08-23T17:28:00+08:00
+- **Notes**: 改用带花括号的完整 refspec，并把远端分支 SHA 核对纳入后续命令。
+
+---
+
 ## [ERR-20260823-026] package_app_dependency_submodule_fetch
 
 **Logged**: 2026-08-23T17:20:00+08:00
