@@ -133,6 +133,39 @@ Resolve the active database path from `MacToolsStorePaths`, inspect its schema f
 
 ---
 
+## [ERR-20260823-021] compact Swift diagnostic omitted operator whitespace
+
+**Logged**: 2026-08-23T13:22:20+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A compact read-only Swift diagnostic did not compile because `==.current` was tokenized incorrectly.
+
+### Error
+```
+error: '==' is not a postfix unary operator
+```
+
+### Context
+- The script only aggregated favorite and pinned flags for case-variant cloud records.
+- Compilation failed before the script accessed the iCloud sync folder.
+- No repository, clipboard, or cloud data was changed.
+
+### Suggested Fix
+Keep standard whitespace around Swift operators in inline diagnostics, especially before leading-dot enum cases.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-08-23T13:22:20+08:00
+- **Notes**: Added operator whitespace and confirmed all current manifests reference only the favorited lowercase variant.
+
+---
+
 ## [ERR-20260823-001] uppercase-lowercase sync diagnostic expectation
 
 **Logged**: 2026-08-23T11:36:30+08:00
