@@ -1,5 +1,37 @@
 # Errors
 
+## [ERR-20260823-028] apply_patch_same_path_delete_add
+
+**Logged**: 2026-08-23T18:45:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+一次补丁同时删除并新增同一路径，`apply_patch` 因目标操作重复而拒绝执行。
+
+### Error
+```
+apply_patch verification failed: invalid patch: multiple operations target docs/release-guide.md
+```
+
+### Context
+- 目标是完整改写已有发布指南，并同时修改 `AGENTS.md`。
+- 补丁在验证阶段失败，没有修改任何文件。
+
+### Suggested Fix
+完整重建文件时，将删除和新增拆成两次独立 `apply_patch` 调用；其他文件的更新另行应用。
+
+### Metadata
+- Reproducible: yes
+- Related Files: AGENTS.md, docs/release-guide.md
+
+### Resolution
+- **Resolved**: 2026-08-23T18:46:00+08:00
+- **Notes**: 拆分为更新 `AGENTS.md`、删除旧指南和新增指南三次补丁后成功应用。
+
+---
+
 ## [ERR-20260810-018] zsh path special parameter shadowed command search path
 
 **Logged**: 2026-08-10T20:08:00+08:00
