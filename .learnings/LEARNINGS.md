@@ -32,7 +32,7 @@
 
 **Logged**: 2026-08-10T18:30:00+08:00
 **Priority**: high
-**Status**: pending
+**Status**: resolved
 **Area**: frontend
 
 ### Summary
@@ -112,7 +112,7 @@ replica，因此两者不能强制相等。
 
 **Logged**: 2026-07-27T11:57:26+08:00
 **Priority**: high
-**Status**: pending
+**Status**: resolved
 **Area**: frontend
 
 ### Summary
@@ -236,5 +236,36 @@ When a user asks for the same feeling, explicitly classify the reference as a mo
 ### Resolution
 - **Resolved**: 2026-07-14T21:00:39+08:00
 - **Notes**: Regenerated the set from ten distinct icon metaphors while retaining only the reference image's visual mood.
+
+---
+## [LRN-20260823-001] knowledge_gap
+
+**Logged**: 2026-08-23T18:30:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+Updating a file's contents must not use `NSFileCoordinatorWritingForReplacing` merely because the write is atomic.
+
+### Details
+The macOS SDK `NSFileCoordinator.h` explicitly says `.forReplacing` is for replacing an item with a different
+item and must not be used for a normal content update, even when the implementation writes a temporary file and
+renames it into place. MacTools manifest publication should coordinate the exact manifest URL with ordinary write
+options; restoring a selected `NSFileVersion` remains a separate version-replacement operation.
+
+### Suggested Action
+When implementing coordinated metadata writes, choose the coordination option from the logical file operation,
+not from the low-level atomic-write mechanism, and verify the current SDK header before relying on remembered API
+semantics.
+
+### Metadata
+- Source: conversation
+- Related Files: Sources/MacTools/Platform/Sync, Sources/MacToolsCore/Sync/DriveSyncStore.swift
+- Tags: macos, nsfilecoordinator, nsfileversion, icloud-drive
+
+### Resolution
+- **Resolved**: 2026-08-23T18:31:00+08:00
+- **Notes**: `ICloudSyncFileCoordinator` now coordinates exact file URLs with ordinary write options; historical version restoration uses `NSFileVersion.replaceItem` separately.
 
 ---

@@ -214,19 +214,31 @@ public struct SyncContentPreparationResult: Equatable, Sendable {
 
 /// 发布设备 revision 后返回的 manifest 与可用于更新缓存的元数据字节差。
 public struct DriveSyncWriteResult: Equatable, Sendable {
+    public enum Outcome: Equatable, Sendable {
+        case publishedDraft
+        case alreadyPublishedDraft
+        case adoptedNewerRemote
+    }
+
     public var manifest: SyncReplicaManifest
     public var manifestDigest: String
     public var metadataByteDelta: Int64
+    public var outcome: Outcome
+    public var publicationIdentity: SyncSnapshotPublicationIdentity?
 
     /// 返回写入后的 manifest、摘要及元数据容量变化，供周期缓存原位更新。
     public init(
         manifest: SyncReplicaManifest,
         manifestDigest: String,
-        metadataByteDelta: Int64
+        metadataByteDelta: Int64,
+        outcome: Outcome = .publishedDraft,
+        publicationIdentity: SyncSnapshotPublicationIdentity? = nil
     ) {
         self.manifest = manifest
         self.manifestDigest = manifestDigest
         self.metadataByteDelta = metadataByteDelta
+        self.outcome = outcome
+        self.publicationIdentity = publicationIdentity
     }
 }
 
@@ -236,11 +248,20 @@ public final class DriveSyncStore: @unchecked Sendable {
 
     public let rootURL: URL
     private let fileManager: FileManager
+    private let fileCoordinator: any SyncFileCoordinating
+    private let publicationLedger: SyncSnapshotPublicationLedger?
 
     /// 创建 `DriveSyncStore`，保存传入依赖并建立初始状态。
-    public init(rootURL: URL, fileManager: FileManager = .default) {
+    public init(
+        rootURL: URL,
+        fileManager: FileManager = .default,
+        fileCoordinator: any SyncFileCoordinating = DirectSyncFileCoordinator(),
+        publicationLedger: SyncSnapshotPublicationLedger? = nil
+    ) {
         self.rootURL = rootURL.standardizedFileURL
         self.fileManager = fileManager
+        self.fileCoordinator = fileCoordinator
+        self.publicationLedger = publicationLedger
     }
 
     /// 创建或校验同步目录协议结构，并在首次初始化时写入容量配置。
@@ -291,7 +312,8 @@ public final class DriveSyncStore: @unchecked Sendable {
     /// 每轮读取 manifest；摘要未变化时复用已校验 snapshot，变化时才读取 revision 内容。
     public func scanReplicas(
         generation: Int,
-        cachedReplicasByDeviceID: [String: DriveSyncReplica] = [:]
+        cachedReplicasByDeviceID: [String: DriveSyncReplica] = [:],
+        ownedDeviceID: String? = nil
     ) throws -> DriveSyncReplicaScan {
         guard fileManager.fileExists(atPath: replicasURL.path) else {
             return DriveSyncReplicaScan(replicas: [], failures: [])
@@ -311,7 +333,8 @@ public final class DriveSyncStore: @unchecked Sendable {
                 if let replica = try readReplica(
                     at: directory,
                     generation: generation,
-                    cachedReplica: cachedReplicasByDeviceID[deviceID]
+                    cachedReplica: cachedReplicasByDeviceID[deviceID],
+                    mayRepairManifestVersions: ownedDeviceID == deviceID
                 ) {
                     replicas.append(replica)
                 }
@@ -382,12 +405,33 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
         let snapshotDirectoryName = Self.snapshotDirectoryName(
             generation: bundle.clipboard.generation,
-            revision: bundle.clipboard.revision
+            revision: bundle.clipboard.revision,
+            digests: snapshotDigests
         )
         let revisionsDirectory = deviceDirectory.appendingPathComponent("revisions", isDirectory: true)
         let snapshotDirectory = revisionsDirectory.appendingPathComponent(
             snapshotDirectoryName,
             isDirectory: true
+        )
+        var normalizedSeenRevisions = seenRevisions
+        normalizedSeenRevisions[bundle.clipboard.deviceID] = bundle.clipboard.revision
+        let manifest = SyncReplicaManifest(
+            deviceID: bundle.clipboard.deviceID,
+            deviceName: deviceName,
+            generation: bundle.clipboard.generation,
+            revision: bundle.clipboard.revision,
+            seenRevisions: normalizedSeenRevisions,
+            snapshotDigests: snapshotDigests,
+            snapshotDirectory: snapshotDirectoryName,
+            updatedAt: updatedAt
+        )
+        let manifestData = try SyncSnapshotCodec.encode(manifest)
+        let manifestDigest = SyncSnapshotCodec.digest(manifestData)
+        try preflightOwnedManifest(
+            at: deviceDirectory.appendingPathComponent("manifest.json"),
+            deviceDirectory: deviceDirectory,
+            draftData: manifestData,
+            draft: manifest
         )
         try writeSnapshotRevision(
             clipboardData: clipboardData,
@@ -396,38 +440,80 @@ public final class DriveSyncStore: @unchecked Sendable {
             to: snapshotDirectory,
             revisionsDirectory: revisionsDirectory
         )
-
-        let manifest = SyncReplicaManifest(
-            deviceID: bundle.clipboard.deviceID,
-            deviceName: deviceName,
-            generation: bundle.clipboard.generation,
-            revision: bundle.clipboard.revision,
-            seenRevisions: seenRevisions,
-            snapshotDigests: snapshotDigests,
-            snapshotDirectory: snapshotDirectoryName,
-            updatedAt: updatedAt
+        let descriptor = try readProtocol()
+        let publicationIdentity = SyncSnapshotPublicationIdentity(
+            storeID: descriptor.storeID,
+            deviceID: manifest.deviceID,
+            generation: manifest.generation,
+            revision: manifest.revision,
+            snapshotDirectory: snapshotDirectoryName
         )
-        let previousManifest = currentManifest(at: deviceDirectory)
-        let manifestData = try SyncSnapshotCodec.encode(manifest)
+        try publicationLedger?.recordPrepared(
+            SyncSnapshotPublicationRecord(
+                storeID: descriptor.storeID,
+                deviceID: manifest.deviceID,
+                generation: manifest.generation,
+                revision: manifest.revision,
+                snapshotDirectory: snapshotDirectoryName,
+                snapshotDigests: snapshotDigests,
+                manifestDigest: manifestDigest,
+                state: .prepared,
+                supersededByRevision: nil,
+                updatedAt: updatedAt
+            )
+        )
         // manifest 是 revision 的唯一发布点，发布前必须重新确认周期仍有效。
         try cancellation.check()
-        try verifiedWrite(
-            manifestData,
-            to: deviceDirectory.appendingPathComponent("manifest.json")
-        )
-        try removeObsoleteSnapshotRevisions(
-            in: revisionsDirectory,
-            keeping: Set([snapshotDirectoryName, previousManifest?.snapshotDirectory].compactMap { $0 })
-        )
+        try publicationLedger?.markPublicationUncertain(publicationIdentity, at: updatedAt)
+        let manifestURL = deviceDirectory.appendingPathComponent("manifest.json")
+        let coordinated = try fileCoordinator.coordinateManifest(at: manifestURL) { versions in
+            try self.manifestMutation(
+                versions: versions,
+                draftData: manifestData,
+                draft: manifest,
+                manifestURL: manifestURL
+            )
+        }
         let publishedManifest = try SyncSnapshotCodec.decode(
             SyncReplicaManifest.self,
-            from: manifestData
+            from: coordinated.data
         )
+        let publishedDigest = SyncSnapshotCodec.digest(coordinated.data)
+        let outcome: DriveSyncWriteResult.Outcome
+        let publishedDraft = Self.representsSamePublication(publishedManifest, manifest)
+        if publishedDraft {
+            outcome = coordinated.didWrite ? .publishedDraft : .alreadyPublishedDraft
+        } else {
+            outcome = .adoptedNewerRemote
+        }
         let metadataBytesAfterWrite = try regularFileBytes(in: deviceDirectory)
         return DriveSyncWriteResult(
             manifest: publishedManifest,
-            manifestDigest: SyncSnapshotCodec.digest(manifestData),
-            metadataByteDelta: metadataBytesAfterWrite - metadataBytesBeforeWrite
+            manifestDigest: publishedDigest,
+            metadataByteDelta: metadataBytesAfterWrite - metadataBytesBeforeWrite,
+            outcome: outcome,
+            publicationIdentity: publishedDraft && publicationLedger != nil
+                ? publicationIdentity
+                : nil
+        )
+    }
+
+    /// 本地发布事务完成后，限量清理台账证明可回收的当前设备快照。
+    public func cleanupSnapshotPublications(
+        storeID: UUID,
+        deviceID: String,
+        generation: Int,
+        protectedDirectories: Set<String>
+    ) throws {
+        let revisionsDirectory = replicasURL
+            .appendingPathComponent(deviceID, isDirectory: true)
+            .appendingPathComponent("revisions", isDirectory: true)
+        try cleanupRecordedSnapshotRevisions(
+            storeID: storeID,
+            deviceID: deviceID,
+            generation: generation,
+            revisionsDirectory: revisionsDirectory,
+            keeping: protectedDirectories
         )
     }
 
@@ -750,11 +836,32 @@ public final class DriveSyncStore: @unchecked Sendable {
     private func readReplica(
         at directory: URL,
         generation: Int,
-        cachedReplica: DriveSyncReplica?
+        cachedReplica: DriveSyncReplica?,
+        mayRepairManifestVersions: Bool = false
     ) throws -> DriveSyncReplica? {
         let manifestURL = directory.appendingPathComponent("manifest.json")
         guard fileManager.fileExists(atPath: manifestURL.path) else { return nil }
-        let manifestData = try readData(at: manifestURL)
+        let coordinated = try fileCoordinator.coordinateManifest(at: manifestURL) { versions in
+            guard !versions.isEmpty else { return .abort }
+            if versions.count == 1, let only = versions.first {
+                return .keep(versionID: only.versionID)
+            }
+            guard mayRepairManifestVersions else { return .abort }
+            let candidates = try versions.map { version in
+                try self.manifestCandidate(
+                    version: version,
+                    deviceDirectory: directory,
+                    generation: generation
+                )
+            }
+            switch SyncManifestConflictResolver.resolve(candidates) {
+            case let .keep(versionID):
+                return .keep(versionID: versionID)
+            case .unresolved:
+                return .abort
+            }
+        }
+        let manifestData = coordinated.data
         let manifest = try SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: manifestData)
         guard [1, SyncReplicaManifest.currentSchemaVersion].contains(manifest.schemaVersion) else {
             throw DriveSyncStoreError.incompatibleSchema(
@@ -866,6 +973,16 @@ public final class DriveSyncStore: @unchecked Sendable {
         revisionsDirectory: URL
     ) throws {
         try fileManager.createDirectory(at: revisionsDirectory, withIntermediateDirectories: true)
+        if fileManager.fileExists(atPath: destination.path) {
+            guard try readData(at: destination.appendingPathComponent("clipboard.json")) == clipboardData,
+                  try readData(at: destination.appendingPathComponent("preferences.json")) == preferencesData,
+                  try readData(at: destination.appendingPathComponent("tombstones.json")) == tombstonesData else {
+                throw DriveSyncStoreError.inconsistentReplica(
+                    deviceID: destination.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+                )
+            }
+            return
+        }
         let staging = revisionsDirectory.appendingPathComponent(
             ".staging-\(UUID().uuidString)",
             isDirectory: true
@@ -882,28 +999,39 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
-    /// 尝试读取设备当前 manifest；不存在、未下载或损坏时返回 nil 触发完整重写。
-    private func currentManifest(at deviceDirectory: URL) -> SyncReplicaManifest? {
-        let url = deviceDirectory.appendingPathComponent("manifest.json")
-        guard fileManager.fileExists(atPath: url.path),
-              let data = try? readData(at: url) else {
-            return nil
-        }
-        return try? SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: data)
-    }
-
-    /// 移除 `removeObsoleteSnapshotRevisions` 指定的同步核心领域数据，并维护关联状态。
-    private func removeObsoleteSnapshotRevisions(
-        in revisionsDirectory: URL,
+    /// 只清理由本机发布台账明确证明可回收的目录；历史 UUID 和不确定发布永远保留。
+    private func cleanupRecordedSnapshotRevisions(
+        storeID: UUID,
+        deviceID: String,
+        generation: Int,
+        revisionsDirectory: URL,
         keeping names: Set<String>
     ) throws {
-        guard fileManager.fileExists(atPath: revisionsDirectory.path) else { return }
-        for url in try fileManager.contentsOfDirectory(
-            at: revisionsDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: []
-        ) where !names.contains(url.lastPathComponent) {
-            try fileManager.removeItem(at: url)
+        guard let publicationLedger else { return }
+        let deadline = Date().addingTimeInterval(2)
+        let candidates = try publicationLedger.cleanupCandidates(
+            storeID: storeID,
+            deviceID: deviceID,
+            generation: generation,
+            protectedDirectories: names,
+            limit: 256
+        )
+        for candidate in candidates where Date() < deadline {
+            let url = revisionsDirectory.appendingPathComponent(
+                candidate.snapshotDirectory,
+                isDirectory: true
+            )
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+            switch candidate.state {
+            case .superseded:
+                try publicationLedger.markReclaimed(candidate.identity)
+            case .prepared:
+                try publicationLedger.removeRecord(candidate.identity)
+            case .publicationUncertain, .published, .reclaimed:
+                break
+            }
         }
     }
 
@@ -997,16 +1125,254 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 创建快照前先验证并收敛本机 manifest；证据不足时保持目录数量不变。
+    private func preflightOwnedManifest(
+        at manifestURL: URL,
+        deviceDirectory: URL,
+        draftData: Data,
+        draft: SyncReplicaManifest
+    ) throws {
+        guard fileManager.fileExists(atPath: manifestURL.path) else { return }
+        _ = try fileCoordinator.coordinateManifest(at: manifestURL) { versions in
+            guard !versions.isEmpty else { return .abort }
+            let candidates: [SyncManifestCandidate]
+            do {
+                candidates = try versions.map {
+                    try self.manifestCandidate(
+                        version: $0,
+                        deviceDirectory: deviceDirectory,
+                        generation: draft.generation
+                    )
+                }
+            } catch {
+                return .abort
+            }
+            guard let winner = resolvedManifestWinner(in: candidates) else {
+                return .abort
+            }
+            if let identical = versions.first(where: { $0.data == draftData }) {
+                return .keep(versionID: identical.versionID)
+            }
+            if Self.representsSamePublication(draft, winner.manifest) {
+                return .keep(versionID: winner.versionID)
+            }
+            guard draft.revision > winner.manifest.revision else { return .abort }
+            let draftCandidate = SyncManifestCandidate(
+                versionID: "draft:\(SyncSnapshotCodec.digest(draftData))",
+                isCurrent: false,
+                manifest: draft,
+                manifestDigest: SyncSnapshotCodec.digest(draftData),
+                verification: .complete
+            )
+            guard SyncManifestConflictResolver.resolve([winner, draftCandidate])
+                    == .keep(versionID: draftCandidate.versionID) else {
+                return .abort
+            }
+            return .keep(versionID: winner.versionID)
+        }
+    }
+
+    /// 在 manifest 精确协调区间内验证全部版本并决定发布、复用或采用更高远端 revision。
+    private func manifestMutation(
+        versions: [SyncFileVersionContent],
+        draftData: Data,
+        draft: SyncReplicaManifest,
+        manifestURL: URL
+    ) throws -> SyncManifestMutation {
+        guard !versions.isEmpty else {
+            return .publish(data: draftData, baseVersionID: nil)
+        }
+        let deviceDirectory = manifestURL.deletingLastPathComponent()
+        let candidates: [SyncManifestCandidate]
+        do {
+            candidates = try versions.map {
+                try manifestCandidate(
+                    version: $0,
+                    deviceDirectory: deviceDirectory,
+                    generation: draft.generation
+                )
+            }
+        } catch {
+            return .abort
+        }
+        guard let winner = resolvedManifestWinner(in: candidates) else {
+            return .abort
+        }
+        if let identical = versions.first(where: { $0.data == draftData }) {
+            return .keep(versionID: identical.versionID)
+        }
+        if Self.representsSamePublication(draft, winner.manifest) {
+            return .keep(versionID: winner.versionID)
+        }
+        if winner.manifest.revision > draft.revision {
+            return .keep(versionID: winner.versionID)
+        }
+        guard winner.manifest.revision < draft.revision else {
+            return .abort
+        }
+        let draftCandidate = SyncManifestCandidate(
+            versionID: "draft:\(SyncSnapshotCodec.digest(draftData))",
+            isCurrent: false,
+            manifest: draft,
+            manifestDigest: SyncSnapshotCodec.digest(draftData),
+            verification: .complete
+        )
+        guard SyncManifestConflictResolver.resolve([winner, draftCandidate])
+                == .keep(versionID: draftCandidate.versionID) else {
+            return .abort
+        }
+        return .publish(data: draftData, baseVersionID: winner.versionID)
+    }
+
+    /// schema 1 仅允许作为唯一、已完整校验的升级基线；冲突现场仍只解析当前 schema。
+    private func resolvedManifestWinner(
+        in candidates: [SyncManifestCandidate]
+    ) -> SyncManifestCandidate? {
+        if candidates.count == 1,
+           var legacy = candidates.first,
+           legacy.manifest.schemaVersion == 1,
+           legacy.verification == .complete {
+            legacy.manifest.schemaVersion = SyncReplicaManifest.currentSchemaVersion
+            return legacy
+        }
+        guard case let .keep(versionID) = SyncManifestConflictResolver.resolve(candidates) else {
+            return nil
+        }
+        return candidates.first { $0.versionID == versionID }
+    }
+
+    /// 将文件版本转换为纯解析器候选；正常路径必须完成三份快照校验。
+    private func manifestCandidate(
+        version: SyncFileVersionContent,
+        deviceDirectory: URL,
+        generation: Int
+    ) throws -> SyncManifestCandidate {
+        let manifest = try SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: version.data)
+        let manifestDigest = SyncSnapshotCodec.digest(version.data)
+        let verification: SyncManifestCandidate.Verification
+        do {
+            try validateManifestSnapshot(
+                manifest,
+                deviceDirectory: deviceDirectory,
+                generation: generation
+            )
+            verification = .complete
+        } catch {
+            guard let publicationLedger,
+                  let snapshotDirectory = manifest.snapshotDirectory,
+                  let storeID = try? readProtocol().storeID,
+                  let record = try publicationLedger.supersededRecord(
+                    storeID: storeID,
+                    deviceID: manifest.deviceID,
+                    generation: manifest.generation,
+                    revision: manifest.revision,
+                    snapshotDirectory: snapshotDirectory,
+                    snapshotDigests: manifest.snapshotDigests,
+                    manifestDigest: manifestDigest
+                  ),
+                  let supersededByRevision = record.supersededByRevision else {
+                throw error
+            }
+            verification = .supersededLedger(replacedByRevision: supersededByRevision)
+        }
+        return SyncManifestCandidate(
+            versionID: version.versionID,
+            isCurrent: version.isCurrent,
+            manifest: manifest,
+            manifestDigest: manifestDigest,
+            verification: verification
+        )
+    }
+
+    /// 校验 manifest 引用的不可变快照目录、摘要、schema 和设备 revision 一致性。
+    private func validateManifestSnapshot(
+        _ manifest: SyncReplicaManifest,
+        deviceDirectory: URL,
+        generation: Int
+    ) throws {
+        guard [1, SyncReplicaManifest.currentSchemaVersion].contains(manifest.schemaVersion),
+              manifest.generation == generation,
+              manifest.deviceID == deviceDirectory.lastPathComponent else {
+            throw DriveSyncStoreError.inconsistentReplica(deviceID: deviceDirectory.lastPathComponent)
+        }
+        let snapshotDirectory: URL
+        if let snapshotDirectoryName = manifest.snapshotDirectory {
+            guard Self.isValidSnapshotDirectoryName(snapshotDirectoryName) else {
+                throw DriveSyncStoreError.inconsistentReplica(deviceID: manifest.deviceID)
+            }
+            snapshotDirectory = deviceDirectory
+                .appendingPathComponent("revisions", isDirectory: true)
+                .appendingPathComponent(snapshotDirectoryName, isDirectory: true)
+        } else {
+            guard manifest.schemaVersion == 1 else {
+                throw DriveSyncStoreError.inconsistentReplica(deviceID: manifest.deviceID)
+            }
+            snapshotDirectory = deviceDirectory
+        }
+        let clipboard = try SyncSnapshotCodec.decode(
+            SyncClipboardSnapshot.self,
+            from: snapshotData(
+                named: "clipboard.json",
+                expectedDigest: manifest.snapshotDigests.clipboard,
+                deviceID: manifest.deviceID,
+                directory: snapshotDirectory
+            )
+        )
+        let preferences = try SyncSnapshotCodec.decode(
+            SyncPreferencesSnapshot.self,
+            from: snapshotData(
+                named: "preferences.json",
+                expectedDigest: manifest.snapshotDigests.preferences,
+                deviceID: manifest.deviceID,
+                directory: snapshotDirectory
+            )
+        )
+        let tombstones = try SyncSnapshotCodec.decode(
+            SyncTombstoneSnapshot.self,
+            from: snapshotData(
+                named: "tombstones.json",
+                expectedDigest: manifest.snapshotDigests.tombstones,
+                deviceID: manifest.deviceID,
+                directory: snapshotDirectory
+            )
+        )
+        guard clipboard.schemaVersion == SyncClipboardSnapshot.currentSchemaVersion,
+              preferences.schemaVersion == SyncPreferencesSnapshot.currentSchemaVersion,
+              tombstones.schemaVersion == SyncTombstoneSnapshot.currentSchemaVersion,
+              clipboard.deviceID == manifest.deviceID,
+              preferences.deviceID == manifest.deviceID,
+              tombstones.deviceID == manifest.deviceID,
+              clipboard.generation == generation,
+              preferences.generation == generation,
+              tombstones.generation == generation,
+              clipboard.revision == manifest.revision,
+              preferences.revision == manifest.revision,
+              tombstones.revision == manifest.revision else {
+            throw DriveSyncStoreError.inconsistentReplica(deviceID: manifest.deviceID)
+        }
+    }
+
+    /// updatedAt 与设备展示名不是发布身份；重启重试不得因此制造同 revision 冲突。
+    private static func representsSamePublication(
+        _ lhs: SyncReplicaManifest,
+        _ rhs: SyncReplicaManifest
+    ) -> Bool {
+        lhs.schemaVersion == rhs.schemaVersion
+            && lhs.deviceID == rhs.deviceID
+            && lhs.generation == rhs.generation
+            && lhs.revision == rhs.revision
+            && lhs.seenRevisions == rhs.seenRevisions
+            && lhs.snapshotDigests == rhs.snapshotDigests
+            && lhs.snapshotDirectory == rhs.snapshotDirectory
+    }
+
     /// 使用 staging 文件、原子替换和写后回读保证元数据文件完整可见。
     private func verifiedWrite(_ data: Data, to url: URL) throws {
         try fileManager.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        if fileManager.fileExists(atPath: url.path) {
-            try resolveIdenticalConflicts(at: url)
-        }
-        try data.write(to: url, options: [.atomic])
+        try fileCoordinator.writeData(data, to: url)
         guard try readData(at: url) == data else {
             throw CocoaError(.fileWriteUnknown)
         }
@@ -1023,27 +1389,7 @@ public final class DriveSyncStore: @unchecked Sendable {
                 throw DriveSyncStoreError.itemNotDownloaded(url)
             }
         }
-        try resolveIdenticalConflicts(at: url)
-        return try Data(contentsOf: url, options: options)
-    }
-
-    /// 解析并返回 `resolveIdenticalConflicts` 对应的同步核心领域结果。
-    private func resolveIdenticalConflicts(at url: URL) throws {
-        guard let conflicts = NSFileVersion.unresolvedConflictVersionsOfItem(at: url),
-              !conflicts.isEmpty else {
-            return
-        }
-        let currentData = try Data(contentsOf: url, options: [.mappedIfSafe])
-        for conflict in conflicts {
-            guard conflict.hasLocalContents,
-                  (try? Data(contentsOf: conflict.url, options: [.mappedIfSafe])) == currentData else {
-                throw DriveSyncStoreError.fileConflict(url)
-            }
-        }
-        for conflict in conflicts {
-            conflict.isResolved = true
-        }
-        try NSFileVersion.removeOtherVersionsOfItem(at: url)
+        return try fileCoordinator.readData(at: url, options: options)
     }
 
     /// 校验 `validateSchema` 接收的同步核心领域数据是否满足当前约束。
@@ -1108,8 +1454,15 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     /// 使用 generation 和 revision 生成不可变设备快照目录名。
-    private static func snapshotDirectoryName(generation: Int, revision: Int64) -> String {
-        "g\(generation)-r\(revision)-\(UUID().uuidString.lowercased())"
+    private static func snapshotDirectoryName(
+        generation: Int,
+        revision: Int64,
+        digests: SyncSnapshotDigests
+    ) -> String {
+        let identity = Data(
+            "\(digests.clipboard)\n\(digests.preferences)\n\(digests.tombstones)".utf8
+        )
+        return "g\(generation)-r\(revision)-\(SyncSnapshotCodec.digest(identity))"
     }
 
     /// 校验快照目录名严格符合 generation-revision 协议格式。

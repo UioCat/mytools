@@ -340,6 +340,31 @@ public final class MacToolsDatabase: @unchecked Sendable {
                 table.add(column: "tagsDeviceID", .text).notNull().defaults(to: "")
             }
         }
+        migrator.registerMigration("addSnapshotPublicationLedgerV11") { db in
+            try db.create(table: "sync_snapshot_publications") { table in
+                table.column("storeID", .text).notNull()
+                    .references("sync_accounts", column: "accountHash", onDelete: .cascade)
+                table.column("deviceID", .text).notNull()
+                table.column("generation", .integer).notNull()
+                table.column("revision", .integer).notNull()
+                table.column("snapshotDirectory", .text).notNull()
+                table.column("clipboardDigest", .text).notNull()
+                table.column("preferencesDigest", .text).notNull()
+                table.column("tombstonesDigest", .text).notNull()
+                table.column("manifestDigest", .text).notNull()
+                table.column("state", .text).notNull()
+                table.column("supersededByRevision", .integer)
+                table.column("updatedAt", .datetime).notNull()
+                table.primaryKey([
+                    "storeID", "deviceID", "generation", "revision", "snapshotDirectory"
+                ])
+            }
+            try db.create(
+                index: "idx_sync_snapshot_publications_cleanup",
+                on: "sync_snapshot_publications",
+                columns: ["storeID", "deviceID", "generation", "state", "updatedAt"]
+            )
+        }
         return migrator
     }
 }

@@ -13,7 +13,7 @@ final class DriveSyncCycleRunnerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: workingDirectory) }
         let rootURL = workingDirectory.appendingPathComponent("MacTools Sync", isDirectory: true)
         let store = DriveSyncStore(rootURL: rootURL)
-        _ = try store.prepare(now: Date(timeIntervalSince1970: 100))
+        let descriptor = try store.prepare(now: Date(timeIntervalSince1970: 100))
 
         let database = try MacToolsDatabase.inMemory()
         let payloadStore = PayloadStore(
@@ -28,17 +28,24 @@ final class DriveSyncCycleRunnerTests: XCTestCase {
         let deviceOverrideRepository = DeviceOverrideRepository(database: database)
         let deviceID = try deviceOverrideRepository.deviceID().uuidString
         let now = Date(timeIntervalSince1970: 200)
+        let localRepository = SyncLocalRepository(
+            database: database,
+            clipboardRepository: clipboardRepository,
+            preferenceRepository: preferenceRepository
+        )
         let runner = DriveSyncCycleRunner(
-            localRepository: SyncLocalRepository(
-                database: database,
-                clipboardRepository: clipboardRepository,
-                preferenceRepository: preferenceRepository
-            ),
+            localRepository: localRepository,
             deviceOverrideRepository: deviceOverrideRepository,
             payloadStore: payloadStore,
             currentDate: { now },
             deviceName: { "Test Mac" },
-            requestDownload: { _ in throw TestError.unexpectedDownload }
+            requestDownload: { _ in throw TestError.unexpectedDownload },
+            makeStore: {
+                DriveSyncStore(
+                    rootURL: $0,
+                    publicationLedger: localRepository.snapshotPublicationLedger
+                )
+            }
         )
         let configuration = DriveSyncCycleConfiguration(
             historyLimit: 500,
@@ -57,6 +64,17 @@ final class DriveSyncCycleRunnerTests: XCTestCase {
         XCTAssertEqual(firstReplica.manifest.deviceID, deviceID)
         XCTAssertEqual(firstReplica.manifest.deviceName, "Test Mac")
         XCTAssertEqual(firstReplica.manifest.revision, 1)
+        let publicationIdentity = SyncSnapshotPublicationIdentity(
+            storeID: descriptor.storeID,
+            deviceID: deviceID,
+            generation: 1,
+            revision: 1,
+            snapshotDirectory: try XCTUnwrap(firstReplica.manifest.snapshotDirectory)
+        )
+        XCTAssertEqual(
+            try localRepository.snapshotPublicationLedger.record(for: publicationIdentity)?.state,
+            .published
+        )
         XCTAssertEqual(secondReplica.manifest, firstReplica.manifest)
         XCTAssertNil(first.remoteSettings)
         XCTAssertNil(second.remoteSettings)

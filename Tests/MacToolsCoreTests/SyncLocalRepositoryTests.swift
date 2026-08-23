@@ -249,6 +249,95 @@ final class SyncLocalRepositoryTests: XCTestCase {
         ))
     }
 
+    func testPublishedSnapshotAcknowledgementCommitsLedgerOutboxAndProgressTogether() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let storeID = UUID()
+        try replica.sync.bindStore(storeID)
+        try replica.clipboard.upsert(textItem(id: UUID(), text: "published"))
+        let cutoff = Date().addingTimeInterval(1)
+        let identity = SyncSnapshotPublicationIdentity(
+            storeID: storeID,
+            deviceID: "device-a",
+            generation: 1,
+            revision: 7,
+            snapshotDirectory: "g1-r7-digest"
+        )
+        try replica.sync.snapshotPublicationLedger.recordPrepared(
+            SyncSnapshotPublicationRecord(
+                storeID: storeID,
+                deviceID: "device-a",
+                generation: 1,
+                revision: 7,
+                snapshotDirectory: identity.snapshotDirectory,
+                snapshotDigests: SyncSnapshotDigests(
+                    clipboard: "clipboard",
+                    preferences: "preferences",
+                    tombstones: "tombstones"
+                ),
+                manifestDigest: "manifest",
+                state: .prepared,
+                supersededByRevision: nil,
+                updatedAt: cutoff
+            )
+        )
+        try replica.sync.snapshotPublicationLedger.markPublicationUncertain(identity)
+
+        try replica.sync.acknowledgePublishedSnapshot(
+            upTo: cutoff,
+            excludingClipboardRecordNames: [],
+            uploadedContentIDs: [],
+            publicationIdentity: identity,
+            manifestDigest: "manifest",
+            revision: 7,
+            seenRevisions: ["device-a": 7],
+            at: cutoff
+        )
+
+        XCTAssertFalse(try replica.sync.hasPendingChanges())
+        XCTAssertEqual(
+            try replica.sync.snapshotPublicationLedger.record(for: identity)?.state,
+            .published
+        )
+        XCTAssertEqual(try replica.overrides.replicaRevision(), 7)
+        XCTAssertEqual(try replica.overrides.seenRevisions(), ["device-a": 7])
+    }
+
+    func testPublishedSnapshotAcknowledgementRollsBackWhenLedgerRecordIsMissing() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let storeID = UUID()
+        try replica.sync.bindStore(storeID)
+        try replica.clipboard.upsert(textItem(id: UUID(), text: "must stay pending"))
+
+        XCTAssertThrowsError(
+            try replica.sync.acknowledgePublishedSnapshot(
+                upTo: Date().addingTimeInterval(1),
+                excludingClipboardRecordNames: [],
+                uploadedContentIDs: [],
+                publicationIdentity: SyncSnapshotPublicationIdentity(
+                    storeID: storeID,
+                    deviceID: "device-a",
+                    generation: 1,
+                    revision: 1,
+                    snapshotDirectory: "missing"
+                ),
+                manifestDigest: "missing",
+                revision: 1,
+                seenRevisions: ["device-a": 1]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? SyncSnapshotPublicationLedgerError,
+                .missingRecord
+            )
+        }
+
+        XCTAssertTrue(try replica.sync.hasPendingChanges())
+        XCTAssertEqual(try replica.overrides.replicaRevision(), 0)
+        XCTAssertTrue(try replica.overrides.seenRevisions().isEmpty)
+    }
+
     func testReplicaReceiptsReplaceOnlyTheirDeviceAndResetWithGeneration() throws {
         let replica = try makeReplica(deviceID: "device-a")
         defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
@@ -634,6 +723,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
         var clipboard: ClipboardRepository
         var preferences: PreferenceRepository
         var sync: SyncLocalRepository
+        var overrides: DeviceOverrideRepository
         var payloadStore: PayloadStore
         var workingDirectory: URL
     }
@@ -657,6 +747,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
                 clipboardRepository: clipboard,
                 preferenceRepository: preferences
             ),
+            overrides: overrides,
             payloadStore: payloadStore,
             workingDirectory: workingDirectory
         )

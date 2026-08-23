@@ -567,6 +567,7 @@ public enum SyncStatus: Equatable, Sendable {
     case capacityFull(usage: SyncStorageUsage)
     case folderUnavailable
     case protocolIncompatible
+    case conflictNeedsAttention
     case failed
 
     public var displayName: String {
@@ -580,6 +581,7 @@ public enum SyncStatus: Equatable, Sendable {
         case .capacityFull: return "同步空间已满"
         case .folderUnavailable: return "同步文件夹不可用"
         case .protocolIncompatible: return "同步协议版本不兼容"
+        case .conflictNeedsAttention: return "同步数据存在版本冲突"
         case .failed: return "同步失败"
         }
     }

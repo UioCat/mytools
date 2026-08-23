@@ -57,6 +57,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
 
     private let localRepository: SyncLocalRepository
     private let deviceOverrideRepository: DeviceOverrideRepository
+    private let syncFileCoordinator: ICloudSyncFileCoordinator
+    private let processLock = SyncStoreProcessLock()
     private let cycleRunner: DriveSyncCycleRunner
     private let credentialSyncEngine: CredentialSyncEngine
     private let statusHandler: StatusHandler
@@ -86,6 +88,9 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     ) {
         self.localRepository = localRepository
         self.deviceOverrideRepository = deviceOverrideRepository
+        let syncFileCoordinator = ICloudSyncFileCoordinator()
+        self.syncFileCoordinator = syncFileCoordinator
+        let publicationLedger = localRepository.snapshotPublicationLedger
         self.cycleRunner = DriveSyncCycleRunner(
             localRepository: localRepository,
             deviceOverrideRepository: deviceOverrideRepository,
@@ -93,6 +98,13 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             deviceName: { Host.current().localizedName },
             requestDownload: { url in
                 try Self.requestDownloadIfNeeded(url)
+            },
+            makeStore: { rootURL in
+                DriveSyncStore(
+                    rootURL: rootURL,
+                    fileCoordinator: syncFileCoordinator,
+                    publicationLedger: publicationLedger
+                )
             }
         )
         self.credentialSyncEngine = CredentialSyncEngine(localStore: encryptedCredentialStore)
@@ -192,28 +204,41 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             do {
-                try self.withCoordinatedWrite(
-                    at: lease.rootURL,
-                    cancellation: cancellation
-                ) { coordinatedRoot in
-                    let store = DriveSyncStore(rootURL: coordinatedRoot)
-                    let descriptor = try store.readProtocol()
-                    try cancellation.check()
-                    try self.localRepository.bindStore(descriptor.storeID)
-                    let generation = try self.localRepository.advanceGeneration(
-                        storeID: descriptor.storeID
-                    )
-                    let deviceID = try self.deviceOverrideRepository.deviceID().uuidString
-                    try cancellation.check()
-                    try store.writeReset(
-                        SyncResetMarker(
-                            deviceID: deviceID,
-                            generation: generation,
-                            resetAt: Date()
+                let acquired = try self.processLock.withLock(for: lease.rootURL) {
+                    try self.withCoordinatedWrite(
+                        at: lease.rootURL,
+                        cancellation: cancellation
+                    ) { coordinatedRoot in
+                        let store = DriveSyncStore(
+                            rootURL: coordinatedRoot,
+                            fileCoordinator: self.syncFileCoordinator,
+                            publicationLedger: self.localRepository.snapshotPublicationLedger
                         )
-                    )
-                    try self.deviceOverrideRepository.setReplicaRevision(0)
-                    try self.deviceOverrideRepository.setSeenRevisions([:])
+                        let descriptor = try store.readProtocol()
+                        try cancellation.check()
+                        try self.localRepository.bindStore(descriptor.storeID)
+                        let generation = try self.localRepository.advanceGeneration(
+                            storeID: descriptor.storeID
+                        )
+                        let deviceID = try self.deviceOverrideRepository.deviceID().uuidString
+                        try cancellation.check()
+                        try store.writeReset(
+                            SyncResetMarker(
+                                deviceID: deviceID,
+                                generation: generation,
+                                resetAt: Date()
+                            )
+                        )
+                        try self.deviceOverrideRepository.setReplicaRevision(0)
+                        try self.deviceOverrideRepository.setSeenRevisions([:])
+                    }
+                    return true
+                }
+                guard acquired != nil else {
+                    self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
+                        self?.resetSyncData()
+                    }
+                    return
                 }
                 if self.isCurrent(lease) {
                     self.syncNow()
@@ -234,60 +259,73 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             do {
-                try self.withCoordinatedWrite(
-                    at: lease.rootURL,
-                    cancellation: cancellation
-                ) { coordinatedRoot in
-                    let store = DriveSyncStore(rootURL: coordinatedRoot)
-                    let descriptor = try store.readProtocol()
-                    try cancellation.check()
-                    try self.localRepository.bindStore(descriptor.storeID)
-                    let generation = try self.localRepository.currentGeneration(
-                        storeID: descriptor.storeID
-                    )
-                    let removerDeviceID = try self.deviceOverrideRepository.deviceID().uuidString
-                    guard removedDeviceID != removerDeviceID else { return }
-                    let alreadyRemovedDeviceIDs = try store.removedDeviceIDs(
-                        generation: generation
-                    )
-                    try cancellation.check()
-                    _ = try self.credentialSyncEngine.synchronize(
-                        rootURL: coordinatedRoot,
-                        currentDeviceID: removerDeviceID,
-                        removedDeviceIDs: alreadyRemovedDeviceIDs
-                    )
-                    try cancellation.check()
-                    try self.localRepository.preserveTombstones(
-                        fromRemovedDeviceID: removedDeviceID,
-                        generation: generation
-                    )
-                    try cancellation.check()
-                    try store.writeRemovedDevice(
-                        SyncRemovedDeviceMarker(
-                            removedDeviceID: removedDeviceID,
-                            removerDeviceID: removerDeviceID,
-                            generation: generation,
-                            removedAt: Date()
-                        )
-                    )
-                    try cancellation.check()
-                    _ = try self.cycleRunner.run(
-                        rootURL: coordinatedRoot,
-                        configuration: snapshot.cycleConfiguration,
-                        cancellation: cancellation,
-                        forceWrite: true
-                    )
-                    defer {
-                        self.cycleRunner.invalidateObservationCache()
-                    }
-                    try cancellation.check()
-                    try store.removeDeviceData(
-                        deviceID: removedDeviceID,
+                let acquired = try self.processLock.withLock(for: lease.rootURL) {
+                    try self.withCoordinatedWrite(
+                        at: lease.rootURL,
                         cancellation: cancellation
-                    )
-                    try cancellation.check()
-                    try CredentialReplicaStore(rootURL: coordinatedRoot)
-                        .removeReplica(deviceID: removedDeviceID)
+                    ) { coordinatedRoot in
+                        let store = DriveSyncStore(
+                            rootURL: coordinatedRoot,
+                            fileCoordinator: self.syncFileCoordinator,
+                            publicationLedger: self.localRepository.snapshotPublicationLedger
+                        )
+                        let descriptor = try store.readProtocol()
+                        try cancellation.check()
+                        try self.localRepository.bindStore(descriptor.storeID)
+                        let generation = try self.localRepository.currentGeneration(
+                            storeID: descriptor.storeID
+                        )
+                        let removerDeviceID = try self.deviceOverrideRepository.deviceID().uuidString
+                        guard removedDeviceID != removerDeviceID else { return }
+                        let alreadyRemovedDeviceIDs = try store.removedDeviceIDs(
+                            generation: generation,
+                        )
+                        try cancellation.check()
+                        _ = try self.credentialSyncEngine.synchronize(
+                            rootURL: coordinatedRoot,
+                            currentDeviceID: removerDeviceID,
+                            removedDeviceIDs: alreadyRemovedDeviceIDs
+                        )
+                        try cancellation.check()
+                        try self.localRepository.preserveTombstones(
+                            fromRemovedDeviceID: removedDeviceID,
+                            generation: generation
+                        )
+                        try cancellation.check()
+                        try store.writeRemovedDevice(
+                            SyncRemovedDeviceMarker(
+                                removedDeviceID: removedDeviceID,
+                                removerDeviceID: removerDeviceID,
+                                generation: generation,
+                                removedAt: Date()
+                            )
+                        )
+                        try cancellation.check()
+                        _ = try self.cycleRunner.run(
+                            rootURL: coordinatedRoot,
+                            configuration: snapshot.cycleConfiguration,
+                            cancellation: cancellation,
+                            forceWrite: true
+                        )
+                        defer {
+                            self.cycleRunner.invalidateObservationCache()
+                        }
+                        try cancellation.check()
+                        try store.removeDeviceData(
+                            deviceID: removedDeviceID,
+                            cancellation: cancellation
+                        )
+                        try cancellation.check()
+                        try CredentialReplicaStore(rootURL: coordinatedRoot)
+                            .removeReplica(deviceID: removedDeviceID)
+                    }
+                    return true
+                }
+                guard acquired != nil else {
+                    self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
+                        self?.removeDevice(removedDeviceID)
+                    }
+                    return
                 }
                 if self.isCurrent(lease) {
                     self.syncNow()
@@ -317,47 +355,50 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
 
             do {
                 try cancellation.check()
-                statusHandler(.syncing)
+                _ = try processLock.withLock(for: lease.rootURL) {
+                    statusHandler(.syncing)
+                    let credentialStatus: SyncStatus?
+                    do {
+                        let credentialResult = try withCoordinatedWrite(
+                            at: lease.rootURL,
+                            cancellation: cancellation
+                        ) { coordinatedRoot in
+                            try synchronizeCredential(at: coordinatedRoot)
+                        }
+                        try cancellation.check()
+                        credentialStatus = publishCredential(credentialResult)
+                    } catch is SyncCycleCancellationError {
+                        throw SyncCycleCancellationError.cancelled
+                    } catch let error as DriveSyncStoreError {
+                        try cancellation.check()
+                        credentialStatus = publishCredential(error)
+                    } catch {
+                        try cancellation.check()
+                        credentialStateHandler(.failed)
+                        credentialStatus = .failed
+                    }
 
-                let credentialStatus: SyncStatus?
-                do {
-                    let credentialResult = try withCoordinatedWrite(
+                    let driveResult = try withCoordinatedWrite(
                         at: lease.rootURL,
                         cancellation: cancellation
                     ) { coordinatedRoot in
-                        try synchronizeCredential(at: coordinatedRoot)
+                        try cycleRunner.run(
+                            rootURL: coordinatedRoot,
+                            configuration: snapshot.cycleConfiguration,
+                            cancellation: cancellation
+                        )
                     }
                     try cancellation.check()
-                    credentialStatus = publishCredential(credentialResult)
-                } catch is SyncCycleCancellationError {
-                    throw SyncCycleCancellationError.cancelled
-                } catch let error as DriveSyncStoreError {
-                    try cancellation.check()
-                    credentialStatus = publishCredential(error)
-                } catch {
-                    try cancellation.check()
-                    credentialStateHandler(.failed)
-                    credentialStatus = .failed
+                    if let settings = driveResult.remoteSettings {
+                        remoteSettingsHandler(settings)
+                    }
+                    devicesHandler(driveResult.devices)
+                    statusHandler(credentialStatus ?? driveResult.status)
                 }
-
-                let driveResult = try withCoordinatedWrite(
-                    at: lease.rootURL,
-                    cancellation: cancellation
-                ) { coordinatedRoot in
-                    try cycleRunner.run(
-                        rootURL: coordinatedRoot,
-                        configuration: snapshot.cycleConfiguration,
-                        cancellation: cancellation
-                    )
-                }
-                try cancellation.check()
-                if let settings = driveResult.remoteSettings {
-                    remoteSettingsHandler(settings)
-                }
-                devicesHandler(driveResult.devices)
-                statusHandler(credentialStatus ?? driveResult.status)
             } catch is SyncCycleCancellationError {
                 // 关闭、切换目录或配置变化属于正常淘汰，不发布失败状态。
+            } catch is DriveSyncCycleRetryError {
+                lock.withLock { needsAnotherCycle = true }
             } catch let error as DriveSyncStoreError {
                 if isCurrent(lease) {
                     if case let .itemNotDownloaded(url) = error {
@@ -367,6 +408,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                         statusHandler(.protocolIncompatible)
                     } else if case .missingProtocol = error {
                         statusHandler(.folderUnavailable)
+                    } else if case .fileConflict = error {
+                        statusHandler(.conflictNeedsAttention)
                     } else {
                         statusHandler(.failed)
                     }
@@ -403,7 +446,11 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
 
     /// 对账或合并 `synchronizeCredential` 涉及的 iCloud Drive 同步系统集成状态，并返回收敛结果。
     private func synchronizeCredential(at rootURL: URL) throws -> CredentialSyncResult {
-        let store = DriveSyncStore(rootURL: rootURL)
+        let store = DriveSyncStore(
+            rootURL: rootURL,
+            fileCoordinator: syncFileCoordinator,
+            publicationLedger: localRepository.snapshotPublicationLedger
+        )
         let descriptor = try store.readProtocol()
         try localRepository.bindStore(descriptor.storeID)
         let generation = try localRepository.currentGeneration(
@@ -453,6 +500,9 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         } else if case .missingProtocol = error {
             credentialStateHandler(.unavailable)
             return .folderUnavailable
+        } else if case .fileConflict = error {
+            credentialStateHandler(.failed)
+            return .conflictNeedsAttention
         } else {
             credentialStateHandler(.failed)
             return .failed

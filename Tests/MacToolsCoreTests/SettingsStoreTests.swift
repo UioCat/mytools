@@ -398,6 +398,13 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(AppAppearanceMode.dark.displayName, "深色模式")
     }
 
+    func testManifestConflictStatusUsesActionableCopy() {
+        XCTAssertEqual(
+            SyncStatus.conflictNeedsAttention.displayName,
+            "同步数据存在版本冲突"
+        )
+    }
+
     func testUnknownAppearanceModeFallsBackToFollowSystem() throws {
         let json = """
         {

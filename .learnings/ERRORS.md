@@ -33,6 +33,37 @@ shell 脚本使用任务语义明确且不与 shell 特殊参数冲突的变量�
 
 ---
 
+## [ERR-20260823-025] Development packaging could not clone Sparkle
+
+**Logged**: 2026-08-23T15:11:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tooling
+
+### Summary
+The isolated release scratch directory could not fetch the Sparkle repository after its remote cache refresh failed.
+
+### Error
+```
+fatal: unable to access 'https://github.com/sparkle-project/Sparkle/': Failed to connect to github.com port 443
+```
+
+### Context
+- `scripts/package_app.sh` uses a fresh SwiftPM scratch path.
+- Normal builds and the complete test suite had already used the local checkout successfully.
+- GRDB was restored from the configured local dependency cache; Sparkle fell back to the unavailable network URL.
+- A retry mapped Sparkle to its verified local checkout, then failed because SwiftPM also initializes GRDB's unused
+  `SQLiteCustom/src` submodule from GitHub and no local SQLiteLib mirror exists.
+
+### Suggested Fix
+Verify the local Sparkle mirror and retry packaging with an exact temporary Git URL rewrite to that mirror, without changing repository dependency declarations.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: scripts/package_app.sh, Package.resolved
+
+---
+
 ## [ERR-20260823-018] JavaScript template parsed shell parameter expansion
 
 **Logged**: 2026-08-23T12:00:00+08:00

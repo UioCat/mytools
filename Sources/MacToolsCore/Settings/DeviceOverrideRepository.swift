@@ -7,7 +7,7 @@ import GRDB
 /// 管理 `DeviceOverrideRepository` 在设置与凭据领域中的生命周期、依赖和可变状态。
 public final class DeviceOverrideRepository: @unchecked Sendable {
     /// 描述 `Key` 在设置与凭据领域中可取的状态、选项或错误。
-    private enum Key {
+    enum Key {
         static let syncEnabled = "sync.isEnabled"
         static let deviceID = "sync.deviceID"
         static let folderBookmark = "sync.folderBookmark"
@@ -63,8 +63,9 @@ public final class DeviceOverrideRepository: @unchecked Sendable {
     public func setSyncFolder(bookmark: Data, displayPath: String) throws {
         try database.writer.write { db in
             let encoder = JSONEncoder()
-            try upsert(encoder.encode(bookmark), for: Key.folderBookmark, in: db)
-            try upsert(encoder.encode(displayPath), for: Key.folderDisplayPath, in: db)
+            let date = Date()
+            try Self.upsert(encoder.encode(bookmark), for: Key.folderBookmark, at: date, in: db)
+            try Self.upsert(encoder.encode(displayPath), for: Key.folderDisplayPath, at: date, in: db)
         }
     }
 
@@ -99,6 +100,28 @@ public final class DeviceOverrideRepository: @unchecked Sendable {
         try setValue(revisions, for: Key.seenRevisions)
     }
 
+    /// 在外层数据库事务内同时保存本机 revision 与向量时钟。
+    static func setSyncProgress(
+        revision: Int64,
+        seenRevisions: [String: Int64],
+        at date: Date,
+        in db: Database
+    ) throws {
+        let encoder = JSONEncoder()
+        try upsert(
+            encoder.encode(max(0, revision)),
+            for: Key.replicaRevision,
+            at: date,
+            in: db
+        )
+        try upsert(
+            encoder.encode(seenRevisions),
+            for: Key.seenRevisions,
+            at: date,
+            in: db
+        )
+    }
+
     /// 计算并返回 `value` 对应的设置与凭据领域数据或状态结果。
     private func value<Value: Decodable>(for key: String, as type: Value.Type) throws -> Value? {
         try database.writer.read { db in
@@ -117,19 +140,24 @@ public final class DeviceOverrideRepository: @unchecked Sendable {
     private func setValue<Value: Encodable>(_ value: Value, for key: String) throws {
         let data = try JSONEncoder().encode(value)
         try database.writer.write { db in
-            try upsert(data, for: key, in: db)
+            try Self.upsert(data, for: key, at: Date(), in: db)
         }
     }
 
     /// 保存 `upsert` 接收的设置与凭据领域数据，并保持既有持久化约束。
-    private func upsert(_ data: Data, for key: String, in db: Database) throws {
+    private static func upsert(
+        _ data: Data,
+        for key: String,
+        at date: Date,
+        in db: Database
+    ) throws {
         try db.execute(
             sql: """
             INSERT INTO device_overrides (key, value, updatedAt)
             VALUES (?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
             """,
-            arguments: [key, data, Date()]
+            arguments: [key, data, date]
         )
     }
 }

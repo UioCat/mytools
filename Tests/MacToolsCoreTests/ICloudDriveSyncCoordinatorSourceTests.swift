@@ -67,6 +67,21 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         XCTAssertTrue(source.contains("try cancellation.check()"))
         XCTAssertTrue(source.contains("guard isCurrent(lease) else { return }"))
         XCTAssertTrue(source.contains("configuration.scheduleToken != lease.token"))
+        XCTAssertTrue(source.contains("processLock.withLock(for: lease.rootURL)"))
+    }
+
+    func testManifestUsesExactOrdinaryFileCoordination() throws {
+        let source = try sourceFile(
+            "Sources/MacTools/Platform/Sync/ICloudSyncFileCoordinator.swift"
+        )
+
+        XCTAssertTrue(source.contains("writingItemAt: url"))
+        XCTAssertTrue(source.contains("options: []"))
+        XCTAssertTrue(source.contains("unresolvedConflictVersionsOfItem"))
+        XCTAssertTrue(source.contains("replaceItem(at: coordinatedURL, options: [])"))
+        XCTAssertTrue(source.contains("ensureDownloaded(at: coordinatedURL)"))
+        XCTAssertTrue(source.contains("resolveIdenticalConflictsInsideWrite"))
+        XCTAssertFalse(source.contains("options: .forReplacing"))
     }
 
     func testCoordinatorReconcilesCredentialInsideCoordinatedSyncAndBeforeDeviceRemoval() throws {

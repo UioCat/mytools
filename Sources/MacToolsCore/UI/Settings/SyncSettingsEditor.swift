@@ -302,7 +302,8 @@ struct SyncSettingsEditor: View {
             return .green
         case .waitingForDownload, .preparingFolder, .syncing:
             return .orange
-        case .capacityFull, .folderUnavailable, .protocolIncompatible, .failed:
+        case .capacityFull, .folderUnavailable, .protocolIncompatible,
+             .conflictNeedsAttention, .failed:
             return .red
         case .off, .unconfigured:
             return MacToolsGlassTheme.textTertiary

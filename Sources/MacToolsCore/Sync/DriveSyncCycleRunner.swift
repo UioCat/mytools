@@ -3,6 +3,11 @@
 
 import Foundation
 
+/// manifest 协调区间发现更高本机 revision 时，当前草稿不得确认，调度器应立即重跑。
+public enum DriveSyncCycleRetryError: Error, Equatable, Sendable {
+    case newerRemoteReplica
+}
+
 /// 封装 `DriveSyncCycleConfiguration` 在同步核心领域中的值语义和相关操作。
 public struct DriveSyncCycleConfiguration: Sendable {
     public let historyLimit: Int
@@ -162,7 +167,8 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         )
         let replicaScan = try store.scanReplicas(
             generation: generation,
-            cachedReplicasByDeviceID: cachedObservation?.replicasByDeviceID ?? [:]
+            cachedReplicasByDeviceID: cachedObservation?.replicasByDeviceID ?? [:],
+            ownedDeviceID: deviceID
         )
         let replicas = replicaScan.replicas.filter {
             !removedDeviceIDs.contains($0.manifest.deviceID)
@@ -559,6 +565,12 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 updatedAt: now,
                 cancellation: cancellation
             )
+            if writeResult.outcome == .adoptedNewerRemote {
+                try deviceOverrideRepository.setReplicaRevision(writeResult.manifest.revision)
+                try deviceOverrideRepository.setSeenRevisions(writeResult.manifest.seenRevisions)
+                invalidateObservationCache()
+                throw DriveSyncCycleRetryError.newerRemoteReplica
+            }
             storageInventory = storageInventory.adjustingMetadataBytes(
                 by: writeResult.metadataByteDelta
             )
@@ -576,17 +588,40 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 )
             }
             try cancellation.check()
-            try localRepository.acknowledgeSnapshot(
-                upTo: finalBundle.outboxCutoff,
-                excludingClipboardRecordNames: blockedClipboardRecordNames.union(
-                    unavailableLocalRecordNames
-                ),
-                uploadedContentIDs: preparation.availableContentIDs.intersection(
-                    Set(finalDraft.contentDescriptors.map(\.contentID))
-                )
+            let excludedRecordNames = blockedClipboardRecordNames.union(
+                unavailableLocalRecordNames
             )
-            try deviceOverrideRepository.setReplicaRevision(writeResult.manifest.revision)
-            try deviceOverrideRepository.setSeenRevisions(seenRevisions)
+            let acknowledgedContentIDs = preparation.availableContentIDs.intersection(
+                Set(finalDraft.contentDescriptors.map(\.contentID))
+            )
+            if let publicationIdentity = writeResult.publicationIdentity {
+                try localRepository.acknowledgePublishedSnapshot(
+                    upTo: finalBundle.outboxCutoff,
+                    excludingClipboardRecordNames: excludedRecordNames,
+                    uploadedContentIDs: acknowledgedContentIDs,
+                    publicationIdentity: publicationIdentity,
+                    manifestDigest: writeResult.manifestDigest,
+                    revision: writeResult.manifest.revision,
+                    seenRevisions: seenRevisions,
+                    at: now
+                )
+                try? store.cleanupSnapshotPublications(
+                    storeID: publicationIdentity.storeID,
+                    deviceID: publicationIdentity.deviceID,
+                    generation: publicationIdentity.generation,
+                    protectedDirectories: Set(
+                        [writeResult.manifest.snapshotDirectory].compactMap { $0 }
+                    )
+                )
+            } else {
+                try localRepository.acknowledgeSnapshot(
+                    upTo: finalBundle.outboxCutoff,
+                    excludingClipboardRecordNames: excludedRecordNames,
+                    uploadedContentIDs: acknowledgedContentIDs
+                )
+                try deviceOverrideRepository.setReplicaRevision(writeResult.manifest.revision)
+                try deviceOverrideRepository.setSeenRevisions(seenRevisions)
+            }
             writtenBundle = finalBundle
             writtenManifestDigest = writeResult.manifestDigest
             writtenReplica = DriveSyncReplica(
@@ -657,6 +692,11 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let status: SyncStatus
         if missingRemoteContent {
             status = .waitingForDownload
+        } else if replicaFailures.contains(where: {
+            if case .fileConflict = $0.error { return true }
+            return false
+        }) {
+            status = .conflictNeedsAttention
         } else if hasInvalidPeerReplica
                     || hasInvalidRemoteContent
                     || !unavailableLocalRecordNames.isEmpty {

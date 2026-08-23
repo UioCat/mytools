@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import XCTest
 @testable import MacToolsCore
 
@@ -143,7 +144,7 @@ final class DriveSyncStoreTests: XCTestCase {
         }
     }
 
-    func testInterruptedUncommittedRevisionCannotInvalidateCommittedReplica() throws {
+    func testInterruptedUntrackedRevisionIsPreservedAndCannotInvalidateCommittedReplica() throws {
         try withStore { store, root in
             _ = try store.prepare()
             let first = try makeBundle(deviceID: "device-a", revision: 1, text: "committed")
@@ -167,10 +168,211 @@ final class DriveSyncStoreTests: XCTestCase {
                 atPath: root.appendingPathComponent("replicas/device-a/revisions").path
             )
 
-            XCTAssertFalse(revisionEntries.contains("g1-r2-orphan"))
+            XCTAssertTrue(revisionEntries.contains("g1-r2-orphan"))
             XCTAssertTrue(revisionEntries.contains(try XCTUnwrap(firstManifest.snapshotDirectory)))
             XCTAssertTrue(revisionEntries.contains(try XCTUnwrap(secondManifest.snapshotDirectory)))
             XCTAssertEqual(try store.replicas(generation: 1).first?.clipboard, second.clipboard)
+        }
+    }
+
+    func testRetryingIdenticalRevisionReusesDeterministicSnapshotDirectory() throws {
+        try withStore { store, root in
+            _ = try store.prepare()
+            let bundle = try makeBundle(deviceID: "device-a", revision: 1, text: "retry")
+            let updatedAt = Date(timeIntervalSince1970: 100)
+
+            let first = try store.writeWithMetadataDelta(
+                bundle,
+                seenRevisions: [:],
+                deviceName: "Original Mac",
+                updatedAt: updatedAt
+            )
+            let second = try store.writeWithMetadataDelta(
+                bundle,
+                seenRevisions: [:],
+                deviceName: "Renamed Mac",
+                updatedAt: updatedAt.addingTimeInterval(60)
+            )
+            let entries = try FileManager.default.contentsOfDirectory(
+                atPath: root.appendingPathComponent("replicas/device-a/revisions").path
+            ).filter { !$0.hasPrefix(".") }
+
+            XCTAssertEqual(first.manifest.snapshotDirectory, second.manifest.snapshotDirectory)
+            XCTAssertEqual(second.outcome, .alreadyPublishedDraft)
+            XCTAssertEqual(entries, [try XCTUnwrap(first.manifest.snapshotDirectory)])
+        }
+    }
+
+    func testWritingNextRevisionUpgradesValidatedSchemaOneInlineSnapshot() throws {
+        try withStore { store, root in
+            _ = try store.prepare()
+            let first = try store.write(
+                makeBundle(deviceID: "device-a", revision: 1, text: "legacy"),
+                seenRevisions: [:],
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+            let deviceDirectory = root.appendingPathComponent("replicas/device-a", isDirectory: true)
+            let revisionDirectory = deviceDirectory
+                .appendingPathComponent("revisions", isDirectory: true)
+                .appendingPathComponent(try XCTUnwrap(first.snapshotDirectory), isDirectory: true)
+            for fileName in ["clipboard.json", "preferences.json", "tombstones.json"] {
+                try FileManager.default.copyItem(
+                    at: revisionDirectory.appendingPathComponent(fileName),
+                    to: deviceDirectory.appendingPathComponent(fileName)
+                )
+            }
+            var legacy = first
+            legacy.schemaVersion = 1
+            legacy.snapshotDirectory = nil
+            try SyncSnapshotCodec.encode(legacy).write(
+                to: deviceDirectory.appendingPathComponent("manifest.json"),
+                options: [.atomic]
+            )
+            try FileManager.default.removeItem(
+                at: deviceDirectory.appendingPathComponent("revisions", isDirectory: true)
+            )
+
+            let upgraded = try store.write(
+                makeBundle(deviceID: "device-a", revision: 2, text: "current"),
+                seenRevisions: ["device-a": 1],
+                updatedAt: Date(timeIntervalSince1970: 2)
+            )
+
+            XCTAssertEqual(upgraded.schemaVersion, SyncReplicaManifest.currentSchemaVersion)
+            XCTAssertNotNil(upgraded.snapshotDirectory)
+            XCTAssertEqual(try store.replicas(generation: 1).first?.clipboard.revision, 2)
+        }
+    }
+
+    func testManifestWriteRemainsUncertainUntilRunnerCommitsLocalTransaction() throws {
+        try withStore { initialStore, root in
+            let descriptor = try initialStore.prepare()
+            let database = try MacToolsDatabase.inMemory()
+            try database.writer.write { db in
+                try db.execute(
+                    sql: """
+                    INSERT INTO sync_accounts (
+                        accountHash, resetGeneration, requiresBootstrap, updatedAt
+                    ) VALUES (?, 1, 1, ?)
+                    """,
+                    arguments: [descriptor.storeID.uuidString, Date()]
+                )
+            }
+            let ledger = SyncSnapshotPublicationLedger(database: database)
+            let store = DriveSyncStore(rootURL: root, publicationLedger: ledger)
+            let bundle = try makeBundle(deviceID: "device-a", revision: 1, text: "uncertain")
+            let updatedAt = Date(timeIntervalSince1970: 100)
+
+            let first = try store.writeWithMetadataDelta(
+                bundle,
+                seenRevisions: [:],
+                updatedAt: updatedAt
+            )
+            let identity = try XCTUnwrap(first.publicationIdentity)
+            let second = try store.writeWithMetadataDelta(
+                bundle,
+                seenRevisions: [:],
+                updatedAt: updatedAt
+            )
+
+            XCTAssertEqual(first.outcome, .publishedDraft)
+            XCTAssertEqual(second.outcome, .alreadyPublishedDraft)
+            XCTAssertEqual(try ledger.record(for: identity)?.state, .publicationUncertain)
+        }
+    }
+
+    func testOwnerRepairsDominatedManifestVersionsButPeerOnlyReportsConflict() throws {
+        try withStore { store, root in
+            _ = try store.prepare()
+            _ = try store.write(
+                makeBundle(deviceID: "device-a", revision: 1, text: "first"),
+                seenRevisions: [:],
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+            let manifestURL = root.appendingPathComponent("replicas/device-a/manifest.json")
+            let firstData = try Data(contentsOf: manifestURL)
+            _ = try store.write(
+                makeBundle(deviceID: "device-a", revision: 2, text: "second"),
+                seenRevisions: ["device-a": 2],
+                updatedAt: Date(timeIntervalSince1970: 2)
+            )
+            let secondData = try Data(contentsOf: manifestURL)
+            let versions = [
+                SyncFileVersionContent(versionID: "r2", isCurrent: true, data: secondData),
+                SyncFileVersionContent(versionID: "r1", isCurrent: false, data: firstData)
+            ]
+
+            let ownerCoordinator = ManifestVersionsFileCoordinator(versions: versions)
+            let ownerStore = DriveSyncStore(rootURL: root, fileCoordinator: ownerCoordinator)
+            let ownerScan = try ownerStore.scanReplicas(
+                generation: 1,
+                ownedDeviceID: "device-a"
+            )
+
+            XCTAssertEqual(ownerScan.replicas.first?.manifest.revision, 2)
+            XCTAssertTrue(ownerScan.failures.isEmpty)
+            XCTAssertEqual(ownerCoordinator.keptVersionID, "r2")
+
+            let peerStore = DriveSyncStore(
+                rootURL: root,
+                fileCoordinator: ManifestVersionsFileCoordinator(versions: versions)
+            )
+            let peerScan = try peerStore.scanReplicas(
+                generation: 1,
+                ownedDeviceID: "device-b"
+            )
+            XCTAssertTrue(peerScan.replicas.isEmpty)
+            guard case let .fileConflict(conflictURL) = peerScan.failures.first?.error else {
+                return XCTFail("expected manifest conflict")
+            }
+            XCTAssertEqual(conflictURL.lastPathComponent, "manifest.json")
+            XCTAssertEqual(conflictURL.deletingLastPathComponent().lastPathComponent, "device-a")
+        }
+    }
+
+    func testIncomparableManifestPreflightDoesNotCreateSnapshotDirectory() throws {
+        try withStore { store, root in
+            _ = try store.prepare()
+            _ = try store.write(
+                makeBundle(deviceID: "device-a", revision: 1, text: "first"),
+                seenRevisions: ["device-b": 5],
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+            let manifestURL = root.appendingPathComponent("replicas/device-a/manifest.json")
+            let firstData = try Data(contentsOf: manifestURL)
+            _ = try store.write(
+                makeBundle(deviceID: "device-a", revision: 2, text: "second"),
+                seenRevisions: ["device-b": 5],
+                updatedAt: Date(timeIntervalSince1970: 2)
+            )
+            var secondManifest = try SyncSnapshotCodec.decode(
+                SyncReplicaManifest.self,
+                from: Data(contentsOf: manifestURL)
+            )
+            secondManifest.seenRevisions["device-b"] = 4
+            let secondData = try SyncSnapshotCodec.encode(secondManifest)
+            let coordinator = ManifestVersionsFileCoordinator(versions: [
+                SyncFileVersionContent(versionID: "r2", isCurrent: true, data: secondData),
+                SyncFileVersionContent(versionID: "r1", isCurrent: false, data: firstData)
+            ])
+            let conflictedStore = DriveSyncStore(rootURL: root, fileCoordinator: coordinator)
+            let revisionsURL = root.appendingPathComponent("replicas/device-a/revisions")
+            let before = try FileManager.default.contentsOfDirectory(atPath: revisionsURL.path)
+
+            XCTAssertThrowsError(
+                try conflictedStore.write(
+                    makeBundle(deviceID: "device-a", revision: 3, text: "third"),
+                    seenRevisions: ["device-b": 5],
+                    updatedAt: Date(timeIntervalSince1970: 3)
+                )
+            ) { error in
+                guard case .fileConflict = error as? DriveSyncStoreError else {
+                    return XCTFail("expected manifest conflict")
+                }
+            }
+            let after = try FileManager.default.contentsOfDirectory(atPath: revisionsURL.path)
+
+            XCTAssertEqual(after.sorted(), before.sorted())
         }
     }
 
@@ -594,5 +796,46 @@ final class DriveSyncStoreTests: XCTestCase {
             .appendingPathComponent(DriveSyncStore.rootDirectoryName, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
         try body(DriveSyncStore(rootURL: root), root)
+    }
+}
+
+private final class ManifestVersionsFileCoordinator: SyncFileCoordinating, @unchecked Sendable {
+    private let versions: [SyncFileVersionContent]
+    private let lock = NSLock()
+    private(set) var keptVersionID: String?
+
+    init(versions: [SyncFileVersionContent]) {
+        self.versions = versions
+    }
+
+    func readData(at url: URL, options: Data.ReadingOptions) throws -> Data {
+        try Data(contentsOf: url, options: options)
+    }
+
+    func writeData(_ data: Data, to url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: url, options: [.atomic])
+    }
+
+    func coordinateManifest(
+        at url: URL,
+        deciding mutation: ([SyncFileVersionContent]) throws -> SyncManifestMutation
+    ) throws -> SyncManifestMutationResult {
+        switch try mutation(versions) {
+        case let .keep(versionID):
+            guard let version = versions.first(where: { $0.versionID == versionID }) else {
+                throw DriveSyncStoreError.fileConflict(url)
+            }
+            lock.withLock { keptVersionID = versionID }
+            return SyncManifestMutationResult(data: version.data, didWrite: false)
+        case let .publish(data, _):
+            try writeData(data, to: url)
+            return SyncManifestMutationResult(data: data, didWrite: true)
+        case .abort:
+            throw DriveSyncStoreError.fileConflict(url)
+        }
     }
 }

@@ -46,6 +46,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
     private let database: MacToolsDatabase
     private let clipboardRepository: ClipboardRepository
     private let preferenceRepository: PreferenceRepository
+    public let snapshotPublicationLedger: SyncSnapshotPublicationLedger
 
     /// 创建 `SyncLocalRepository`，保存传入依赖并建立初始状态。
     public init(
@@ -56,6 +57,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         self.database = database
         self.clipboardRepository = clipboardRepository
         self.preferenceRepository = preferenceRepository
+        self.snapshotPublicationLedger = SyncSnapshotPublicationLedger(database: database)
     }
 
     /// 提交 `bindStore` 对应的同步核心领域状态，并记录后续流程所需的进度。
@@ -698,50 +700,98 @@ public final class SyncLocalRepository: @unchecked Sendable {
         at date: Date = Date()
     ) throws {
         try database.writer.write { db in
-            let acknowledgedOutboxIDs = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT id, recordType, recordName
-                FROM sync_outbox
-                WHERE createdAt <= ?
-                """,
-                arguments: [cutoff]
-            ).compactMap { row -> Int64? in
-                let recordType: String = row["recordType"]
-                let recordName: String = row["recordName"]
-                guard recordType != SyncRecordType.clipboardContent.rawValue
-                        || !excludedRecordNames.contains(recordName) else {
-                    return nil
-                }
-                return row["id"]
-            }
-            if !acknowledgedOutboxIDs.isEmpty {
-                let placeholders = Array(
-                    repeating: "?",
-                    count: acknowledgedOutboxIDs.count
-                ).joined(separator: ",")
-                try db.execute(
-                    sql: "DELETE FROM sync_outbox WHERE id IN (\(placeholders))",
-                    arguments: StatementArguments(acknowledgedOutboxIDs)
-                )
-            }
-            try db.execute(
-                sql: "UPDATE tombstones SET uploadedAt = ? WHERE deletedAt <= ?",
-                arguments: [date, cutoff]
+            try Self.acknowledgeSnapshot(
+                upTo: cutoff,
+                excludingClipboardRecordNames: excludedRecordNames,
+                uploadedContentIDs: uploadedContentIDs,
+                at: date,
+                in: db
             )
-            if !uploadedContentIDs.isEmpty {
-                let values = uploadedContentIDs.sorted()
-                let placeholders = Array(repeating: "?", count: values.count).joined(separator: ",")
-                try db.execute(
-                    sql: """
-                    UPDATE payload_objects
-                    SET cloudState = 'uploaded'
-                    WHERE localState = 'available'
-                      AND contentHash IN (\(placeholders))
-                    """,
-                    arguments: StatementArguments(values)
-                )
+        }
+    }
+
+    /// 以一个 SQLite 事务提交 outbox、发布台账和本机同步进度。
+    public func acknowledgePublishedSnapshot(
+        upTo cutoff: Date,
+        excludingClipboardRecordNames excludedRecordNames: Set<String>,
+        uploadedContentIDs: Set<String>,
+        publicationIdentity: SyncSnapshotPublicationIdentity,
+        manifestDigest: String,
+        revision: Int64,
+        seenRevisions: [String: Int64],
+        at date: Date = Date()
+    ) throws {
+        try database.writer.write { db in
+            try Self.acknowledgeSnapshot(
+                upTo: cutoff,
+                excludingClipboardRecordNames: excludedRecordNames,
+                uploadedContentIDs: uploadedContentIDs,
+                at: date,
+                in: db
+            )
+            try SyncSnapshotPublicationLedger.markPublished(
+                publicationIdentity,
+                manifestDigest: manifestDigest,
+                at: date,
+                in: db
+            )
+            try DeviceOverrideRepository.setSyncProgress(
+                revision: revision,
+                seenRevisions: seenRevisions,
+                at: date,
+                in: db
+            )
+        }
+    }
+
+    private static func acknowledgeSnapshot(
+        upTo cutoff: Date,
+        excludingClipboardRecordNames excludedRecordNames: Set<String>,
+        uploadedContentIDs: Set<String>,
+        at date: Date,
+        in db: Database
+    ) throws {
+        let acknowledgedOutboxIDs = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, recordType, recordName
+            FROM sync_outbox
+            WHERE createdAt <= ?
+            """,
+            arguments: [cutoff]
+        ).compactMap { row -> Int64? in
+            let recordType: String = row["recordType"]
+            let recordName: String = row["recordName"]
+            guard recordType != SyncRecordType.clipboardContent.rawValue
+                    || !excludedRecordNames.contains(recordName) else {
+                return nil
             }
+            return row["id"]
+        }
+        if !acknowledgedOutboxIDs.isEmpty {
+            let placeholders = Array(repeating: "?", count: acknowledgedOutboxIDs.count)
+                .joined(separator: ",")
+            try db.execute(
+                sql: "DELETE FROM sync_outbox WHERE id IN (\(placeholders))",
+                arguments: StatementArguments(acknowledgedOutboxIDs)
+            )
+        }
+        try db.execute(
+            sql: "UPDATE tombstones SET uploadedAt = ? WHERE deletedAt <= ?",
+            arguments: [date, cutoff]
+        )
+        if !uploadedContentIDs.isEmpty {
+            let values = uploadedContentIDs.sorted()
+            let placeholders = Array(repeating: "?", count: values.count).joined(separator: ",")
+            try db.execute(
+                sql: """
+                UPDATE payload_objects
+                SET cloudState = 'uploaded'
+                WHERE localState = 'available'
+                  AND contentHash IN (\(placeholders))
+                """,
+                arguments: StatementArguments(values)
+            )
         }
     }
 
