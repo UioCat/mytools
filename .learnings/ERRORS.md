@@ -33,6 +33,71 @@ shell 脚本使用任务语义明确且不与 shell 特殊参数冲突的变量�
 
 ---
 
+## [ERR-20260823-001] uppercase-lowercase sync diagnostic expectation
+
+**Logged**: 2026-08-23T11:36:30+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A temporary two-replica case-sensitivity diagnostic expected two shared objects even though only the sender replica had been uploaded.
+
+### Error
+```
+SyncLocalRepositoryTests.swift:59: XCTAssertEqual failed: ("1") is not equal to ("2")
+```
+
+### Context
+- The receiver already contained local lowercase text `abc`; the sender uploaded uppercase text `ABC`.
+- Applying the sender snapshot correctly preserved both local clipboard records.
+- The shared store correctly contained only the sender's one uploaded object because the receiver had not published a return cycle.
+
+### Suggested Fix
+When testing one-way synchronization, assert receiver convergence separately from shared-store inventory; only expect receiver-local objects in the store after that receiver publishes its own cycle.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Tests/MacToolsCoreTests/SyncLocalRepositoryTests.swift
+
+### Resolution
+- **Resolved**: 2026-08-23T11:36:30+08:00
+- **Notes**: Restored the one-way shared-object expectation to 1 and retained the record-level assertions for both `ABC` and `abc`.
+
+---
+
+## [ERR-20260823-002] git push waited without remote response
+
+**Logged**: 2026-08-23T11:42:00+08:00
+**Priority**: low
+**Status**: pending
+**Area**: infra
+
+### Summary
+The first push of the review's internal diagnostic record waited about 90 seconds without producing remote output or advancing `origin/main`.
+
+### Error
+```
+git push origin main
+# no output until interrupted
+```
+
+### Context
+- The SSH remote is `git@github.com:UioCat/mytools.git`.
+- After interruption, local `main` remained one commit ahead of `origin/main`.
+- A bounded retry then timed out on GitHub SSH port 22.
+- The SSH 443 fallback could not proceed because that host key is not trusted locally.
+- HTTPS could not use credentials with terminal prompts disabled.
+
+### Suggested Fix
+When an SSH push produces no response, interrupt after a bounded wait, verify local and remote refs, then retry with `BatchMode`, `ConnectTimeout`, and server-alive limits.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: none
+
+---
+
 ## [ERR-20260816-005] 显式暂存已跟踪的忽略目录返回失败
 
 **Logged**: 2026-08-16T01:18:00+08:00
