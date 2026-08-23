@@ -99,6 +99,40 @@ Fetch the updated remote branch, inspect the divergence, rebase the isolated loc
 
 ---
 
+## [ERR-20260823-020] clipboard diagnostics assumed the wrong database schema
+
+**Logged**: 2026-08-23T13:17:48+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Initial read-only clipboard diagnostics queried the legacy database and assumed numeric date columns, causing SQL and temporary Swift decoding failures.
+
+### Error
+```
+no such column: syncGeneration
+DecodingError.typeMismatch: expected Double but found a string for createdAt
+```
+
+### Context
+- The first query targeted the legacy `Clipboard.sqlite` instead of the unified `Store/mactools.sqlite3` database.
+- A follow-up temporary Swift decoder assumed GRDB date values were JSON numbers, while SQLite emitted ISO date strings.
+- All commands used read-only database access and did not modify clipboard data.
+
+### Suggested Fix
+Resolve the active database path from `MacToolsStorePaths`, inspect its schema first, and let SQLite return redacted timestamps instead of duplicating GRDB date decoding in temporary scripts.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/Storage/MacToolsStorePaths.swift
+
+### Resolution
+- **Resolved**: 2026-08-23T13:17:48+08:00
+- **Notes**: Re-ran the diagnostics against the unified store with schema-compatible, content-redacted queries.
+
+---
+
 ## [ERR-20260823-001] uppercase-lowercase sync diagnostic expectation
 
 **Logged**: 2026-08-23T11:36:30+08:00
