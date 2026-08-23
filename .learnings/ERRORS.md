@@ -3341,3 +3341,102 @@ Immediately re-read `HEAD`, status, and the index before partial staging in a sh
 - **Notes**: Regenerated index-only patches against `dba52f9` and verified the cached diff contains only this task's hunks.
 
 ---
+## [ERR-20260823-022] Combined ripgrep expression had an unclosed group
+
+**Logged**: 2026-08-23T17:30:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A read-only source scan combined unrelated snapshot-name patterns into one malformed regular expression.
+
+### Error
+```
+rg: regex parse error:
+error: unclosed group
+```
+
+### Context
+- The scan attempted to find snapshot directory construction and parsing in sync sources and tests.
+- No repository or runtime state was changed by the failed command.
+
+### Suggested Fix
+Use separate simple `rg -e` expressions for independent Swift symbol and string patterns.
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacToolsCore/Sync/DriveSyncStore.swift, Tests/MacToolsCoreTests
+- See Also: ERR-20260728-005
+
+### Resolution
+- **Resolved**: 2026-08-23T17:31:00+08:00
+- **Notes**: Replaced the combined expression with separate simple searches.
+
+---
+
+## [ERR-20260823-023] Design patch used stale wrapped-line context
+
+**Logged**: 2026-08-23T17:45:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A documentation patch failed because one expected context line did not match the file's actual wrapping.
+
+### Error
+```
+apply_patch verification failed: Failed to find expected lines
+```
+
+### Context
+- The patch combined three documentation changes and assumed an incorrect line break in the migration paragraph.
+- Patch application was atomic, so none of its intended changes were partially applied.
+
+### Suggested Fix
+Read the exact target range first and apply smaller patches with stable surrounding text.
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/superpowers/specs/2026-08-23-icloud-manifest-conflict-recovery-design.md
+
+### Resolution
+- **Resolved**: 2026-08-23T17:46:00+08:00
+- **Notes**: Re-read the exact range and split the edit into stable, focused hunks.
+
+---
+
+## [ERR-20260823-024] Tracked learning file triggered ignored-path warning during staging
+
+**Logged**: 2026-08-23T18:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+Staging an already tracked file under the ignored `.learnings` directory emitted an ignored-path warning.
+
+### Error
+```
+The following paths are ignored by one of your .gitignore files:
+.learnings
+```
+
+### Context
+- The exact tracked file and the new design document were passed to one `git add` command.
+- The index inspection showed both intended files were staged despite the warning; no unrelated file was added.
+
+### Suggested Fix
+Inspect the index after the warning, then use `git add -f` only for the exact ignored tracked file when its latest
+reviewed hunk still needs staging.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-08-23T18:11:00+08:00
+- **Notes**: Verified the staged scope and force-added only the reviewed tracked file path.
+
+---
