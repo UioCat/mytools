@@ -33,6 +33,41 @@ shell 脚本使用任务语义明确且不与 shell 特殊参数冲突的变量�
 
 ---
 
+## [ERR-20260823-026] package_app_dependency_submodule_fetch
+
+**Logged**: 2026-08-23T17:20:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+隔离打包在初始化 GRDB 的未使用 SQLiteCustom 子模块时，被 GitHub 大对象传输中断阻塞。
+
+### Error
+```
+fetch-pack: unexpected disconnect while reading sideband packet
+```
+
+### Context
+- `scripts/package_app.sh` 的隔离 SwiftPM 工作区会执行递归 submodule 初始化。
+- 当前产品只依赖 GRDB 默认目标，不使用 `SQLiteCustom/src`，但 Git 仍尝试获取其 `SQLiteLib` 仓库。
+- Sparkle 和 GRDB 主仓库的锁定提交已存在于本地校验过的只读缓存中。
+
+### Suggested Fix
+为本地发布验证生成保留 GRDB 6.29.3 源码、但去掉未使用 gitlink 的临时依赖镜像；正式 GitHub
+Actions 仍使用仓库锁定的原始依赖与工作流。
+
+### Metadata
+- Reproducible: yes
+- Related Files: scripts/package_app.sh, Package.swift, Package.resolved
+- See Also: ERR-20260823-025
+
+### Resolution
+- **Resolved**: 2026-08-23T17:24:00+08:00
+- **Notes**: 生成只移除未使用 SQLiteCustom gitlink 的临时 GRDB 6.29.3 镜像；候选源码、依赖版本和正式 CI 依赖均未改变，0.5.1 隔离打包及深度签名校验通过。
+
+---
+
 ## [ERR-20260823-025] Development packaging could not clone Sparkle
 
 **Logged**: 2026-08-23T15:11:00+08:00
