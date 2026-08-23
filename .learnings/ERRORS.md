@@ -65,6 +65,40 @@ Pass shell scripts as ordinary JavaScript strings or escape shell parameter expa
 
 ---
 
+## [ERR-20260823-019] main push rejected after remote advanced
+
+**Logged**: 2026-08-23T12:02:08+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Pushing the diagnostic learning commit was rejected because `origin/main` advanced after the task baseline was recorded.
+
+### Error
+```
+! [rejected] main -> main (fetch first)
+error: failed to push some refs to 'github.com:UioCat/mytools.git'
+```
+
+### Context
+- The local branch contained two internal learning commits based on `ac3c3fc`.
+- The remote branch had independently advanced to `007adb7` with two product commits.
+- No force push or destructive Git operation was attempted.
+
+### Suggested Fix
+Fetch the updated remote branch, inspect the divergence, rebase the isolated local commits onto `origin/main`, then retry a normal push.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-08-23T12:02:08+08:00
+- **Notes**: Fetched and inspected the two-by-two branch divergence before integration.
+
+---
+
 ## [ERR-20260823-001] uppercase-lowercase sync diagnostic expectation
 
 **Logged**: 2026-08-23T11:36:30+08:00
