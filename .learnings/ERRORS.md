@@ -1,5 +1,37 @@
 # Errors
 
+## [ERR-20260823-029] icloud_upload_status_timeout
+
+**Logged**: 2026-08-23T18:23:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: test
+
+### Summary
+隔离 iCloud 运行时测试错误地要求新写入 manifest 在 20 秒内报告 `ubiquitousItemIsUploaded == true`。
+
+### Error
+```
+XCTAssertTrue failed
+```
+
+### Context
+- revision 收敛、确定性快照目录、大写文本、协调读取和冲突状态检查均已通过。
+- File Provider 没有在固定时限内把可选上传状态切换为 `true`；测试目录已自动删除，未触碰生产同步目录。
+
+### Suggested Fix
+运行时验证应断言产品实际依赖的状态：目标是 ubiquitous item、内容下载状态为 current、没有上传错误，并能通过协调读取回验；不要把异步云端上传时延设为固定发布门禁。
+
+### Metadata
+- Reproducible: yes
+- Related Files: Sources/MacTools/Platform/Sync/ICloudSyncFileCoordinator.swift
+
+### Resolution
+- **Resolved**: 2026-08-23T18:24:00+08:00
+- **Notes**: 改用 ubiquitous/current/无上传错误和业务数据回验，隔离 iCloud 测试通过。
+
+---
+
 ## [ERR-20260823-028] apply_patch_same_path_delete_add
 
 **Logged**: 2026-08-23T18:45:00+08:00
