@@ -33,6 +33,38 @@ shell 脚本使用任务语义明确且不与 shell 特殊参数冲突的变量�
 
 ---
 
+## [ERR-20260823-018] JavaScript template parsed shell parameter expansion
+
+**Logged**: 2026-08-23T12:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+An initial read-only iCloud diagnostic command did not start because JavaScript treated a shell `${...}` expression inside a template literal as JavaScript interpolation.
+
+### Error
+```
+SyntaxError: Missing } in template expression
+```
+
+### Context
+- The command was intended to inspect only file metadata in the selected iCloud Drive sync directory.
+- The failure occurred before the shell command ran, so no sync files or application state were touched.
+
+### Suggested Fix
+Pass shell scripts as ordinary JavaScript strings or escape shell parameter expansion when constructing tool arguments.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-08-23T12:00:00+08:00
+- **Notes**: Rebuilt the diagnostic call without JavaScript template interpolation.
+
+---
+
 ## [ERR-20260823-001] uppercase-lowercase sync diagnostic expectation
 
 **Logged**: 2026-08-23T11:36:30+08:00
