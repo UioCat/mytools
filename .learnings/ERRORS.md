@@ -1,5 +1,37 @@
 # Errors
 
+## [ERR-20260823-030] zsh_unquoted_query_url_glob
+
+**Logged**: 2026-08-23T18:41:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+GitHub Actions jobs API URL 未加引号，zsh 将查询参数中的 `?` 当作文件名通配符。
+
+### Error
+```
+zsh: no matches found: https://api.github.com/.../jobs?per_page=100
+```
+
+### Context
+- 失败发生在本地 shell 参数展开阶段，没有发出网络请求，也没有修改 Release。
+- 远端 tag 解引用检查仍独立成功。
+
+### Suggested Fix
+所有包含 `?`、`&` 或其他 shell 元字符的 URL 都使用单引号包裹，再交给 `curl`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/release-guide.md
+
+### Resolution
+- **Resolved**: 2026-08-23T18:42:00+08:00
+- **Notes**: URL 加单引号后，成功核对 DMG、appcast 和公开 Release 验证步骤均为 completed/success。
+
+---
+
 ## [ERR-20260823-029] icloud_upload_status_timeout
 
 **Logged**: 2026-08-23T18:23:00+08:00
