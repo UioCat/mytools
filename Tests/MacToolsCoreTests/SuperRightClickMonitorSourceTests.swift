@@ -16,6 +16,15 @@ final class SuperRightClickMonitorSourceTests: XCTestCase {
         XCTAssertFalse(source.contains("eventSourceUserData"))
     }
 
+    func testTimerAndReleaseFallbackShareLongPressTriggerPath() throws {
+        let source = try sourceFile("Sources/MacTools/Features/SuperRightClick/SuperRightClickMonitor.swift")
+
+        XCTAssertEqual(
+            source.components(separatedBy: "triggerSuperRightClick(if: route)").count - 1,
+            2
+        )
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

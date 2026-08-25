@@ -23,12 +23,22 @@ public struct RightClickStateMachine {
             didTrigger = false
             return .none
 
-        case .released:
-            // 只有已记录按下且未触发长按时才放行系统菜单；长按后的抬起不再产生第二个动作。
-            let shouldAllowSystemMenu = pressStartMilliseconds != nil && !didTrigger
+        case let .released(atMilliseconds):
+            // 抬起可能先于主线程定时器到达；此时仍应按真实持续时间确认长按，不得误回放系统菜单。
+            let decision: RightClickDecision
+            if didTrigger {
+                decision = .none
+            } else if let pressStartMilliseconds,
+                      atMilliseconds - pressStartMilliseconds >= thresholdMilliseconds {
+                decision = .triggerSuperRightClick
+            } else if pressStartMilliseconds != nil {
+                decision = .allowSystemMenu
+            } else {
+                decision = .none
+            }
             pressStartMilliseconds = nil
             didTrigger = false
-            return shouldAllowSystemMenu ? .allowSystemMenu : .none
+            return decision
 
         case let .timerFired(atMilliseconds):
             // 定时器可能重复触发或晚于抬起到达，必须同时校验手势仍有效且尚未消费。
@@ -78,9 +88,14 @@ public struct RightClickGestureRouter {
                 ? .suppressAndTriggerSuperRightClick
                 : .suppressOriginalEvent
         case .released:
-            return stateMachine.handle(event) == .allowSystemMenu
-                ? .suppressAndReplaySystemRightClick
-                : .suppressOriginalEvent
+            switch stateMachine.handle(event) {
+            case .allowSystemMenu:
+                return .suppressAndReplaySystemRightClick
+            case .triggerSuperRightClick:
+                return .suppressAndTriggerSuperRightClick
+            case .none:
+                return .suppressOriginalEvent
+            }
         }
     }
 }

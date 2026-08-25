@@ -17,6 +17,14 @@ final class RightClickStateMachineTests: XCTestCase {
         XCTAssertEqual(router.handle(.released(atMilliseconds: 1_700)), .suppressOriginalEvent)
     }
 
+    func testGestureRouterTriggersLongPressOnReleaseWhenTimerHasNotConsumedThreshold() {
+        var router = RightClickGestureRouter(thresholdMilliseconds: 250)
+
+        XCTAssertEqual(router.handle(.pressed(atMilliseconds: 1_000)), .suppressOriginalEvent)
+        XCTAssertEqual(router.handle(.timerFired(atMilliseconds: 1_249)), .suppressOriginalEvent)
+        XCTAssertEqual(router.handle(.released(atMilliseconds: 1_250)), .suppressAndTriggerSuperRightClick)
+    }
+
     func testShortPressAllowsSystemMenuAndClearsPressState() {
         var machine = RightClickStateMachine(thresholdMilliseconds: 600)
 
@@ -32,6 +40,14 @@ final class RightClickStateMachineTests: XCTestCase {
 
         XCTAssertEqual(machine.handle(.timerFired(atMilliseconds: 1_599)), .none)
         XCTAssertEqual(machine.handle(.timerFired(atMilliseconds: 1_600)), .triggerSuperRightClick)
+    }
+
+    func testReleaseAtThresholdTriggersWhenTimerHasNotFired() {
+        var machine = RightClickStateMachine(thresholdMilliseconds: 250)
+
+        XCTAssertEqual(machine.handle(.pressed(atMilliseconds: 1_000)), .none)
+        XCTAssertEqual(machine.handle(.released(atMilliseconds: 1_250)), .triggerSuperRightClick)
+        XCTAssertEqual(machine.handle(.timerFired(atMilliseconds: 1_300)), .none)
     }
 
     func testReleaseAfterTriggerClearsPressStateWithoutSystemMenu() {

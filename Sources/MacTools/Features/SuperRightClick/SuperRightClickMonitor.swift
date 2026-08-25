@@ -161,6 +161,7 @@ final class SuperRightClickMonitor {
         if route == .suppressAndReplaySystemRightClick {
             replaySystemRightClick(mouseUpEvent: event, proxy: proxy)
         }
+        triggerSuperRightClick(if: route)
         pendingSuppressedRightMouseDown = nil
         return route.shouldSuppressOriginalEvent
     }
@@ -168,6 +169,11 @@ final class SuperRightClickMonitor {
     /// 长按成立后先发布可立即展示的捕获结果，再异步补齐可能较慢的翻译内容。
     private func handleLongPressTimer() {
         let route = gestureRouter.handle(.timerFired(atMilliseconds: currentMilliseconds()))
+        triggerSuperRightClick(if: route)
+    }
+
+    /// 统一消费定时器或抬起兜底产生的长按路由，避免展示链路分叉。
+    private func triggerSuperRightClick(if route: RightClickEventRoute) {
         guard route == .suppressAndTriggerSuperRightClick else {
             return
         }
