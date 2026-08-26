@@ -3,6 +3,7 @@
 
 import AppKit
 import CoreGraphics
+import Dispatch
 import Foundation
 import MacToolsCore
 
@@ -132,12 +133,12 @@ final class SuperRightClickMonitor {
     }
 
     /// 缓存被抑制的按下事件并启动轮询计时器，为短按回放保留完整事件对。
-    private func handleRightMouseDown(event: CGEvent? = nil) -> Bool {
+    private func handleRightMouseDown(event: CGEvent) -> Bool {
         logger.info("super right click right mouse down")
-        if let event {
-            pendingSuppressedRightMouseDown = event.copy()
-        }
-        let route = gestureRouter.handle(.pressed(atMilliseconds: currentMilliseconds()))
+        pendingSuppressedRightMouseDown = event.copy()
+        let route = gestureRouter.handle(
+            .pressed(atMilliseconds: eventTimestampMilliseconds(event))
+        )
         longPressTimer?.invalidate()
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -157,7 +158,9 @@ final class SuperRightClickMonitor {
         logger.info("super right click right mouse up")
         longPressTimer?.invalidate()
         longPressTimer = nil
-        let route = gestureRouter.handle(.released(atMilliseconds: currentMilliseconds()))
+        let route = gestureRouter.handle(
+            .released(atMilliseconds: eventTimestampMilliseconds(event))
+        )
         if route == .suppressAndReplaySystemRightClick {
             replaySystemRightClick(mouseUpEvent: event, proxy: proxy)
         }
@@ -168,7 +171,7 @@ final class SuperRightClickMonitor {
 
     /// 长按成立后先发布可立即展示的捕获结果，再异步补齐可能较慢的翻译内容。
     private func handleLongPressTimer() {
-        let route = gestureRouter.handle(.timerFired(atMilliseconds: currentMilliseconds()))
+        let route = gestureRouter.handle(.timerFired(atMilliseconds: currentUptimeMilliseconds()))
         triggerSuperRightClick(if: route)
     }
 
@@ -229,9 +232,17 @@ final class SuperRightClickMonitor {
         mouseUpEvent.tapPostEvent(proxy)
     }
 
-    /// 读取并返回 `currentMilliseconds` 对应的应用运行时与 AppKit 集成数据。
-    private func currentMilliseconds() -> Int {
-        Int(Date().timeIntervalSince1970 * 1000)
+    /// 使用 Quartz 事件发生时间计算真实按压时长，避免主线程延迟压缩按下与抬起间隔。
+    private func eventTimestampMilliseconds(_ event: CGEvent) -> Int {
+        guard event.timestamp > 0 else {
+            return currentUptimeMilliseconds()
+        }
+        return Int(event.timestamp / 1_000_000)
+    }
+
+    /// Quartz 事件时间与 Dispatch 单调时钟都以系统启动为基准，可安全用于定时器比较。
+    private func currentUptimeMilliseconds() -> Int {
+        Int(DispatchTime.now().uptimeNanoseconds / 1_000_000)
     }
 
     /// 计算并返回 `frontmostApplicationContext` 对应的应用运行时与 AppKit 集成数据或状态结果。

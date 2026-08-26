@@ -25,6 +25,22 @@ final class SuperRightClickMonitorSourceTests: XCTestCase {
         )
     }
 
+    func testGestureDurationUsesQuartzEventTimeInsteadOfCallbackWallClock() throws {
+        let source = try sourceFile("Sources/MacTools/Features/SuperRightClick/SuperRightClickMonitor.swift")
+
+        XCTAssertTrue(
+            source.contains(".pressed(atMilliseconds: eventTimestampMilliseconds(event))")
+        )
+        XCTAssertTrue(
+            source.contains(".released(atMilliseconds: eventTimestampMilliseconds(event))")
+        )
+        XCTAssertTrue(source.contains("guard event.timestamp > 0 else"))
+        XCTAssertTrue(source.contains("return currentUptimeMilliseconds()"))
+        XCTAssertTrue(source.contains("event.timestamp / 1_000_000"))
+        XCTAssertTrue(source.contains("DispatchTime.now().uptimeNanoseconds / 1_000_000"))
+        XCTAssertFalse(source.contains("Date().timeIntervalSince1970"))
+    }
+
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
