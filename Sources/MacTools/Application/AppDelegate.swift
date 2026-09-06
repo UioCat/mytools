@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureAppearance(
             mode: verificationAppearanceMode ?? environment.settings.appearanceMode
         )
+        NSApp.mainMenu = ApplicationMenu.makeMainMenu()
         menuBarController.install()
         environment.onSettingsChanged = { [weak self] settings in
             self?.configureHotKeys(settings: settings)

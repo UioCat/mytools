@@ -5,6 +5,7 @@
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
+- In the packaged app's clipboard search field, type a disposable search phrase: Cmd+A must select the whole query; Cmd+C must copy only selected query text without changing it; Cmd+X must remove and copy the selection; Cmd+V must insert it at the caret or replace the selection. Verify Cmd+Z restores an edit and Shift+Cmd+Z reapplies it, then reopen the panel and repeat. Repeat basic editing in the favorite-tag popover and translation input; confirm translation Return/Shift+Return and clipboard Cmd+Return retain their existing actions.
 - Confirm the sidebar shows the current blue-purple ribbon icon without the slogan.
 - Confirm the equal-width category row below search contains exactly `全部`, `文本`, `图像`, and `收藏`; files and folders remain available through `全部`.
 - Click each category and use the Left/Right arrow keys to verify adjacent transitions and both wrap-around transitions.
