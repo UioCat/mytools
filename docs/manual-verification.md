@@ -1,29 +1,68 @@
 # Manual Verification
 
-- Launch with `swift run MacTools`.
+## 固定回归场景
+
+下列场景使用 `scripts/rebuild_and_run_app.sh` 构建并启动的应用包验证。测试输入只使用合成内容；不得为验证修改生产剪贴板历史、凭据或权限数据。固定场景用于保留已修复问题的验证方法，降低复发概率，不代表可以保证没有回归。
+
+| 场景 ID | 操作与通过标准 |
+| --- | --- |
+| `PANEL-RESIZE-001` 主面板缩放 | 分别打开设置、剪贴板和翻译。首次打开为 `720 × 480 pt`；从四条直边中点、四个圆角的可见边缘分别拖动，先向外放大再向内缩小。无约束时拖动 `80 pt`，对应宽或高变化应为 `80 ± 2 pt`，对边位置变化不超过 `2 pt`；角部拖动须同时改变宽高。继续缩小不得低于 `600 × 414 pt`。松手后移动鼠标，尺寸不得继续变化；关闭重开保持尺寸。 |
+| `PANEL-RESIZE-PERF-001` 连续缩放 | 在同一显示器上对设置、剪贴板和翻译各执行慢速拖动、快速来回拖动和触及最小尺寸后回拖。边框与内容持续跟随鼠标，返回起点时不漂移，松手立即停在最终位置，失焦或关闭后不再跳动。性能对照使用相同内容、窗口尺寸、显示器刷新率与构建模式，记录输入事件数、实际尺寸更新数和显示刷新回调间隔 p50/p95；每个刷新周期最多应用一次最新尺寸，松手允许立即应用最终位置。回调间隔只作为调度指标，不能代替实际跟手和画面检查。 |
+| `TEXT-EDIT-001` 基础编辑 | 在剪贴板搜索框、收藏标签编辑框和翻译输入中输入合成短语：⌘A 选中全文；⌘C 仅复制选区且原文不变；⌘X 删除并复制选区；⌘V 在光标处插入或替换选区；⌘Z 撤销一次编辑，⇧⌘Z 重做。关闭重开后重复，确认每条命令只执行一次，普通字母和额外修饰键不会误触发。翻译 Return/Shift+Return、剪贴板 ⌘Return 保持原有动作。 |
+| `PANEL-SURFACE-001` 玻璃表面 | 设置、剪贴板和翻译面板分别在默认、放大、最小尺寸及失焦状态下覆盖明暗背景，检查全部四角：圆弧外无灰框、标题栏残留、矩形阴影或背板；选中行保留内侧同心圆角。拖动过程中及结束后均须满足。 |
+| `PANEL-FOCUS-001` 焦点与操作 | 面板边缘拖动只改变尺寸，内容区的文字选择、按钮和滚动正常。拖动背景移动面板后，用快捷键和菜单栏分别重开设置、剪贴板、翻译，位置保持；退出重启后首次居中。点击外部应用能正常转移焦点，再次打开剪贴板后搜索可编辑；Escape 关闭主面板。标签 Popover 内的方向键、Return 和 Escape 不得触发分类切换、粘贴或关闭主面板。 |
+
+### 改动与必跑场景
+
+| 改动范围 | 必跑场景 |
+| --- | --- |
+| 主面板、窗口样式、宿主视图、公共 DesignSystem | 上述五项 |
+| 编辑菜单、搜索/标签/翻译输入、键盘监听或焦点 | `TEXT-EDIT-001`、`PANEL-FOCUS-001`；影响尺寸或表面时增加对应场景 |
+| 其他 UI 或系统集成 | 下文中直接受影响的功能检查；触及共用窗口或输入链路时增加上述关联场景 |
+
+每个新修复的用户 Bug 都应关联已有场景 ID；无法覆盖时新增稳定 ID，并保留复现步骤、通过标准与相邻负例。自动化回归测试应能在修复前失败、修复后通过；无法自动化的操作保留可重复实测步骤。
+
+### 自动化与证据
+
+`.github/workflows/tests.yml` 在 `main` 推送和 Pull Request 上运行完整测试；本地完整自动化使用相同命令：
+
+```sh
+swift test --parallel --num-workers 4
+```
+
+AppKit 测试采用 SwiftPM 隔离执行，必须运行全部发现的测试并检查最终退出状态；不得通过过滤、跳过用例、吞掉失败或崩溃来取得通过结果。CI 不访问真实 TCC 状态或用户桌面，也不替代上述打包应用实测。仅断言 `.resizable`、调用 `setFrame` 或生成 PNG 不能证明真实拖动、焦点路由或系统玻璃外观正确。
+
+缩放回归须包含预先排队的屏幕坐标事件、一次刷新前的多事件合并、无变化时不更新、松手最终位置及取消/释放场景。仅在每次窗口更新后才构造下一个事件会漏掉积压时的坐标错误。CI 使用确定性的刷新步进与尺寸更新计数；真实耗时对照在同一台机器上单独记录，不以机器相关的时间阈值代替行为断言。显示同步与事件坐标约定参考 [Apple AppKit 显示同步说明](https://developer.apple.com/videos/play/wwdc2023/10054/?time=720) 和 [CGEvent 屏幕坐标说明](https://developer.apple.com/documentation/coregraphics/cgevent/unflippedlocation)。
+
+| 证据项 | 记录要求 |
+| --- | --- |
+| 验证对象 | Git 提交或基线与待提交差异、应用版本和构建号、macOS 版本、场景 ID；候选代码相关部分变化后重新验证 |
+| 自动化 | 执行命令、发现及执行用例数、退出状态和失败用例；完整运行中任一失败、崩溃或未执行均不能记为通过 |
+| 实测 | 实际操作、期望结果和实测结果；缩放记录拖动前后 frame，编辑记录合成输入和选区变化，外观记录明暗背景下的脱敏画面 |
+| 保存与失败处理 | 本地证据保存在已忽略的 `build/` 下，不提交用户桌面、剪贴板内容或运行日志。失败或无法验证写明场景和原因；修复后重跑该场景及关联场景，保留失败与通过结果，不以旧版本证据替代 |
+
+发布条件与步骤只遵循 [发布指南](release-guide.md)。
+
+## 功能检查
+
+- Launch the packaged app with `scripts/rebuild_and_run_app.sh`.
 - Confirm the menu bar item shows only the full-color ribbon mark, with no dark square or edge artifacts, on both light and dark menu bars.
 - Confirm Dock icon does not appear.
 - Use `Option + Space` to open the main panel.
 - Use `Option + 1` to open clipboard history.
-- In the packaged app's clipboard search field, type a disposable search phrase: Cmd+A must select the whole query; Cmd+C must copy only selected query text without changing it; Cmd+X must remove and copy the selection; Cmd+V must insert it at the caret or replace the selection. Verify Cmd+Z restores an edit and Shift+Cmd+Z reapplies it, then reopen the panel and repeat. Repeat basic editing in the favorite-tag popover and translation input; confirm translation Return/Shift+Return and clipboard Cmd+Return retain their existing actions.
 - Confirm the sidebar shows the current blue-purple ribbon icon without the slogan.
 - Confirm the equal-width category row below search contains exactly `全部`, `文本`, `图像`, and `收藏`; files and folders remain available through `全部`.
 - Click each category and use the Left/Right arrow keys to verify adjacent transitions and both wrap-around transitions.
 - Rapidly switch between adjacent and non-adjacent categories with the mouse and Left/Right arrow keys; confirm the selected glass surface changes in place without stretching, dragging, morphing across buttons, or leaving a residual highlight.
-- Favorite a clipboard item, open its tag control, add multiple tags, save, and confirm the `收藏` category shows an inline `全部收藏` quick filter plus one count chip per tag. While the tag editor is open, use Left/Right, Return, and Escape and confirm input stays within the Popover without switching categories, pasting, or dismissing the main panel. Select different chips and confirm only matching favorites remain; combine a tag chip with search and confirm both filters apply. Remove and restore the favorite state and confirm its saved tags return unchanged.
+- Favorite a clipboard item, open its tag control, add multiple tags, save, and confirm the `收藏` category shows an inline `全部收藏` quick filter plus one count chip per tag. Select different chips and confirm only matching favorites remain; combine a tag chip with search and confirm both filters apply. Remove and restore the favorite state and confirm its saved tags return unchanged.
 - Click a clipboard item once and confirm it only becomes selected; click the same item again and confirm it performs the Enter action and pastes at the previously focused cursor location.
 - After selecting with the keyboard or changing category/search, click the highlighted item once and confirm it only re-arms mouse selection instead of pasting immediately.
 - Fill clipboard history beyond one screen, then hold the Up/Down arrow keys; confirm every newly selected row is automatically brought into view, including rows before and after a large image preview.
-- Confirm the main panel opens at `720 × 480`, two-thirds of the previous `1080 × 720` default, and can be resized down to approximately `600 × 414`.
-- Drag the main panel away from the centered position, dismiss it, and reopen settings, clipboard, and translation through both their shortcuts and menu bar entries; confirm every entry preserves the last dragged position until MacTools quits, then relaunch and confirm the first presentation is centered again.
 - Confirm clipboard history uses one integrated Spotlight-style search header, flat compact result rows, and native Liquid Glass only on the selected row and interactive controls.
 - Confirm the selected clipboard row uses a visibly deeper adaptive neutral gray while its title, metadata, index, and favorite control remain legible.
 - Confirm each clipboard row shows only paste time at bottom-left; the index and character count or image dimensions form a separate right-aligned column, with the favorite button isolated in the outermost column.
 - Confirm image clipboard rows omit the image name and use a centered large thumbnail as the primary content while retaining paste time, pixel dimensions, index, and favorite control below it.
 - Place Spotlight and the clipboard panel over the same light and dark content; confirm the panel uses the same untinted system glass color and adaptive depth as Spotlight.
-- Confirm the panel has continuous system-style outer corners with no square transparent residue, and the selected row keeps a concentric inner curve.
-- Resize the panel and confirm no rectangular system shadow appears outside its rounded glass edge.
-- Place the panel over both light and dark windows; confirm all four corners outside the glass arc remain fully transparent with no rectangular backdrop tint.
 - Confirm standard clipboard rows render content at `12 pt`, wrap it to at most three lines, and keep metadata on one line; image rows should retain their large centered preview layout.
 - Use `Option + 2` to open the translation tool.
 - At the default `720 × 480` panel size, confirm the translation page uses one flat two-column workspace with a quiet divider rather than nested glass cards; the input, translate button, and output area must remain visible without bottom clipping. Resize the panel taller and shorter and confirm both text areas use the available height. Confirm an empty placeholder and short input stay vertically centered and left-aligned; paste enough multiline text to overflow and confirm the content returns to the top inset, scrolls normally, and leaves no extra blank area at the bottom. Over light content, confirm input text and translated text use the dark system label color and placeholders remain clearly legible; repeat over dark content and confirm the colors adapt.

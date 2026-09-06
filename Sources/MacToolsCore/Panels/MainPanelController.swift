@@ -2,6 +2,7 @@
 // 负责窗口外观和交互策略，不持久化业务数据。
 
 import AppKit
+import QuartzCore
 import SwiftUI
 
 /// 描述 `MainPanelPositioningDecision` 在面板领域中可取的状态、选项或错误。
@@ -48,7 +49,7 @@ public final class MainPanelController {
         )
 
         if panel == nil {
-            let panel = EscapeDismissPanel(
+            let panel = MainPanelWindow(
                 contentRect: NSRect(origin: .zero, size: initialSize),
                 styleMask: Self.windowStyleMask,
                 backing: .buffered,
@@ -69,7 +70,7 @@ public final class MainPanelController {
                 self?.hide()
             }
 
-            let hostingView = NSHostingView(rootView: rootView)
+            let hostingView = MainPanelHostingView(rootView: rootView)
             panel.contentView = hostingView
             Self.configureRoundedBackingLayer(hostingView)
             if let frameView = hostingView.superview {
@@ -107,11 +108,20 @@ public final class MainPanelController {
     }
 }
 
-/// 管理 `EscapeDismissPanel` 在面板领域中的生命周期、依赖和可变状态。
+/// 无边框主面板的键盘与窗口交互。
 @MainActor
-private final class EscapeDismissPanel: NSPanel {
+final class MainPanelWindow: NSPanel {
     var onDismiss: (() -> Void)?
     private let resolver = PanelKeyCommandResolver()
+    private var resizeSession: (edge: MainPanelResizeEdge, frame: NSRect, point: NSPoint)?
+    private var pendingResizeFrame: NSRect?
+    private var resizeDisplayLink: CADisplayLink?
+
+    var isResizeScheduled: Bool { resizeDisplayLink != nil }
+
+    isolated deinit {
+        resizeDisplayLink?.invalidate()
+    }
 
     override var canBecomeKey: Bool {
         true
@@ -121,9 +131,102 @@ private final class EscapeDismissPanel: NSPanel {
         true
     }
 
+    override func sendEvent(_ event: NSEvent) {
+        if !handleResizeEvent(event) { super.sendEvent(event) }
+    }
+
+    /// 返回是否消费了缩放事件；内容区事件继续交由 AppKit 派发。
+    func handleResizeEvent(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseDown:
+            endResize()
+            let point = screenPoint(for: event)
+            if styleMask.contains(.resizable),
+               let edge = MainPanelResizeEdge.hit(
+                   at: convertPoint(fromScreen: point),
+                   in: NSRect(origin: .zero, size: frame.size)
+               ) {
+                makeKey()
+                resizeSession = (edge, frame, point)
+                let target = MainPanelResizeDisplayTarget(window: self)
+                let link = displayLink(target: target, selector: #selector(MainPanelResizeDisplayTarget.update(_:)))
+                resizeDisplayLink = link
+                link.add(to: .main, forMode: .common)
+                edge.cursor.set()
+                return true
+            }
+        case .leftMouseDragged:
+            if resizeSession != nil {
+                queueResize(at: screenPoint(for: event))
+                return true
+            }
+        case .leftMouseUp:
+            if resizeSession != nil {
+                queueResize(at: screenPoint(for: event))
+                applyPendingResize()
+                endResize()
+                return true
+            }
+        default:
+            break
+        }
+        return false
+    }
+
+    /// CG 事件保留发生时的屏幕坐标，窗口移动后不再从旧的窗口内坐标重新换算。
+    private func screenPoint(for event: NSEvent) -> NSPoint {
+        if let location = event.cgEvent?.unflippedLocation { return location }
+        return event.window == nil ? event.locationInWindow : convertPoint(toScreen: event.locationInWindow)
+    }
+
+    private func queueResize(at point: NSPoint) {
+        guard let session = resizeSession else { return }
+        let delta = NSPoint(x: point.x - session.point.x, y: point.y - session.point.y)
+        pendingResizeFrame = session.edge.resizedFrame(from: session.frame, delta: delta, minimum: minSize, maximum: maxSize)
+    }
+
+    /// 每个显示刷新周期最多更新一次尺寸，积压事件只保留最新位置。
+    func applyPendingResize() {
+        guard resizeSession != nil, let targetFrame = pendingResizeFrame else { return }
+        pendingResizeFrame = nil
+        guard targetFrame != frame else { return }
+        setFrame(targetFrame, display: false)
+    }
+
+    fileprivate func applyPendingResize(from link: CADisplayLink) {
+        guard resizeDisplayLink === link else { return }
+        applyPendingResize()
+    }
+
+    override func orderOut(_ sender: Any?) {
+        endResize()
+        super.orderOut(sender)
+    }
+
+    override func resignKey() {
+        endResize()
+        super.resignKey()
+    }
+
+    override func close() {
+        endResize()
+        super.close()
+    }
+
+    private func endResize() {
+        guard resizeSession != nil else { return }
+        resizeSession = nil
+        pendingResizeFrame = nil
+        resizeDisplayLink?.invalidate()
+        resizeDisplayLink = nil
+        NSCursor.arrow.set()
+        if let contentView { invalidateCursorRects(for: contentView) }
+    }
+
     /// 响应 `keyDown` 对应的系统或界面回调，并同步当前交互状态。
     override func keyDown(with event: NSEvent) {
         if resolver.command(forKeyCode: event.keyCode) == .dismiss {
+            endResize()
             onDismiss?()
             return
         }
@@ -133,6 +236,25 @@ private final class EscapeDismissPanel: NSPanel {
 
     /// 判断 `cancelOperation` 所描述的面板领域条件是否成立。
     override func cancelOperation(_ sender: Any?) {
+        endResize()
         onDismiss?()
+    }
+}
+
+/// Display link 持有 target；target 弱引用窗口，避免缩放过程中形成保留环。
+@MainActor
+private final class MainPanelResizeDisplayTarget: NSObject {
+    weak var window: MainPanelWindow?
+
+    init(window: MainPanelWindow) {
+        self.window = window
+    }
+
+    @objc func update(_ link: CADisplayLink) {
+        guard let window else {
+            link.invalidate()
+            return
+        }
+        window.applyPendingResize(from: link)
     }
 }

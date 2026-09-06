@@ -394,11 +394,12 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
 
         let boundedCommand = Process()
         boundedCommand.executableURL = URL(fileURLWithPath: "/bin/bash")
+        // 并行 worker 中需给测试命令完成 exec 并写入子进程 PID 留出预算。
         boundedCommand.arguments = [
             try repositoryRoot()
                 .appendingPathComponent("scripts/ci/run_with_timeout.sh")
                 .path,
-            "1",
+            "5",
             command.path,
         ]
         var environment = ProcessInfo.processInfo.environment
@@ -409,7 +410,7 @@ final class ReleaseWorkflowSourceTests: XCTestCase {
         boundedCommand.waitUntilExit()
 
         XCTAssertEqual(boundedCommand.terminationStatus, 124)
-        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 3)
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 8)
 
         let childPID = try String(contentsOf: childPIDFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
