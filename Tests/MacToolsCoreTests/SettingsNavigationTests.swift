@@ -7,42 +7,46 @@ import XCTest
 final class SettingsNavigationTests: XCTestCase {
     @MainActor
     func testToolbarHumanCadenceClickChangesEveryBoundPane() {
-        var receivedSelections: [SettingsPane] = []
-        let toolbar = SettingsPaneToolbarHarness(initialSelection: .sync) {
-            receivedSelections.append($0)
-        }
-        .frame(width: 600, height: 80)
+        autoreleasepool {
+            var receivedSelections: [SettingsPane] = []
+            let toolbar = SettingsPaneToolbarHarness(initialSelection: .sync) {
+                receivedSelections.append($0)
+            }
+            .frame(width: 600, height: 80)
 
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 80),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        let hostingView = NSHostingView(rootView: toolbar)
-        window.isMovableByWindowBackground = true
-        window.contentView = hostingView
-        window.orderFrontRegardless()
-        defer {
-            window.orderOut(nil)
-            window.close()
-        }
-
-        hostingView.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-
-        for index in SettingsPane.allCases.indices {
-            sendHumanCadenceClick(
-                to: window,
-                at: NSPoint(x: toolbarButtonCenterX(at: index), y: 40)
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 600, height: 80),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
             )
+            // 窗口由 Swift 管理生命周期，close 不再额外释放同一实例。
+            window.isReleasedWhenClosed = false
+            let hostingView = NSHostingView(rootView: toolbar)
+            window.isMovableByWindowBackground = true
+            window.contentView = hostingView
+            window.orderFrontRegardless()
+            defer {
+                window.orderOut(nil)
+                window.close()
+            }
 
-            XCTAssertEqual(receivedSelections, Array(SettingsPane.allCases.prefix(index + 1)))
+            hostingView.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+
+            for index in SettingsPane.allCases.indices {
+                sendHumanCadenceClick(
+                    to: window,
+                    at: NSPoint(x: toolbarButtonCenterX(at: index), y: 40)
+                )
+
+                XCTAssertEqual(receivedSelections, Array(SettingsPane.allCases.prefix(index + 1)))
+            }
+
+            receivedSelections.removeAll()
+            sendHumanCadenceClick(to: window, at: NSPoint(x: 12, y: 40))
+            XCTAssertEqual(receivedSelections, [.general])
         }
-
-        receivedSelections.removeAll()
-        sendHumanCadenceClick(to: window, at: NSPoint(x: 12, y: 40))
-        XCTAssertEqual(receivedSelections, [.general])
     }
 
     func testPanesUseStableToolbarOrder() {
