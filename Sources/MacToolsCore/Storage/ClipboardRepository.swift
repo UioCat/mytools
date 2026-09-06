@@ -41,6 +41,7 @@ public final class ClipboardRepository: @unchecked Sendable {
                 db,
                 sql: """
                 SELECT id, createdAt, lastCapturedAt, lastUsedAt, retentionAt, payloadID,
+                       displayTitle, searchableText, sourceApp,
                        isFavorite, favoriteClock, favoriteDeviceID,
                        tagsJSON, tagsClock, tagsDeviceID,
                        isPinned, pinnedClock, pinnedDeviceID, syncGeneration
@@ -71,6 +72,22 @@ public final class ClipboardRepository: @unchecked Sendable {
             let lastUsedAt = Self.latest(existingLastUsedAt, item.lastUsedAt)
             let existingLastCapturedAt: Date? = existing?["lastCapturedAt"]
             let lastCapturedAt = max(existingLastCapturedAt ?? .distantPast, item.lastCapturedAt)
+            // 相同内容在多端独立复制时，展示元数据也必须按相同顺序合并，避免互相覆盖并重复发布。
+            var displayTitle = item.displayTitle
+            var searchableText = item.searchableText
+            var sourceApp = item.sourceApp
+            if deterministicallyMergesRecordNames, let existing, let existingLastCapturedAt {
+                let existingSource: String? = existing["sourceApp"]
+                let localMetadata = [existing["displayTitle"] as String, existing["searchableText"] as String,
+                                     existingSource.map { "1\($0)" } ?? "0"]
+                let incomingMetadata = [item.displayTitle, item.searchableText, item.sourceApp.map { "1\($0)" } ?? "0"]
+                if existingLastCapturedAt > item.lastCapturedAt
+                    || (existingLastCapturedAt == item.lastCapturedAt && incomingMetadata.lexicographicallyPrecedes(localMetadata)) {
+                    displayTitle = existing["displayTitle"]
+                    searchableText = existing["searchableText"]
+                    sourceApp = existingSource
+                }
+            }
             let existingRetentionAt: Date? = existing?["retentionAt"]
             let retentionAt = max(
                 existingRetentionAt ?? .distantPast,
@@ -140,6 +157,7 @@ public final class ClipboardRepository: @unchecked Sendable {
                     text = excluded.text,
                     originalPath = excluded.originalPath,
                     sourceApp = excluded.sourceApp,
+                    createdAt = excluded.createdAt,
                     lastCapturedAt = excluded.lastCapturedAt,
                     lastUsedAt = excluded.lastUsedAt,
                     retentionAt = excluded.retentionAt,
@@ -159,11 +177,11 @@ public final class ClipboardRepository: @unchecked Sendable {
                 arguments: [
                     persistedID.uuidString,
                     item.kind.rawValue,
-                    item.displayTitle,
-                    item.searchableText,
+                    displayTitle,
+                    searchableText,
                     item.text,
                     item.originalPath,
-                    item.sourceApp,
+                    sourceApp,
                     item.contentHash,
                     createdAt,
                     lastCapturedAt,

@@ -427,10 +427,10 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 SELECT recordName, targetType, generation, deletedAt,
                        tombstoneID, reason, sourceDeviceID, sourceRevision
                 FROM tombstones
-                WHERE generation = ? AND sourceDeviceID = ?
+                WHERE generation = ?
                 ORDER BY tombstoneID ASC
                 """,
-                arguments: [generation, deviceID]
+                arguments: [generation]
             ).map { row in
                 SyncTombstoneRecord(
                     tombstoneID: row["tombstoneID"],
@@ -596,14 +596,18 @@ public final class SyncLocalRepository: @unchecked Sendable {
                             tombstoneID, reason, sourceDeviceID, sourceRevision
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(recordName) DO UPDATE SET
-                            targetType = CASE WHEN excluded.generation >= generation THEN excluded.targetType ELSE targetType END,
-                            generation = MAX(generation, excluded.generation),
-                            deletedAt = CASE WHEN excluded.generation >= generation THEN excluded.deletedAt ELSE deletedAt END,
-                            uploadedAt = CASE WHEN excluded.generation >= generation THEN excluded.uploadedAt ELSE uploadedAt END,
-                            tombstoneID = CASE WHEN excluded.generation >= generation THEN excluded.tombstoneID ELSE tombstoneID END,
-                            reason = CASE WHEN excluded.generation >= generation THEN excluded.reason ELSE reason END,
-                            sourceDeviceID = CASE WHEN excluded.generation >= generation THEN excluded.sourceDeviceID ELSE sourceDeviceID END,
-                            sourceRevision = CASE WHEN excluded.generation >= generation THEN excluded.sourceRevision ELSE sourceRevision END
+                            targetType = excluded.targetType,
+                            generation = excluded.generation,
+                            deletedAt = excluded.deletedAt,
+                            uploadedAt = excluded.uploadedAt,
+                            tombstoneID = excluded.tombstoneID,
+                            reason = excluded.reason,
+                            sourceDeviceID = excluded.sourceDeviceID,
+                            sourceRevision = excluded.sourceRevision
+                        WHERE (excluded.generation, excluded.sourceRevision, excluded.sourceDeviceID,
+                               excluded.tombstoneID, excluded.deletedAt, excluded.reason, excluded.targetType)
+                            > (tombstones.generation, tombstones.sourceRevision, tombstones.sourceDeviceID,
+                               tombstones.tombstoneID, tombstones.deletedAt, tombstones.reason, tombstones.targetType)
                         """,
                         arguments: [
                             targetRecordName, record.targetType, record.generation,
@@ -629,50 +633,15 @@ public final class SyncLocalRepository: @unchecked Sendable {
         }
     }
 
-    /// 对账或合并 `compactAcknowledgedTombstones` 涉及的同步核心领域状态，并返回收敛结果。
+    /// 文件目录不是完整成员名单，回执也不能阻止旧快照迟到；同代际删除标记必须保留。
+    /// 仅 adoptGeneration 在显式重置后清理旧代际，避免离线设备恢复已删除内容。
     @discardableResult
     public func compactAcknowledgedTombstones(
         activeManifests: [SyncReplicaManifest],
         localDeviceID: String,
         generation: Int
     ) throws -> Set<String> {
-        _ = localDeviceID
-        let rows = try database.writer.read { db in
-            try Row.fetchAll(
-                db,
-                sql: """
-                SELECT tombstoneID, sourceDeviceID, sourceRevision
-                FROM tombstones
-                WHERE generation = ? AND sourceDeviceID != '' AND sourceRevision > 0
-                """,
-                arguments: [generation]
-            )
-        }
-        let acknowledged = Set(rows.compactMap { row -> String? in
-            let sourceDeviceID: String = row["sourceDeviceID"]
-            let sourceRevision: Int64 = row["sourceRevision"]
-            guard activeManifests.contains(where: {
-                $0.deviceID == sourceDeviceID && $0.revision >= sourceRevision
-            }) else {
-                return nil
-            }
-            let isSeenByAll = activeManifests.allSatisfy { manifest in
-                if manifest.deviceID == sourceDeviceID {
-                    return manifest.revision >= sourceRevision
-                }
-                return (manifest.seenRevisions[sourceDeviceID] ?? 0) >= sourceRevision
-            }
-            return isSeenByAll ? row["tombstoneID"] : nil
-        })
-        guard !acknowledged.isEmpty else { return [] }
-        try database.writer.write { db in
-            let placeholders = Array(repeating: "?", count: acknowledged.count).joined(separator: ",")
-            try db.execute(
-                sql: "DELETE FROM tombstones WHERE tombstoneID IN (\(placeholders))",
-                arguments: StatementArguments(acknowledged.sorted())
-            )
-        }
-        return acknowledged
+        []
     }
 
     /// 按字段时钟合并远端偏好；没有字段获胜时返回 nil。
@@ -690,6 +659,11 @@ public final class SyncLocalRepository: @unchecked Sendable {
             )
         }
         return lastSettings
+    }
+
+    /// receipt 可能在周期后续失败前已持久化；重试仍须把已合并设置交给运行时。
+    public func currentSettings() throws -> AppSettings? {
+        try preferenceRepository.load()
     }
 
     /// 提交 `acknowledgeSnapshot` 对应的同步核心领域状态，并记录后续流程所需的进度。

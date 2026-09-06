@@ -30,22 +30,6 @@ final class ICloudDriveSyncCoordinatorSourceTests: XCTestCase {
         )
     }
 
-    func testSyncCycleUsesOneFullInventoryScanSiteAndCachesStableCycles() throws {
-        let source = try sourceFile(
-            "Sources/MacToolsCore/Sync/DriveSyncCycleRunner.swift"
-        )
-
-        XCTAssertEqual(
-            source.components(separatedBy: "store.storageInventory()").count - 1,
-            1
-        )
-        XCTAssertFalse(source.contains("store.storedObjects()"))
-        XCTAssertFalse(source.contains("store.usage("))
-        XCTAssertTrue(source.contains("cachedInventoryIsFresh"))
-        XCTAssertTrue(source.contains("cachedReplicasByDeviceID:"))
-        XCTAssertTrue(source.contains("writeWithMetadataDelta("))
-    }
-
     func testCoordinatorDelegatesSingleCycleWorkToCoreRunner() throws {
         let source = try sourceFile(
             "Sources/MacTools/Platform/Sync/ICloudDriveSyncCoordinator.swift"

@@ -57,7 +57,13 @@ public enum SyncManifestConflictResolver {
                 candidate.versionID == other.versionID || dominates(candidate, other)
             }
         }
-        guard winners.count == 1, let winner = winners.first else {
+        // iCloud 可以为同一次发布产生多个文件版本；展示名和更新时间不改变发布身份。
+        guard let first = winners.first,
+              winners.allSatisfy({ samePublication($0.manifest, first.manifest) }),
+              let winner = winners.sorted(by: {
+                  if $0.isCurrent != $1.isCurrent { return $0.isCurrent }
+                  return $0.versionID < $1.versionID
+              }).first else {
             return .unresolved
         }
         return .keep(versionID: winner.versionID)
@@ -93,6 +99,9 @@ public enum SyncManifestConflictResolver {
         _ other: SyncManifestCandidate
     ) -> Bool {
         guard winner.manifest.revision >= other.manifest.revision else { return false }
+        if winner.manifest.revision == other.manifest.revision {
+            return samePublication(winner.manifest, other.manifest)
+        }
         if case let .supersededLedger(replacedByRevision) = other.verification,
            winner.manifest.revision < replacedByRevision {
             return false
@@ -103,5 +112,15 @@ public enum SyncManifestConflictResolver {
             (winner.manifest.seenRevisions[$0] ?? 0)
                 >= (other.manifest.seenRevisions[$0] ?? 0)
         }
+    }
+
+    static func samePublication(_ lhs: SyncReplicaManifest, _ rhs: SyncReplicaManifest) -> Bool {
+        lhs.schemaVersion == rhs.schemaVersion
+            && lhs.deviceID == rhs.deviceID
+            && lhs.generation == rhs.generation
+            && lhs.revision == rhs.revision
+            && lhs.seenRevisions == rhs.seenRevisions
+            && lhs.snapshotDigests == rhs.snapshotDigests
+            && lhs.snapshotDirectory == rhs.snapshotDirectory
     }
 }

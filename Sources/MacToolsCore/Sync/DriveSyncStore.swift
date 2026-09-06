@@ -499,16 +499,17 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     /// 本地发布事务完成后，限量清理台账证明可回收的当前设备快照。
+    @discardableResult
     public func cleanupSnapshotPublications(
         storeID: UUID,
         deviceID: String,
         generation: Int,
         protectedDirectories: Set<String>
-    ) throws {
+    ) throws -> Int64 {
         let revisionsDirectory = replicasURL
             .appendingPathComponent(deviceID, isDirectory: true)
             .appendingPathComponent("revisions", isDirectory: true)
-        try cleanupRecordedSnapshotRevisions(
+        return try cleanupRecordedSnapshotRevisions(
             storeID: storeID,
             deviceID: deviceID,
             generation: generation,
@@ -578,10 +579,12 @@ public final class DriveSyncStore: @unchecked Sendable {
         return result
     }
 
-    /// 读取并校验共享内容对象；文件尚未下载时返回 nil 供下轮重试。
+    /// 读取并校验共享内容对象；缺失或尚未下载时报告下载等待，供下轮重试。
     public func contentData(contentID: String, kind: ClipboardContentKind) throws -> Data? {
         let url = try contentURL(contentID: contentID, kind: kind)
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw DriveSyncStoreError.itemNotDownloaded(url)
+        }
         let data: Data
         do {
             data = try readData(at: url, options: [.mappedIfSafe])
@@ -840,14 +843,20 @@ public final class DriveSyncStore: @unchecked Sendable {
         mayRepairManifestVersions: Bool = false
     ) throws -> DriveSyncReplica? {
         let manifestURL = directory.appendingPathComponent("manifest.json")
-        guard fileManager.fileExists(atPath: manifestURL.path) else { return nil }
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
+            throw DriveSyncStoreError.itemNotDownloaded(manifestURL)
+        }
         let coordinated = try fileCoordinator.coordinateManifest(at: manifestURL) { versions in
             guard !versions.isEmpty else { return .abort }
             if versions.count == 1, let only = versions.first {
                 return .keep(versionID: only.versionID)
             }
             guard mayRepairManifestVersions else { return .abort }
-            let candidates = try versions.map { version in
+            let activeVersions = try self.versionsInGeneration(versions, deviceID: directory.lastPathComponent, generation: generation)
+            guard !activeVersions.isEmpty else {
+                return .keep(versionID: versions.first(where: \.isCurrent)?.versionID ?? versions[0].versionID)
+            }
+            let candidates = try activeVersions.map { version in
                 try self.manifestCandidate(
                     version: version,
                     deviceDirectory: directory,
@@ -954,7 +963,11 @@ public final class DriveSyncStore: @unchecked Sendable {
         deviceID: String,
         directory: URL
     ) throws -> Data {
-        let data = try readData(at: directory.appendingPathComponent(fileName))
+        let url = directory.appendingPathComponent(fileName)
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw DriveSyncStoreError.itemNotDownloaded(url)
+        }
+        let data = try readData(at: url)
         guard SyncSnapshotCodec.digest(data) == expectedDigest else {
             throw DriveSyncStoreError.snapshotDigestMismatch(
                 deviceID: deviceID,
@@ -1006,8 +1019,9 @@ public final class DriveSyncStore: @unchecked Sendable {
         generation: Int,
         revisionsDirectory: URL,
         keeping names: Set<String>
-    ) throws {
-        guard let publicationLedger else { return }
+    ) throws -> Int64 {
+        guard let publicationLedger else { return 0 }
+        var reclaimedBytes: Int64 = 0
         let deadline = Date().addingTimeInterval(2)
         let candidates = try publicationLedger.cleanupCandidates(
             storeID: storeID,
@@ -1022,7 +1036,9 @@ public final class DriveSyncStore: @unchecked Sendable {
                 isDirectory: true
             )
             if fileManager.fileExists(atPath: url.path) {
+                let bytes = try regularFileBytes(in: url)
                 try fileManager.removeItem(at: url)
+                reclaimedBytes += bytes
             }
             switch candidate.state {
             case .superseded:
@@ -1033,6 +1049,7 @@ public final class DriveSyncStore: @unchecked Sendable {
                 break
             }
         }
+        return reclaimedBytes
     }
 
     /// 仅在共享对象不存在时写入内容，并通过摘要回读验证写入结果。
@@ -1125,6 +1142,11 @@ public final class DriveSyncStore: @unchecked Sendable {
         }
     }
 
+    /// 返回经校验的对象地址，供目录元数据尚未到达时请求下载。
+    public func contentLocation(contentID: String, kind: ClipboardContentKind) throws -> URL {
+        try contentURL(contentID: contentID, kind: kind)
+    }
+
     /// 创建快照前先验证并收敛本机 manifest；证据不足时保持目录数量不变。
     private func preflightOwnedManifest(
         at manifestURL: URL,
@@ -1135,17 +1157,29 @@ public final class DriveSyncStore: @unchecked Sendable {
         guard fileManager.fileExists(atPath: manifestURL.path) else { return }
         _ = try fileCoordinator.coordinateManifest(at: manifestURL) { versions in
             guard !versions.isEmpty else { return .abort }
-            let candidates: [SyncManifestCandidate]
-            do {
-                candidates = try versions.map {
-                    try self.manifestCandidate(
-                        version: $0,
-                        deviceDirectory: deviceDirectory,
-                        generation: draft.generation
-                    )
-                }
-            } catch {
-                return .abort
+            let activeVersions = try self.versionsInGeneration(versions, deviceID: draft.deviceID, generation: draft.generation)
+            guard !activeVersions.isEmpty else {
+                return .keep(versionID: versions.first(where: \.isCurrent)?.versionID ?? versions[0].versionID)
+            }
+            let candidates = try activeVersions.map {
+                try self.manifestCandidate(
+                    version: $0,
+                    deviceDirectory: deviceDirectory,
+                    generation: draft.generation
+                )
+            }
+            let draftCandidate = SyncManifestCandidate(
+                versionID: "draft:\(SyncSnapshotCodec.digest(draftData))",
+                isCurrent: false, manifest: draft,
+                manifestDigest: SyncSnapshotCodec.digest(draftData), verification: .complete
+            )
+            // 迟到指针可能是唯一文件版本，而其快照已经回收。台账证明全部候选已作废时，
+            // 允许用保留本地状态生成更高 revision；此处仍不发布尚未写完的草稿。
+            if candidates.allSatisfy({
+                if case .supersededLedger = $0.verification { return true }
+                return false
+            }), SyncManifestConflictResolver.resolve(candidates + [draftCandidate]) == .keep(versionID: draftCandidate.versionID) {
+                return .keep(versionID: activeVersions.first(where: \.isCurrent)?.versionID ?? activeVersions[0].versionID)
             }
             guard let winner = resolvedManifestWinner(in: candidates) else {
                 return .abort
@@ -1156,14 +1190,8 @@ public final class DriveSyncStore: @unchecked Sendable {
             if Self.representsSamePublication(draft, winner.manifest) {
                 return .keep(versionID: winner.versionID)
             }
+            if winner.manifest.revision > draft.revision { return .keep(versionID: winner.versionID) }
             guard draft.revision > winner.manifest.revision else { return .abort }
-            let draftCandidate = SyncManifestCandidate(
-                versionID: "draft:\(SyncSnapshotCodec.digest(draftData))",
-                isCurrent: false,
-                manifest: draft,
-                manifestDigest: SyncSnapshotCodec.digest(draftData),
-                verification: .complete
-            )
             guard SyncManifestConflictResolver.resolve([winner, draftCandidate])
                     == .keep(versionID: draftCandidate.versionID) else {
                 return .abort
@@ -1183,17 +1211,27 @@ public final class DriveSyncStore: @unchecked Sendable {
             return .publish(data: draftData, baseVersionID: nil)
         }
         let deviceDirectory = manifestURL.deletingLastPathComponent()
-        let candidates: [SyncManifestCandidate]
-        do {
-            candidates = try versions.map {
-                try manifestCandidate(
-                    version: $0,
-                    deviceDirectory: deviceDirectory,
-                    generation: draft.generation
-                )
-            }
-        } catch {
-            return .abort
+        let activeVersions = try versionsInGeneration(versions, deviceID: draft.deviceID, generation: draft.generation)
+        guard !activeVersions.isEmpty else {
+            return .publish(data: draftData, baseVersionID: versions.first(where: \.isCurrent)?.versionID ?? versions[0].versionID)
+        }
+        let candidates = try activeVersions.map {
+            try manifestCandidate(
+                version: $0,
+                deviceDirectory: deviceDirectory,
+                generation: draft.generation
+            )
+        }
+        let draftCandidate = SyncManifestCandidate(
+            versionID: "draft:\(SyncSnapshotCodec.digest(draftData))",
+            isCurrent: false, manifest: draft,
+            manifestDigest: SyncSnapshotCodec.digest(draftData), verification: .complete
+        )
+        if candidates.allSatisfy({
+            if case .supersededLedger = $0.verification { return true }
+            return false
+        }), SyncManifestConflictResolver.resolve(candidates + [draftCandidate]) == .keep(versionID: draftCandidate.versionID) {
+            return .publish(data: draftData, baseVersionID: activeVersions.first(where: \.isCurrent)?.versionID ?? activeVersions[0].versionID)
         }
         guard let winner = resolvedManifestWinner(in: candidates) else {
             return .abort
@@ -1210,13 +1248,6 @@ public final class DriveSyncStore: @unchecked Sendable {
         guard winner.manifest.revision < draft.revision else {
             return .abort
         }
-        let draftCandidate = SyncManifestCandidate(
-            versionID: "draft:\(SyncSnapshotCodec.digest(draftData))",
-            isCurrent: false,
-            manifest: draft,
-            manifestDigest: SyncSnapshotCodec.digest(draftData),
-            verification: .complete
-        )
         guard SyncManifestConflictResolver.resolve([winner, draftCandidate])
                 == .keep(versionID: draftCandidate.versionID) else {
             return .abort
@@ -1248,6 +1279,10 @@ public final class DriveSyncStore: @unchecked Sendable {
         generation: Int
     ) throws -> SyncManifestCandidate {
         let manifest = try SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: version.data)
+        guard manifest.deviceID == deviceDirectory.lastPathComponent,
+              manifest.generation == generation else {
+            throw DriveSyncStoreError.inconsistentReplica(deviceID: deviceDirectory.lastPathComponent)
+        }
         let manifestDigest = SyncSnapshotCodec.digest(version.data)
         let verification: SyncManifestCandidate.Verification
         do {
@@ -1357,13 +1392,22 @@ public final class DriveSyncStore: @unchecked Sendable {
         _ lhs: SyncReplicaManifest,
         _ rhs: SyncReplicaManifest
     ) -> Bool {
-        lhs.schemaVersion == rhs.schemaVersion
-            && lhs.deviceID == rhs.deviceID
-            && lhs.generation == rhs.generation
-            && lhs.revision == rhs.revision
-            && lhs.seenRevisions == rhs.seenRevisions
-            && lhs.snapshotDigests == rhs.snapshotDigests
-            && lhs.snapshotDirectory == rhs.snapshotDirectory
+        SyncManifestConflictResolver.samePublication(lhs, rhs)
+    }
+
+    /// 只有明确的 reset marker 能淘汰旧代际；不能把未下载或损坏误判成普通版本冲突。
+    private func versionsInGeneration(
+        _ versions: [SyncFileVersionContent], deviceID: String, generation: Int
+    ) throws -> [SyncFileVersionContent] {
+        let resetGeneration = try highestResetGeneration()
+        return try versions.filter { version in
+            let manifest = try SyncSnapshotCodec.decode(SyncReplicaManifest.self, from: version.data)
+            guard [1, SyncReplicaManifest.currentSchemaVersion].contains(manifest.schemaVersion),
+                  manifest.deviceID == deviceID else {
+                throw DriveSyncStoreError.inconsistentReplica(deviceID: deviceID)
+            }
+            return !(manifest.generation < generation && resetGeneration >= generation)
+        }
     }
 
     /// 使用 staging 文件、原子替换和写后回读保证元数据文件完整可见。

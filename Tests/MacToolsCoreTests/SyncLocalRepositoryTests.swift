@@ -418,7 +418,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
         ))
     }
 
-    func testTombstoneCompactsOnlyAfterEveryVisibleDeviceAcknowledgesSourceRevision() throws {
+    func testVisibleAcknowledgementsDoNotRetireDeletionEvidence() throws {
         let replica = try makeReplica(deviceID: "device-a")
         defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
         let item = textItem(id: UUID(), text: "to delete")
@@ -461,8 +461,8 @@ final class SyncLocalRepositoryTests: XCTestCase {
             activeManifests: [sourceManifest, acknowledgingPeer],
             localDeviceID: "device-a",
             generation: 1
-        ).count, 1)
-        XCTAssertTrue(try replica.sync.exportBundle(
+        ).count, 0)
+        XCTAssertFalse(try replica.sync.exportBundle(
             deviceID: "device-a",
             generation: 1,
             revision: 4,
@@ -645,12 +645,12 @@ final class SyncLocalRepositoryTests: XCTestCase {
             ]
         )
         try replica.sync.apply(tombstones: tombstone)
-        XCTAssertTrue(try replica.sync.exportBundle(
+        XCTAssertEqual(try replica.sync.exportBundle(
             deviceID: "device-a",
             generation: 1,
             revision: 1,
             scope: .allHistory
-        ).tombstones.records.isEmpty)
+        ).tombstones.records.map(\.sourceDeviceID), ["device-b"])
 
         try replica.sync.preserveTombstones(
             fromRemovedDeviceID: "device-b",
@@ -670,7 +670,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
         XCTAssertEqual(rehomed.tombstones.records[0].sourceRevision, 2)
     }
 
-    func testImportedPeerTombstoneCompactsAfterEveryDeviceAcknowledgesItsSourceRevision() throws {
+    func testImportedDeletionEvidenceSurvivesVisibleAcknowledgements() throws {
         let replica = try makeReplica(deviceID: "device-a")
         defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
         let targetID = UUID()
@@ -715,8 +715,8 @@ final class SyncLocalRepositoryTests: XCTestCase {
             generation: 1
         )
 
-        XCTAssertEqual(compacted.count, 1)
-        XCTAssertTrue(try replica.sync.tombstonedRecordNames(generation: 1).isEmpty)
+        XCTAssertTrue(compacted.isEmpty)
+        XCTAssertEqual(try replica.sync.tombstonedRecordNames(generation: 1), [targetID.uuidString])
     }
 
     private struct Replica {

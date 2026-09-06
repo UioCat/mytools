@@ -19,6 +19,8 @@ final class SettingsNavigationTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
         let hostingView = NSHostingView(rootView: toolbar)
         window.isMovableByWindowBackground = true
         window.contentView = hostingView

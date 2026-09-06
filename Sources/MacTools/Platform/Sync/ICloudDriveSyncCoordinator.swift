@@ -6,6 +6,7 @@ import MacToolsCore
 
 /// 管理 `ICloudDriveSyncCoordinator` 在 iCloud Drive 同步系统集成中的生命周期、依赖和可变状态。
 final class ICloudDriveSyncCoordinator: @unchecked Sendable {
+    typealias PeriodicScheduler = @Sendable (DispatchQueue, @escaping @Sendable () -> Void) -> Void
     /// 为iCloud Drive 同步系统集成中的相关类型提供 `StatusHandler` 别名。
     typealias StatusHandler = @Sendable (SyncStatus) -> Void
     /// 为iCloud Drive 同步系统集成中的相关类型提供 `RemoteSettingsHandler` 别名。
@@ -52,7 +53,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     private enum CycleCompletion {
         case finish
         case rerun
-        case schedule(UInt64)
+        case schedule(configurationToken: UInt64, periodicToken: UInt64)
     }
 
     private let localRepository: SyncLocalRepository
@@ -66,10 +67,12 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     private let devicesHandler: DevicesHandler
     private let credentialStateHandler: CredentialStateHandler
     private let queue = DispatchQueue(label: "com.mactools.icloud-drive-sync", qos: .utility)
+    private let periodicScheduler: PeriodicScheduler
     private let lock = NSLock()
     private var configuration: Configuration
     private var isSyncing = false
     private var needsAnotherCycle = false
+    private var periodicToken: UInt64 = 0
 
     /// 创建 `ICloudDriveSyncCoordinator`，保存传入依赖并建立初始状态。
     init(
@@ -84,7 +87,10 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         statusHandler: @escaping StatusHandler,
         remoteSettingsHandler: @escaping RemoteSettingsHandler,
         devicesHandler: @escaping DevicesHandler,
-        credentialStateHandler: @escaping CredentialStateHandler
+        credentialStateHandler: @escaping CredentialStateHandler,
+        periodicScheduler: @escaping PeriodicScheduler = { queue, operation in
+            queue.asyncAfter(deadline: .now() + 30, execute: operation)
+        }
     ) {
         self.localRepository = localRepository
         self.deviceOverrideRepository = deviceOverrideRepository
@@ -112,6 +118,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         self.remoteSettingsHandler = remoteSettingsHandler
         self.devicesHandler = devicesHandler
         self.credentialStateHandler = credentialStateHandler
+        self.periodicScheduler = periodicScheduler
         self.configuration = Configuration(
             rootURL: rootURL,
             historyLimit: historyLimit,
@@ -146,7 +153,10 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         clipboardScope: ClipboardSyncScope,
         storageLimit: SyncStorageLimit
     ) {
-        lock.withLock {
+        let shouldSync = lock.withLock { () -> Bool in
+            guard configuration.historyLimit != historyLimit
+                    || configuration.clipboardScope != clipboardScope
+                    || configuration.storageLimit != storageLimit else { return false }
             configuration.historyLimit = historyLimit
             configuration.clipboardScope = clipboardScope
             configuration.storageLimit = storageLimit
@@ -154,7 +164,10 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
             if isSyncing {
                 needsAnotherCycle = true
             }
+            return configuration.isEnabled
         }
+        // 远端设置回调在主线程异步执行，旧周期可能已经退出；淘汰旧定时器后必须启动替代周期。
+        if shouldSync { syncNow() }
     }
 
     /// 切换同步根目录并淘汰旧目录 lease；新目录由后续周期重新准备和观察。
@@ -181,6 +194,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                 needsAnotherCycle = true
                 return false
             }
+            // 主动同步会替代此前的周期定时器，避免每次复制再增加一条永久定时链。
+            periodicToken &+= 1
             isSyncing = true
             return true
         }
@@ -430,15 +445,15 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                 }
                 let token = configuration.scheduleToken
                 isSyncing = false
-                return .schedule(token)
+                return .schedule(configurationToken: token, periodicToken: periodicToken)
             }
             switch completion {
             case .finish:
                 return
             case .rerun:
                 continue
-            case let .schedule(token):
-                schedulePeriodicSync(token: token)
+            case let .schedule(configurationToken, periodicToken):
+                schedulePeriodicSync(configurationToken: configurationToken, periodicToken: periodicToken)
                 return
             }
         }
@@ -553,12 +568,14 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         }
     }
 
-    /// 延迟三十秒触发下一周期；令牌变化同时淘汰旧定时任务和旧周期 lease。
-    private func schedulePeriodicSync(token: UInt64) {
-        queue.asyncAfter(deadline: .now() + 30) { [weak self] in
+    /// 定时器可被主动同步替代；配置 lease 只随配置变化失效，避免误取消重置和移除设备。
+    private func schedulePeriodicSync(configurationToken: UInt64, periodicToken: UInt64) {
+        periodicScheduler(queue) { [weak self] in
             guard let self else { return }
             let shouldRun = self.lock.withLock {
-                self.configuration.isEnabled && self.configuration.scheduleToken == token
+                self.configuration.isEnabled
+                    && self.configuration.scheduleToken == configurationToken
+                    && self.periodicToken == periodicToken
             }
             if shouldRun { self.syncNow() }
         }
