@@ -1,8 +1,83 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import MacToolsCore
 
 final class MainPanelResizeGeometryTests: XCTestCase {
+    @MainActor
+    func testCachedCornerPathsMatchTheFullWindowContinuousRing() {
+        let boundsList = [
+            NSRect(x: 0, y: 0, width: 600, height: 414),
+            NSRect(x: -120, y: 80, width: 720, height: 480),
+            NSRect(x: 25, y: -60, width: 1100, height: 800)
+        ]
+        let offsets: [CGFloat] = [-0.25, 0.25, 0.5, 1.25, 4.25, 6.75, 8.25, 12.25, 20.25, 30.25, 38.25, 40.25, 50.25, 60.25, 79.25, 90.25]
+        for bounds in boundsList {
+            let outer = RoundedRectangle(cornerRadius: 40, style: .continuous).path(in: bounds).cgPath
+            let inner = RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .path(in: bounds.insetBy(dx: 8, dy: 8)).cgPath
+            for right in [false, true] {
+                for top in [false, true] {
+                    for x in offsets {
+                        for y in offsets {
+                            let point = mirroredPoint(NSPoint(x: x, y: y), in: bounds, right: right, top: top)
+                            XCTAssertEqual(
+                                MainPanelResizeEdge.hit(at: point, in: bounds) != nil,
+                                outer.contains(point) && !inner.contains(point),
+                                "\(bounds) \(point)"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testResizeHitMatchesContinuousGlassAtPreviouslyMismatchedCornerPoints() {
+        let bounds = NSRect(x: -120, y: 80, width: 720, height: 480)
+        let visibleShape = RoundedRectangle(cornerRadius: 40, style: .continuous).path(in: bounds).cgPath
+        let innerShape = RoundedRectangle(cornerRadius: 32, style: .continuous)
+            .path(in: bounds.insetBy(dx: 8, dy: 8)).cgPath
+        let outsidePoints = [NSPoint(x: 35, y: 0.5), NSPoint(x: 0.5, y: 35), NSPoint(x: 40, y: 0.25)]
+
+        for right in [false, true] {
+            for top in [false, true] {
+                for offset in outsidePoints {
+                    let point = mirroredPoint(offset, in: bounds, right: right, top: top)
+                    XCTAssertFalse(visibleShape.contains(point))
+                    XCTAssertNil(MainPanelResizeEdge.hit(at: point, in: bounds), "\(point)")
+                }
+                let point = mirroredPoint(NSPoint(x: 8.25, y: 38.25), in: bounds, right: right, top: top)
+                XCTAssertTrue(visibleShape.contains(point))
+                XCTAssertFalse(innerShape.contains(point))
+                let expected: MainPanelResizeEdge = right
+                    ? (top ? .topRight : .bottomRight)
+                    : (top ? .topLeft : .bottomLeft)
+                XCTAssertEqual(MainPanelResizeEdge.hit(at: point, in: bounds), expected, "\(point)")
+            }
+        }
+    }
+
+    @MainActor
+    func testCursorTemplatesKeepExtendedCurveRegionsAtEveryCorner() {
+        let bounds = NSRect(x: 25, y: -60, width: 1100, height: 800)
+        let regions = MainPanelResizeEdge.cursorRegions(in: bounds)
+        for right in [false, true] {
+            for top in [false, true] {
+                let horizontal = mirroredPoint(NSPoint(x: 50, y: 2), in: bounds, right: right, top: top)
+                let vertical = mirroredPoint(NSPoint(x: 2, y: 50), in: bounds, right: right, top: top)
+                for (point, expected) in [
+                    (horizontal, top ? MainPanelResizeEdge.top : .bottom),
+                    (vertical, right ? MainPanelResizeEdge.right : .left)
+                ] {
+                    XCTAssertEqual(Set(regions.filter { $0.rect.contains(point) }.map(\.edge)), [expected])
+                    XCTAssertEqual(MainPanelResizeEdge.hit(at: point, in: bounds), expected)
+                }
+            }
+        }
+    }
+
     @MainActor
     func testCursorRegionsFollowResizeEdgesAcrossSizesAndOrigins() {
         let boundsList = [
@@ -58,9 +133,9 @@ final class MainPanelResizeGeometryTests: XCTestCase {
             XCTAssertEqual(
                 regions.first { $0.edge == .top }?.rect,
                 NSRect(
-                    x: view.bounds.minX + 40,
+                    x: view.bounds.minX + 80,
                     y: view.isFlipped ? view.bounds.minY : view.bounds.maxY - 8,
-                    width: view.bounds.width - 80,
+                    width: view.bounds.width - 160,
                     height: 8
                 )
             )
@@ -90,6 +165,13 @@ final class MainPanelResizeGeometryTests: XCTestCase {
             let matchingEdges = Set(regions.filter { $0.rect.contains(point) }.map(\.edge))
             XCTAssertEqual(matchingEdges, [expected], "\(point)", file: file, line: line)
         }
+    }
+
+    private func mirroredPoint(_ offset: NSPoint, in bounds: NSRect, right: Bool, top: Bool) -> NSPoint {
+        NSPoint(
+            x: right ? bounds.maxX - offset.x : bounds.minX + offset.x,
+            y: top ? bounds.maxY - offset.y : bounds.minY + offset.y
+        )
     }
 }
 

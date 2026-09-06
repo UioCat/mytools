@@ -22,7 +22,8 @@ enum MainPanelPositioningPolicy {
 /// 管理 `MainPanelController` 在面板领域中的生命周期、依赖和可变状态。
 @MainActor
 public final class MainPanelController {
-    public static let windowStyleMask: NSWindow.StyleMask = [.borderless, .resizable]
+    // 保留原生边框的窗口级命中与外侧缩放容错，标题栏内容由下方配置隐藏。
+    public static let windowStyleMask: NSWindow.StyleMask = [.titled, .fullSizeContentView, .resizable]
     static let usesSystemWindowShadow = false
     static let windowCornerRadius = LiquidGlassCornerGeometry.windowRadius
 
@@ -55,15 +56,7 @@ public final class MainPanelController {
                 backing: .buffered,
                 defer: false
             )
-            panel.titleVisibility = .hidden
-            panel.titlebarAppearsTransparent = true
-            panel.standardWindowButton(.closeButton)?.isHidden = true
-            panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            panel.standardWindowButton(.zoomButton)?.isHidden = true
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            // NSWindow 阴影跟随矩形窗口边界，而不是 SwiftUI 圆角玻璃形状。
-            panel.hasShadow = Self.usesSystemWindowShadow
+            Self.configureWindowChrome(panel)
             panel.minSize = minimumSize
             panel.isMovableByWindowBackground = true
             panel.onDismiss = { [weak self] in
@@ -72,7 +65,7 @@ public final class MainPanelController {
 
             let hostingView = MainPanelHostingView(rootView: rootView)
             panel.contentView = hostingView
-            Self.configureRoundedBackingLayer(hostingView)
+            Self.configureHostingView(hostingView)
             if let frameView = hostingView.superview {
                 // Liquid Glass 可能把背板放在 hosting view 下方，因此 AppKit frame 也必须保持一致。
                 Self.configureRoundedBackingLayer(frameView)
@@ -98,6 +91,25 @@ public final class MainPanelController {
         panel?.center()
     }
 
+    /// 原生窗口框架负责鼠标命中，玻璃表面不显示系统标题栏和矩形阴影。
+    static func configureWindowChrome(_ panel: NSPanel) {
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        // NSWindow 阴影跟随矩形窗口边界，而不是 SwiftUI 圆角玻璃形状。
+        panel.hasShadow = Self.usesSystemWindowShadow
+    }
+
+    /// 让玻璃覆盖隐藏标题栏占用的安全区，保持原有内容尺寸和圆角。
+    static func configureHostingView<Content: View>(_ view: NSHostingView<Content>) {
+        view.safeAreaRegions = []
+        configureRoundedBackingLayer(view)
+    }
+
     /// 应用 `configureRoundedBackingLayer` 接收的新值，并更新相关面板领域状态。
     static func configureRoundedBackingLayer(_ view: NSView) {
         view.wantsLayer = true
@@ -108,7 +120,7 @@ public final class MainPanelController {
     }
 }
 
-/// 无边框主面板的键盘与窗口交互。
+/// 主面板的键盘、内侧缩放与原生窗口交互。
 @MainActor
 final class MainPanelWindow: NSPanel {
     var onDismiss: (() -> Void)?

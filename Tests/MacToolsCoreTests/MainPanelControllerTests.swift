@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import MacToolsCore
 
@@ -15,11 +16,11 @@ final class MainPanelControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testMainPanelKeepsResizeWithoutRectangularSystemShadow() {
+    func testMainPanelKeepsNativeResizeWithoutRectangularSystemShadow() {
         let styleMask = MainPanelController.windowStyleMask
 
-        XCTAssertFalse(styleMask.contains(.titled))
-        XCTAssertFalse(styleMask.contains(.fullSizeContentView))
+        XCTAssertTrue(styleMask.contains(.titled))
+        XCTAssertTrue(styleMask.contains(.fullSizeContentView))
         XCTAssertTrue(styleMask.contains(.resizable))
         XCTAssertFalse(MainPanelController.usesSystemWindowShadow)
         XCTAssertEqual(MainPanelController.windowCornerRadius, 40)
@@ -30,7 +31,28 @@ final class MainPanelControllerTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
-        XCTAssertNil(panel.standardWindowButton(.closeButton))
+        MainPanelController.configureWindowChrome(panel)
+        XCTAssertTrue(panel.styleMask.contains(.titled))
+        XCTAssertEqual(panel.titleVisibility, .hidden)
+        XCTAssertTrue(panel.titlebarAppearsTransparent)
+        XCTAssertFalse(panel.hasShadow)
+        XCTAssertFalse(panel.isOpaque)
+        XCTAssertEqual(panel.backgroundColor, .clear)
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            XCTAssertNotEqual(panel.standardWindowButton(button)?.isHidden, false)
+        }
+    }
+
+    @MainActor
+    func testHostingViewExtendsGlassIntoTheHiddenTitlebar() {
+        let view = MainPanelHostingView(rootView: Color.clear)
+
+        MainPanelController.configureHostingView(view)
+
+        XCTAssertEqual(view.safeAreaRegions, [])
+        XCTAssertEqual(view.layer?.cornerRadius, 40)
+        XCTAssertEqual(view.layer?.cornerCurve, .continuous)
+        XCTAssertEqual(view.layer?.masksToBounds, true)
     }
 
     @MainActor

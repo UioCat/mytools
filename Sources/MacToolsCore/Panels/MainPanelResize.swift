@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// 无边框窗口没有 AppKit 标题框架的缩放命中区，显式保留圆角内侧的拖动区域。
+/// 主面板圆角内侧的缩放命中规则，与玻璃表面使用相同的连续圆角。
 enum MainPanelResizeEdge: CaseIterable, Hashable {
     case left, right, bottom, top, bottomLeft, bottomRight, topLeft, topRight
 
@@ -31,17 +31,30 @@ enum MainPanelResizeEdge: CaseIterable, Hashable {
         return (edge, .frameResize(position: position, directions: [.inward, .outward]))
     })
 
+    // 连续圆角的曲线延伸超过标称半径；主面板最小尺寸足以容纳两侧延伸区。
+    @MainActor
+    private static let cornerExtent = MainPanelController.windowCornerRadius * 2
+
+    @MainActor
+    private static let cornerPaths: (outer: CGPath, inner: CGPath) = {
+        let radius = MainPanelController.windowCornerRadius
+        let bounds = NSRect(x: 0, y: 0, width: cornerExtent * 2, height: cornerExtent * 2)
+        return (
+            RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: bounds).cgPath,
+            RoundedRectangle(cornerRadius: radius - 8, style: .continuous)
+                .path(in: bounds.insetBy(dx: 8, dy: 8)).cgPath
+        )
+    }()
+
     @MainActor
     static func hit(at point: NSPoint, in bounds: NSRect) -> Self? {
         let radius = MainPanelController.windowCornerRadius
-        let inset: CGFloat = 8
-        let outer = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
-        let inner = NSBezierPath(
-            roundedRect: bounds.insetBy(dx: inset, dy: inset),
-            xRadius: radius - inset,
-            yRadius: radius - inset
+        // 四角对称，直边向参考形状中部投影；无需随窗口尺寸重新创建路径。
+        let cornerPoint = NSPoint(
+            x: min(cornerExtent, min(point.x - bounds.minX, bounds.maxX - point.x)),
+            y: min(cornerExtent, min(point.y - bounds.minY, bounds.maxY - point.y))
         )
-        guard outer.contains(point), !inner.contains(point) else { return nil }
+        guard cornerPaths.outer.contains(cornerPoint), !cornerPaths.inner.contains(cornerPoint) else { return nil }
 
         let left = point.x < bounds.minX + radius
         let right = point.x > bounds.maxX - radius
@@ -58,20 +71,22 @@ enum MainPanelResizeEdge: CaseIterable, Hashable {
 
     /// 只缓存固定圆角内的相对网格，不随窗口尺寸累计缓存。
     @MainActor
-    private static let cornerCursorRegions: [MainPanelCursorRegion] = {
-        let radius = MainPanelController.windowCornerRadius
-        let referenceBounds = NSRect(x: 0, y: 0, width: radius * 3, height: radius * 3)
+    private static let cornerCursorRegions: [(region: MainPanelCursorRegion, right: Bool, top: Bool)] = {
+        let referenceBounds = NSRect(x: 0, y: 0, width: cornerExtent * 3, height: cornerExtent * 3)
         let step: CGFloat = 4
-        var regions: [MainPanelCursorRegion] = []
-        for xOrigin in [referenceBounds.minX, referenceBounds.maxX - radius] {
-            for yOrigin in [referenceBounds.minY, referenceBounds.maxY - radius] {
-                for x in stride(from: CGFloat(0), to: radius, by: step) {
-                    for y in stride(from: CGFloat(0), to: radius, by: step) {
+        var regions: [(region: MainPanelCursorRegion, right: Bool, top: Bool)] = []
+        for right in [false, true] {
+            for top in [false, true] {
+                let xOrigin = right ? referenceBounds.maxX - cornerExtent : referenceBounds.minX
+                let yOrigin = top ? referenceBounds.maxY - cornerExtent : referenceBounds.minY
+                for x in stride(from: CGFloat(0), to: cornerExtent, by: step) {
+                    for y in stride(from: CGFloat(0), to: cornerExtent, by: step) {
                         let point = NSPoint(x: xOrigin + x + step / 2, y: yOrigin + y + step / 2)
                         if let edge = hit(at: point, in: referenceBounds) {
-                            regions.append(MainPanelCursorRegion(
-                                rect: NSRect(x: x, y: y, width: step, height: step),
-                                edge: edge
+                            regions.append((
+                                MainPanelCursorRegion(rect: NSRect(x: x, y: y, width: step, height: step), edge: edge),
+                                right,
+                                top
                             ))
                         }
                     }
@@ -83,22 +98,21 @@ enum MainPanelResizeEdge: CaseIterable, Hashable {
 
     @MainActor
     static func cursorRegions(in bounds: NSRect) -> [MainPanelCursorRegion] {
-        let radius = MainPanelController.windowCornerRadius
         let inset: CGFloat = 8
         var regions = [
-            MainPanelCursorRegion(rect: NSRect(x: bounds.minX, y: bounds.minY + radius, width: inset, height: bounds.height - 2 * radius), edge: .left),
-            MainPanelCursorRegion(rect: NSRect(x: bounds.maxX - inset, y: bounds.minY + radius, width: inset, height: bounds.height - 2 * radius), edge: .right),
-            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + radius, y: bounds.minY, width: bounds.width - 2 * radius, height: inset), edge: .bottom),
-            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + radius, y: bounds.maxY - inset, width: bounds.width - 2 * radius, height: inset), edge: .top)
+            MainPanelCursorRegion(rect: NSRect(x: bounds.minX, y: bounds.minY + cornerExtent, width: inset, height: bounds.height - 2 * cornerExtent), edge: .left),
+            MainPanelCursorRegion(rect: NSRect(x: bounds.maxX - inset, y: bounds.minY + cornerExtent, width: inset, height: bounds.height - 2 * cornerExtent), edge: .right),
+            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + cornerExtent, y: bounds.minY, width: bounds.width - 2 * cornerExtent, height: inset), edge: .bottom),
+            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + cornerExtent, y: bounds.maxY - inset, width: bounds.width - 2 * cornerExtent, height: inset), edge: .top)
         ]
         regions.reserveCapacity(regions.count + cornerCursorRegions.count)
-        for region in cornerCursorRegions {
+        for template in cornerCursorRegions {
             regions.append(MainPanelCursorRegion(
-                rect: region.rect.offsetBy(
-                    dx: region.edge.movesRight ? bounds.maxX - radius : bounds.minX,
-                    dy: region.edge.movesTop ? bounds.maxY - radius : bounds.minY
+                rect: template.region.rect.offsetBy(
+                    dx: template.right ? bounds.maxX - cornerExtent : bounds.minX,
+                    dy: template.top ? bounds.maxY - cornerExtent : bounds.minY
                 ),
-                edge: region.edge
+                edge: template.region.edge
             ))
         }
         return regions
