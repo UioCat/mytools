@@ -3,6 +3,35 @@ import XCTest
 @testable import MacToolsCore
 
 final class SyncManifestConflictResolverTests: XCTestCase {
+    func testIdenticalFileVersionsSelectCurrentWithoutTreatingDuplicatesAsBranches() {
+        let current = candidate(id: "current", revision: 4, seenRevisions: ["device-a": 4], isCurrent: true)
+        var duplicate = current
+        duplicate.versionID = "conflict"
+        duplicate.isCurrent = false
+        XCTAssertEqual(SyncManifestConflictResolver.resolve([duplicate, current]), .keep(versionID: "current"))
+    }
+
+    func testSamePublicationWithDifferentDisplayMetadataConvergesDeterministically() {
+        let current = candidate(id: "current", revision: 4, seenRevisions: ["device-a": 4], isCurrent: true)
+        var duplicate = current
+        duplicate.versionID = "conflict"
+        duplicate.isCurrent = false
+        duplicate.manifest.deviceName = "Renamed Fixture"
+        duplicate.manifest.updatedAt = Date(timeIntervalSince1970: 999)
+        duplicate.manifestDigest = "other-display-metadata"
+        XCTAssertEqual(SyncManifestConflictResolver.resolve([duplicate, current]), .keep(versionID: "current"))
+    }
+
+    func testSameRevisionWithDifferentSnapshotsMustNotResolveByVectorAlone() {
+        let current = candidate(id: "current", revision: 4, seenRevisions: ["device-a": 4], isCurrent: true)
+        var branch = current
+        branch.versionID = "branch"
+        branch.isCurrent = false
+        branch.manifest.snapshotDigests.clipboard = "different"
+        branch.manifest.seenRevisions["device-b"] = 3
+        XCTAssertEqual(SyncManifestConflictResolver.resolve([branch, current]), .unresolved)
+    }
+
     func testHigherMonotonicRevisionWinsOverItsAncestor() {
         let ancestor = candidate(
             id: "1885",

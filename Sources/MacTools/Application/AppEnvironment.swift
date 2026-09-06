@@ -595,6 +595,7 @@ final class AppEnvironment {
             merged.sync.isEnabled = settings.sync.isEnabled
             merged.clipboard.cacheStoragePath = settings.clipboard.cacheStoragePath
             merged.clipboard.maxCacheMegabytes = settings.clipboard.maxCacheMegabytes
+            guard merged != settings else { return }
             let shouldRestartSuperRightClickMonitor =
                 merged.superRightClick != settings.superRightClick
                 || merged.translation != settings.translation

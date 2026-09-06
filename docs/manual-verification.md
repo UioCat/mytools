@@ -20,8 +20,20 @@
 | 主面板、窗口样式、宿主视图、公共 DesignSystem | 上述六项 |
 | 编辑菜单、搜索/标签/翻译输入、键盘监听或焦点 | `TEXT-EDIT-001`、`PANEL-FOCUS-001`；影响尺寸或表面时增加对应场景 |
 | 其他 UI 或系统集成 | 下文中直接受影响的功能检查；触及共用窗口或输入链路时增加上述关联场景 |
+| 同步协议、同步持久化或后台调度 | 下列四项同步回归；单机自动化覆盖主要故障，不依赖人工双机配合 |
 
 每个新修复的用户 Bug 都应关联已有场景 ID；无法覆盖时新增稳定 ID，并保留复现步骤、通过标准与相邻负例。自动化回归测试应能在修复前失败、修复后通过；无法自动化的操作保留可重复实测步骤。
+
+### 同步回归
+
+| 场景 ID | 操作与通过标准 |
+| --- | --- |
+| `SYNC-CONVERGENCE-001` 收敛与冲突 | 双端独立复制、并发修改后乱序和重复交付文件；内容和元数据最终一致，空闲周期不再增版。等价发布可恢复，同 revision 不同内容仍保留冲突。 |
+| `SYNC-RECOVERY-001` 传输与恢复 | 延迟或损坏对象、重放旧清单、在发布前后中断并重开数据库；迟到文件到达后下一周期恢复，未完整导入的本机云端副本不得被覆盖，回收容量与实际文件一致。 |
+| `SYNC-DELETE-001` 删除与成员 | 双方同时删除、离线重连、全新数据库读取旧副本；删除证据保持可传播，内容不复活。显式重置允许更新代际，移除设备不得使历史向量回退。 |
+| `SYNC-SCHEDULE-001` 后台调度 | 手动推进真实协调器队列及全部定时任务，交错相同/不同配置、主动同步和排队重置；后台周期持续，只有最新定时链有效，普通同步不取消管理动作。 |
+
+以上场景的测试入口、故障注入和真实 iCloud 验证边界见 [同步可靠性与自动化验证](sync-reliability.md)。
 
 ### 自动化与证据
 
@@ -158,18 +170,19 @@ AppKit 测试采用 SwiftPM 隔离执行，必须运行全部发现的测试并�
 - On first launch, confirm sync is off and the switch cannot be enabled before a folder is selected. Select an empty iCloud Drive parent folder and confirm MacTools creates exactly one `MacTools Sync` directory; selecting an existing protocol root must not create a nested directory.
 - While a slow or placeholder-backed iCloud folder is being prepared, confirm the status shows `正在准备同步文件夹`, the settings window remains responsive, and selecting another folder prevents the older result from replacing the newer choice.
 - Enable sync and confirm the status progresses from `正在同步` to `已同步`, showing logical use against the default `512 MB` limit and ordinary history against `500` without blocking local clipboard use.
-- With sync enabled and a translation credential already loaded, keep the packaged app running through at least two 30-second sync periods. Confirm `debug.log` does not add another `super right click event tap installed` entry during stable cycles, global shortcuts remain available, and normal clipboard use stays responsive.
+- With sync enabled and a translation credential already loaded, keep the packaged app running through at least two 30-second sync periods. After data converges, confirm unchanged peers stop advancing revisions; applying remote settings must not stop subsequent periodic sync. Confirm `debug.log` does not add another `super right click event tap installed` entry during stable cycles, global shortcuts remain available, and normal clipboard use stays responsive.
 - Switch clipboard sync between `仅收藏与置顶` and `全部历史`; confirm the first mode excludes ordinary entries and the second mode synchronizes ordinary text, URL, and original clipboard images. Confirm file, folder, and image-file path entries never arrive on another Mac.
+- Automated two-device fault coverage and single-machine commands are documented in [sync-reliability.md](sync-reliability.md); the following real-iCloud checks supplement those tests.
 - Point two Macs at the same directory, concurrently create the same text and image, and change different ordinary configuration fields while offline. Reconnect and confirm one logical clipboard item and one shared content object remain and both Macs converge on field-level configuration values.
 - Confirm both Macs appear under `同步设备`. Remove the offline Mac, verify its exclusive objects become eligible for GC after the stability window, then relaunch that Mac and confirm it rotates to a new device identity without restoring deleted records.
 - Push merged ordinary cloud history to 501 and confirm the least recently captured or used ordinary content is removed from sync snapshots while both Macs retain their independent local history. Confirm favorites and pinned content remain protected.
 - Exercise 256 MiB or a test-overridden small capacity and confirm ordinary objects are evicted oldest first. When protected objects fill the budget, confirm new image uploads pause while text, configuration, and deletion markers continue.
-- Delete a synchronized item while the other Mac is offline, reconnect it, and confirm the tombstone prevents resurrection. After every visible device acknowledges the source revision, confirm a later snapshot compacts the tombstone.
+- Delete a synchronized item while the other Mac is offline, reconnect it, and confirm the tombstone prevents resurrection. Keep the tombstone within the current generation even after visible devices acknowledge it; temporarily missing directories and replayed old snapshots must not restore the item. Only an explicit sync reset retires older-generation tombstones.
 - Make an object unreferenced and keep one device snapshot unavailable; confirm GC does not delete it. Restore all snapshots, wait or test-override the 24-hour stability window, and confirm only then is the hash-verified object removed.
 - Evict a cloud item, use or favorite its local copy on another device, then reconnect. Confirm the stale eviction is invalidated by the newer retention time or field clock.
 - Disable sync while a transfer is active, then create local clipboard entries and modify settings. Confirm no further directory operations start, local features remain usable, and re-enabling publishes the retained outbox.
-- Mark an iCloud object or snapshot as not downloaded and confirm the status becomes `等待 iCloud 下载`; local data remains usable and `立即同步` retries after download.
-- Create two manifest versions for the same device where the newer revision componentwise dominates the older one. Confirm only that device repairs the conflict and keeps the newer revision; another device reports `同步数据存在版本冲突` without deleting either version. Create incomparable vectors and confirm every device reports the conflict for manual inspection.
+- Deliver a manifest before its snapshots, or snapshots before their text/PNG objects, and confirm `等待 iCloud 下载`; the next cycle after arrival imports the content without waiting for the five-minute inventory audit. Local data remains usable.
+- Create byte-identical manifest versions or versions differing only in device name/update time; confirm the owner retains one equivalent publication. Create two manifest versions for the same device where the newer revision componentwise dominates the older one. Confirm only that device repairs the conflict and keeps the newer revision; another device reports `同步数据存在版本冲突` without deleting either version. Create incomparable vectors and confirm every device reports the conflict for manual inspection.
 - Corrupt one shared content object while another Mac still has the correct local payload. Confirm that Mac repairs the object atomically; if no device has correct content, confirm the affected record stays pending with `同步失败` while text, configuration, and deletion markers continue.
 - Remove one local image payload file, then create a text entry and change an ordinary setting. Confirm the image remains pending with `同步失败`, while the text and setting still reach the other Mac; restore the image payload and confirm a retry uploads it.
 - Move or remove the selected directory and confirm the status becomes `同步文件夹不可用`; reselecting the folder restores sync without deleting local history.

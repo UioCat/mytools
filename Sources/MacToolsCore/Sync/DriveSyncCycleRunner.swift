@@ -226,12 +226,10 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let currentRevision = max(persistedRevision, ownStoredRevision)
         let nextRevision = currentRevision + 1
         let persistedSeenRevisions = try deviceOverrideRepository.seenRevisions()
-        var seenRevisions = persistedSeenRevisions.filter {
-            !removedDeviceIDs.contains($0.key)
-        }
+        // 移除设备只改变参与者集合，不能抹去已发布的因果历史，否则后续向量会回退。
+        var seenRevisions = persistedSeenRevisions
         if let ownReplica = replicas.first(where: { $0.manifest.deviceID == deviceID }) {
-            for (seenDeviceID, revision) in ownReplica.manifest.seenRevisions
-                where !removedDeviceIDs.contains(seenDeviceID) {
+            for (seenDeviceID, revision) in ownReplica.manifest.seenRevisions {
                 seenRevisions[seenDeviceID] = max(seenRevisions[seenDeviceID] ?? 0, revision)
             }
             seenRevisions[deviceID] = max(
@@ -242,7 +240,10 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let receiptsByDeviceID = Dictionary(
             uniqueKeysWithValues: try localRepository.receipts().map { ($0.deviceID, $0) }
         )
-        let peerReplicas = replicas.filter { $0.manifest.deviceID != deviceID }
+        // 本机数据库恢复备份后，云端自己的较新快照也必须先导入，不能只追平 revision。
+        let peerReplicas = replicas.filter {
+            $0.manifest.deviceID != deviceID || $0.manifest.revision > persistedRevision
+        }
         // receipt 同时绑定设备、代际、revision 和 manifest 摘要，完全匹配才可跳过重复应用。
         let alreadyAppliedPeerReplicas = peerReplicas.filter { replica in
             receiptsByDeviceID[replica.manifest.deviceID]?.matches(
@@ -265,12 +266,6 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             )
         }
 
-        var draft = try localRepository.exportDraft(
-            deviceID: deviceID,
-            generation: generation,
-            revision: nextRevision,
-            scope: configuration.clipboardScope
-        )
         var missingRemoteContent = peerReplicaFailures.contains {
             if case .itemNotDownloaded = $0.error { return true }
             return false
@@ -289,7 +284,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let tombstonedRecordNames = try localRepository.tombstonedRecordNames(
             generation: generation
         )
-        draft = try localRepository.exportDraft(
+        var draft = try localRepository.exportDraft(
             deviceID: deviceID,
             generation: generation,
             revision: nextRevision,
@@ -305,7 +300,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         )
         var unavailableLocalRecordNames = draft.unavailableClipboardRecordNames
         var allRecords = draft.clipboard.records
-        for replica in replicas where replica.manifest.deviceID != deviceID {
+        for replica in peerReplicas {
             allRecords.append(contentsOf: replica.clipboard.records.filter {
                 !tombstonedRecordNames.contains($0.recordName)
             })
@@ -318,7 +313,8 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             guard let byteCount = localDescriptorsByKey[key]?.storedByteCount
                     ?? storedBytesByContentID[record.contentID] else {
                 unknownContentIDs.insert(record.contentID)
-                hasInvalidRemoteContent = true
+                missingRemoteContent = true
+                try? requestDownload(store.contentLocation(contentID: record.contentID, kind: record.kind))
                 continue
             }
             candidates.append(SyncRetentionCandidate(
@@ -493,13 +489,19 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             }
         }
 
-        let compactedTombstones: Set<String> = replicaFailures.isEmpty
-            ? try localRepository.compactAcknowledgedTombstones(
-                activeManifests: replicas.map(\.manifest),
-                localDeviceID: deviceID,
-                generation: generation
-            )
-            : []
+        // 发布必须描述合并后的本地状态；收到远端记录本身不会产生本地 outbox。
+        draft = try localRepository.exportDraft(
+            deviceID: deviceID, generation: generation, revision: nextRevision,
+            scope: configuration.clipboardScope
+        )
+        unavailableLocalRecordNames.formUnion(draft.unavailableClipboardRecordNames)
+        let publishableDraft = draft.excludingContentIDs(excludedContentIDs.union(blockedImageContentIDs))
+        let ownReplica = replicas.first { $0.manifest.deviceID == deviceID }
+        let snapshotChanged = try ownReplica.map {
+            try SyncSnapshotCodec.encode($0.clipboard.records) != SyncSnapshotCodec.encode(publishableDraft.clipboard.records)
+                || SyncSnapshotCodec.encode($0.preferences.domains) != SyncSnapshotCodec.encode(publishableDraft.preferences.domains)
+                || SyncSnapshotCodec.encode($0.tombstones.records) != SyncSnapshotCodec.encode(publishableDraft.tombstones.records)
+        } ?? true
 
         var localEvictionsByContentID: [String: SyncEvictionRecord] = [:]
         for eviction in effectiveRemoteEvictions where eviction.deviceID == deviceID {
@@ -517,14 +519,14 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let hasRelevantPendingChanges = try localRepository.hasPendingChanges(
             excludingClipboardRecordNames: deferredClipboardRecordNames
         )
-        let needsWrite = resetReplicaState
+        // 恢复本机较新云端副本时，任一对象缺失都必须保留其唯一发布点，直到全部导入。
+        let needsWrite = !incompleteDeviceIDs.contains(deviceID) && (resetReplicaState
             || currentRevision == 0
             || ownReplicaUnverifiable
             || forceWrite
             || hasRelevantPendingChanges
-            || seenRevisions != persistedSeenRevisions
-            || !compactedTombstones.isEmpty
-            || evictionSnapshotChanged
+            || snapshotChanged
+            || evictionSnapshotChanged)
 
         var writtenBundle: SyncExportBundle?
         var writtenManifestDigest: String?
@@ -566,8 +568,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 cancellation: cancellation
             )
             if writeResult.outcome == .adoptedNewerRemote {
-                try deviceOverrideRepository.setReplicaRevision(writeResult.manifest.revision)
-                try deviceOverrideRepository.setSeenRevisions(writeResult.manifest.seenRevisions)
+                // 不提前确认进度；下一轮必须把较新本机快照导入后才能确认或发布。
                 invalidateObservationCache()
                 throw DriveSyncCycleRetryError.newerRemoteReplica
             }
@@ -605,14 +606,20 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                     seenRevisions: seenRevisions,
                     at: now
                 )
-                try? store.cleanupSnapshotPublications(
-                    storeID: publicationIdentity.storeID,
-                    deviceID: publicationIdentity.deviceID,
-                    generation: publicationIdentity.generation,
-                    protectedDirectories: Set(
-                        [writeResult.manifest.snapshotDirectory].compactMap { $0 }
+                do {
+                    let reclaimedBytes = try store.cleanupSnapshotPublications(
+                        storeID: publicationIdentity.storeID,
+                        deviceID: publicationIdentity.deviceID,
+                        generation: publicationIdentity.generation,
+                        protectedDirectories: Set(
+                            [writeResult.manifest.snapshotDirectory].compactMap { $0 }
+                        )
                     )
-                )
+                    storageInventory = storageInventory.adjustingMetadataBytes(by: -reclaimedBytes)
+                } catch {
+                    // 删除可能只完成了一部分；重新盘点，不能继续累计已不存在的快照容量。
+                    storageInventory = try store.storageInventory()
+                }
             } else {
                 try localRepository.acknowledgeSnapshot(
                     upTo: finalBundle.outboxCutoff,
@@ -673,18 +680,23 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             reusableReplicasByDeviceID[deviceID] = writtenReplica
             resultingReplicaDigests[deviceID] = writtenManifestDigest
         }
-        storeObservation(
-            ObservationCache(
-                rootURL: rootURL.standardizedFileURL,
-                storeID: descriptor.storeID,
-                generation: generation,
-                replicasByDeviceID: reusableReplicasByDeviceID,
-                replicaDigests: resultingReplicaDigests,
-                removedDeviceIDs: removedDeviceIDs,
-                inventory: finalStorageInventory,
-                lastFullInventoryAuditAt: lastFullInventoryAuditAt
+        // 未完整读取的目录不能成为稳定观察，否则迟到内容在 manifest 不变时会被缓存隐藏。
+        if missingRemoteContent || hasInvalidRemoteContent || !replicaFailures.isEmpty {
+            invalidateObservationCache()
+        } else {
+            storeObservation(
+                ObservationCache(
+                    rootURL: rootURL.standardizedFileURL,
+                    storeID: descriptor.storeID,
+                    generation: generation,
+                    replicasByDeviceID: reusableReplicasByDeviceID,
+                    replicaDigests: resultingReplicaDigests,
+                    removedDeviceIDs: removedDeviceIDs,
+                    inventory: finalStorageInventory,
+                    lastFullInventoryAuditAt: lastFullInventoryAuditAt
+                )
             )
-        )
+        }
         let usage = finalStorageInventory.usage(
             capacityBytes: configuration.storageLimit.byteLimit,
             ordinaryHistoryCount: decision.ordinaryCount
@@ -734,7 +746,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         }
         return DriveSyncCycleResult(
             status: status,
-            remoteSettings: remoteSettings,
+            remoteSettings: try remoteSettings ?? (peerReplicas.isEmpty ? nil : localRepository.currentSettings()),
             devices: devices
         )
     }
