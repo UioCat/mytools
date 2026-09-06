@@ -60,6 +60,50 @@ final class MainPanelResizeGeometryTests: XCTestCase {
     }
 
     @MainActor
+    func testTransparentMarginAcceptsOuterEdgesAndCornersWithoutStealingContent() {
+        let bounds = NSRect(x: -120, y: 80, width: 720, height: 480)
+        let inner = RoundedRectangle(cornerRadius: 32, style: .continuous)
+            .path(in: bounds.insetBy(dx: 8, dy: 8)).cgPath
+        let outer = bounds.insetBy(dx: -6, dy: -6)
+        let offsets: [CGFloat] = [-12, -6.25, -5.75, -2, -0.25, 0.25, 8.25, 12.25, 20.25, 38.25, 40.25, 60.25, 90.25]
+        for right in [false, true] {
+            for top in [false, true] {
+                for x in offsets {
+                    for y in offsets {
+                        let point = mirroredPoint(NSPoint(x: x, y: y), in: bounds, right: right, top: top)
+                        XCTAssertEqual(
+                            MainPanelResizeEdge.hit(at: point, in: bounds, includingOuterMargin: true) != nil,
+                            outer.contains(point) && !inner.contains(point),
+                            "\(point)"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testOuterCursorRegionsCoverTheTransparentMarginAndAgreeWithDragging() {
+        let bounds = NSRect(x: 6, y: 6, width: 720, height: 480)
+        let regions = MainPanelResizeEdge.cursorRegions(in: bounds, includingOuterMargin: true)
+        let points: [(NSPoint, MainPanelResizeEdge)] = [
+            (NSPoint(x: 4, y: 246), .left), (NSPoint(x: 728, y: 246), .right),
+            (NSPoint(x: 366, y: 4), .bottom), (NSPoint(x: 366, y: 488), .top),
+            (NSPoint(x: 4, y: 4), .bottomLeft), (NSPoint(x: 728, y: 4), .bottomRight),
+            (NSPoint(x: 4, y: 488), .topLeft), (NSPoint(x: 728, y: 488), .topRight)
+        ]
+        for (point, edge) in points {
+            XCTAssertEqual(Set(regions.filter { $0.rect.contains(point) }.map(\.edge)), [edge])
+            XCTAssertEqual(MainPanelResizeEdge.hit(at: point, in: bounds, includingOuterMargin: true), edge)
+        }
+        for region in regions {
+            XCTAssertTrue(bounds.insetBy(dx: -6, dy: -6).contains(region.rect))
+            XCTAssertEqual(MainPanelResizeEdge.hit(at: NSPoint(x: region.rect.midX, y: region.rect.midY), in: bounds, includingOuterMargin: true), region.edge)
+        }
+        XCTAssertFalse(regions.contains { $0.rect.contains(NSPoint(x: 366, y: 246)) })
+    }
+
+    @MainActor
     func testCursorTemplatesKeepExtendedCurveRegionsAtEveryCorner() {
         let bounds = NSRect(x: 25, y: -60, width: 1100, height: 800)
         let regions = MainPanelResizeEdge.cursorRegions(in: bounds)

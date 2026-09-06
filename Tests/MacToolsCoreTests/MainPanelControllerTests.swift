@@ -16,11 +16,11 @@ final class MainPanelControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testMainPanelKeepsNativeResizeWithoutRectangularSystemShadow() {
+    func testMainPanelKeepsBorderlessGlassWithoutSystemWindowChrome() {
         let styleMask = MainPanelController.windowStyleMask
 
-        XCTAssertTrue(styleMask.contains(.titled))
-        XCTAssertTrue(styleMask.contains(.fullSizeContentView))
+        XCTAssertFalse(styleMask.contains(.titled))
+        XCTAssertFalse(styleMask.contains(.fullSizeContentView))
         XCTAssertTrue(styleMask.contains(.resizable))
         XCTAssertFalse(MainPanelController.usesSystemWindowShadow)
         XCTAssertEqual(MainPanelController.windowCornerRadius, 40)
@@ -32,9 +32,8 @@ final class MainPanelControllerTests: XCTestCase {
             defer: false
         )
         MainPanelController.configureWindowChrome(panel)
-        XCTAssertTrue(panel.styleMask.contains(.titled))
-        XCTAssertEqual(panel.titleVisibility, .hidden)
-        XCTAssertTrue(panel.titlebarAppearsTransparent)
+        XCTAssertFalse(panel.styleMask.contains(.titled))
+        XCTAssertFalse(panel.ignoresMouseEvents)
         XCTAssertFalse(panel.hasShadow)
         XCTAssertFalse(panel.isOpaque)
         XCTAssertEqual(panel.backgroundColor, .clear)
@@ -44,8 +43,8 @@ final class MainPanelControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testHostingViewExtendsGlassIntoTheHiddenTitlebar() {
-        let view = MainPanelHostingView(rootView: Color.clear)
+    func testHostingViewKeepsTheGlassSurfaceClipped() {
+        let view = NSHostingView(rootView: Color.clear)
 
         MainPanelController.configureHostingView(view)
 
@@ -53,6 +52,73 @@ final class MainPanelControllerTests: XCTestCase {
         XCTAssertEqual(view.layer?.cornerRadius, 40)
         XCTAssertEqual(view.layer?.cornerCurve, .continuous)
         XCTAssertEqual(view.layer?.masksToBounds, true)
+    }
+
+    @MainActor
+    func testTransparentResizeMarginPreservesVisibleSurfaceSizeAndClipping() throws {
+        let hosting = NSHostingView(rootView: Color.clear)
+        MainPanelController.configureHostingView(hosting)
+        let content = MainPanelContentView(hostingView: hosting, surfaceSize: NSSize(width: 720, height: 480))
+        let window = makeResizeWindow(frame: NSRect(x: 100, y: 100, width: 732, height: 492))
+        window.contentView = content
+        defer { window.orderOut(nil) }
+
+        for size in [NSSize(width: 720, height: 480), NSSize(width: 1100, height: 800), NSSize(width: 600, height: 414)] {
+            window.setContentSize(MainPanelContentView.windowSize(for: size))
+            XCTAssertEqual(content.surfaceView.frame, NSRect(origin: NSPoint(x: 6, y: 6), size: size))
+            XCTAssertEqual(hosting.frame, NSRect(origin: .zero, size: size))
+            XCTAssertEqual(content.layer?.backgroundColor, NSColor.clear.cgColor)
+            XCTAssertEqual(content.layer?.cornerRadius, 0)
+            XCTAssertEqual(content.surfaceView.layer?.cornerRadius, 40)
+            XCTAssertEqual(content.surfaceView.layer?.masksToBounds, true)
+        }
+    }
+
+    @MainActor
+    func testDraggingTransparentOuterEdgesAndCornersResizesVisibleSurface() throws {
+        let scenarios: [(NSPoint, NSPoint, NSSize)] = [
+            (NSPoint(x: 4, y: 246), NSPoint(x: -80, y: 0), NSSize(width: 800, height: 480)),
+            (NSPoint(x: 728, y: 246), NSPoint(x: 80, y: 0), NSSize(width: 800, height: 480)),
+            (NSPoint(x: 366, y: 4), NSPoint(x: 0, y: -80), NSSize(width: 720, height: 560)),
+            (NSPoint(x: 366, y: 488), NSPoint(x: 0, y: 80), NSSize(width: 720, height: 560)),
+            (NSPoint(x: 4, y: 4), NSPoint(x: -80, y: -80), NSSize(width: 800, height: 560)),
+            (NSPoint(x: 728, y: 4), NSPoint(x: 80, y: -80), NSSize(width: 800, height: 560)),
+            (NSPoint(x: 4, y: 488), NSPoint(x: -80, y: 80), NSSize(width: 800, height: 560)),
+            (NSPoint(x: 728, y: 488), NSPoint(x: 80, y: 80), NSSize(width: 800, height: 560))
+        ]
+        for (point, delta, size) in scenarios {
+            let window = makeResizeWindow(frame: NSRect(x: -800, y: -600, width: 732, height: 492))
+            let content = MainPanelContentView(hostingView: NSView(), surfaceSize: NSSize(width: 720, height: 480))
+            window.contentView = content
+            defer { window.orderOut(nil) }
+            let start = window.convertPoint(toScreen: point)
+            let end = NSPoint(x: start.x + delta.x, y: start.y + delta.y)
+            try sendMouse(.leftMouseDown, to: window, screenPoint: start)
+            XCTAssertTrue(window.isResizeScheduled)
+            try sendMouse(.leftMouseDragged, to: window, screenPoint: end)
+            try sendMouse(.leftMouseUp, to: window, screenPoint: end)
+            XCTAssertEqual(content.surfaceView.frame.size, size)
+            XCTAssertFalse(window.isResizeScheduled)
+        }
+    }
+
+    @MainActor
+    func testTransparentMarginKeepsContentInteractiveAndVisibleMinimumSize() throws {
+        let window = makeResizeWindow(frame: NSRect(x: 100, y: 100, width: 732, height: 492))
+        let content = MainPanelContentView(hostingView: NSView(), surfaceSize: NSSize(width: 720, height: 480))
+        window.contentView = content
+        window.minSize = MainPanelContentView.windowSize(for: NSSize(width: 600, height: 414))
+        defer { window.orderOut(nil) }
+        for point in [NSPoint(x: 40, y: 246), NSPoint(x: 366, y: 40), NSPoint(x: 366, y: 246)] {
+            let event = try mouseEvent(.leftMouseDown, for: window, screenPoint: window.convertPoint(toScreen: point))
+            XCTAssertFalse(window.handleResizeEvent(event))
+        }
+        let start = window.convertPoint(toScreen: NSPoint(x: 4, y: 4))
+        try sendMouse(.leftMouseDown, to: window, screenPoint: start)
+        try sendMouse(.leftMouseUp, to: window, screenPoint: NSPoint(x: start.x + 500, y: start.y + 500))
+        XCTAssertEqual(content.surfaceView.frame.size, NSSize(width: 600, height: 414))
+        XCTAssertEqual(window.frame.maxX, 832)
+        XCTAssertEqual(window.frame.maxY, 592)
     }
 
     @MainActor

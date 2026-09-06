@@ -22,8 +22,8 @@ enum MainPanelPositioningPolicy {
 /// 管理 `MainPanelController` 在面板领域中的生命周期、依赖和可变状态。
 @MainActor
 public final class MainPanelController {
-    // 保留原生边框的窗口级命中与外侧缩放容错，标题栏内容由下方配置隐藏。
-    public static let windowStyleMask: NSWindow.StyleMask = [.titled, .fullSizeContentView, .resizable]
+    // 玻璃表面使用真正的无边框窗口；鼠标容错由透明外沿承载。
+    public static let windowStyleMask: NSWindow.StyleMask = [.borderless, .resizable]
     static let usesSystemWindowShadow = false
     static let windowCornerRadius = LiquidGlassCornerGeometry.windowRadius
 
@@ -51,25 +51,21 @@ public final class MainPanelController {
 
         if panel == nil {
             let panel = MainPanelWindow(
-                contentRect: NSRect(origin: .zero, size: initialSize),
+                contentRect: NSRect(origin: .zero, size: MainPanelContentView.windowSize(for: initialSize)),
                 styleMask: Self.windowStyleMask,
                 backing: .buffered,
                 defer: false
             )
             Self.configureWindowChrome(panel)
-            panel.minSize = minimumSize
+            panel.minSize = MainPanelContentView.windowSize(for: minimumSize)
             panel.isMovableByWindowBackground = true
             panel.onDismiss = { [weak self] in
                 self?.hide()
             }
 
-            let hostingView = MainPanelHostingView(rootView: rootView)
-            panel.contentView = hostingView
+            let hostingView = NSHostingView(rootView: rootView)
             Self.configureHostingView(hostingView)
-            if let frameView = hostingView.superview {
-                // Liquid Glass 可能把背板放在 hosting view 下方，因此 AppKit frame 也必须保持一致。
-                Self.configureRoundedBackingLayer(frameView)
-            }
+            panel.contentView = MainPanelContentView(hostingView: hostingView, surfaceSize: initialSize)
             self.panel = panel
         }
 
@@ -87,24 +83,21 @@ public final class MainPanelController {
 
     /// 更新 `resize` 对应的交互状态，并保持当前选择或展示约束。
     public func resize(to size: NSSize) {
-        panel?.setContentSize(size)
+        panel?.setContentSize(MainPanelContentView.windowSize(for: size))
         panel?.center()
     }
 
-    /// 原生窗口框架负责鼠标命中，玻璃表面不显示系统标题栏和矩形阴影。
+    /// 显式设置鼠标策略，使完全透明的拖动外沿也参与 WindowServer 命中。
     static func configureWindowChrome(_ panel: NSPanel) {
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        // 默认 getter 虽然也是 false，显式 setter 才会禁用透明像素的自动穿透。
+        panel.ignoresMouseEvents = false
         // NSWindow 阴影跟随矩形窗口边界，而不是 SwiftUI 圆角玻璃形状。
         panel.hasShadow = Self.usesSystemWindowShadow
     }
 
-    /// 让玻璃覆盖隐藏标题栏占用的安全区，保持原有内容尺寸和圆角。
+    /// SwiftUI 只承载可见玻璃表面，尺寸由 AppKit 容器控制。
     static func configureHostingView<Content: View>(_ view: NSHostingView<Content>) {
         view.safeAreaRegions = []
         configureRoundedBackingLayer(view)
@@ -120,7 +113,7 @@ public final class MainPanelController {
     }
 }
 
-/// 主面板的键盘、内侧缩放与原生窗口交互。
+/// 主面板的键盘和边缘缩放交互。
 @MainActor
 final class MainPanelWindow: NSPanel {
     var onDismiss: (() -> Void)?
@@ -156,7 +149,8 @@ final class MainPanelWindow: NSPanel {
             if styleMask.contains(.resizable),
                let edge = MainPanelResizeEdge.hit(
                    at: convertPoint(fromScreen: point),
-                   in: NSRect(origin: .zero, size: frame.size)
+                   in: resizeSurfaceBounds,
+                   includingOuterMargin: contentView is MainPanelContentView
                ) {
                 makeKey()
                 resizeSession = (edge, frame, point)
@@ -183,6 +177,13 @@ final class MainPanelWindow: NSPanel {
             break
         }
         return false
+    }
+
+    private var resizeSurfaceBounds: NSRect {
+        if let content = contentView as? MainPanelContentView {
+            return content.surfaceView.convert(content.surfaceView.bounds, to: nil)
+        }
+        return NSRect(origin: .zero, size: frame.size)
     }
 
     /// CG 事件保留发生时的屏幕坐标，窗口移动后不再从旧的窗口内坐标重新换算。

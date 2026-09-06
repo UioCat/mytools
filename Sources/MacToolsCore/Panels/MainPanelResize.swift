@@ -46,15 +46,21 @@ enum MainPanelResizeEdge: CaseIterable, Hashable {
         )
     }()
 
+    // 可见表面外的透明拖动余量，不参与玻璃绘制和内容布局。
+    static let outerMargin: CGFloat = 6
+
     @MainActor
-    static func hit(at point: NSPoint, in bounds: NSRect) -> Self? {
+    static func hit(at point: NSPoint, in bounds: NSRect, includingOuterMargin: Bool = false) -> Self? {
         let radius = MainPanelController.windowCornerRadius
         // 四角对称，直边向参考形状中部投影；无需随窗口尺寸重新创建路径。
         let cornerPoint = NSPoint(
             x: min(cornerExtent, min(point.x - bounds.minX, bounds.maxX - point.x)),
             y: min(cornerExtent, min(point.y - bounds.minY, bounds.maxY - point.y))
         )
-        guard cornerPaths.outer.contains(cornerPoint), !cornerPaths.inner.contains(cornerPoint) else { return nil }
+        let containsOuter = includingOuterMargin
+            ? bounds.insetBy(dx: -outerMargin, dy: -outerMargin).contains(point)
+            : cornerPaths.outer.contains(cornerPoint)
+        guard containsOuter, !cornerPaths.inner.contains(cornerPoint) else { return nil }
 
         let left = point.x < bounds.minX + radius
         let right = point.x > bounds.maxX - radius
@@ -71,46 +77,60 @@ enum MainPanelResizeEdge: CaseIterable, Hashable {
 
     /// 只缓存固定圆角内的相对网格，不随窗口尺寸累计缓存。
     @MainActor
-    private static let cornerCursorRegions: [(region: MainPanelCursorRegion, right: Bool, top: Bool)] = {
+    private static let cornerCursorRegions = makeCornerCursorRegions(includingOuterMargin: false)
+
+    @MainActor
+    private static let outerCornerCursorRegions = makeCornerCursorRegions(includingOuterMargin: true)
+
+    @MainActor
+    private static func makeCornerCursorRegions(includingOuterMargin: Bool) -> [(region: MainPanelCursorRegion, right: Bool, top: Bool)] {
+        let margin = includingOuterMargin ? outerMargin : 0
         let referenceBounds = NSRect(x: 0, y: 0, width: cornerExtent * 3, height: cornerExtent * 3)
-        let step: CGFloat = 4
+        let step: CGFloat = 2
         var regions: [(region: MainPanelCursorRegion, right: Bool, top: Bool)] = []
         for right in [false, true] {
             for top in [false, true] {
-                let xOrigin = right ? referenceBounds.maxX - cornerExtent : referenceBounds.minX
-                let yOrigin = top ? referenceBounds.maxY - cornerExtent : referenceBounds.minY
-                for x in stride(from: CGFloat(0), to: cornerExtent, by: step) {
-                    for y in stride(from: CGFloat(0), to: cornerExtent, by: step) {
+                let xOrigin = right ? referenceBounds.maxX - cornerExtent : referenceBounds.minX - margin
+                let yOrigin = top ? referenceBounds.maxY - cornerExtent : referenceBounds.minY - margin
+                for x in stride(from: CGFloat(0), to: cornerExtent + margin, by: step) {
+                    for y in stride(from: CGFloat(0), to: cornerExtent + margin, by: step) {
                         let point = NSPoint(x: xOrigin + x + step / 2, y: yOrigin + y + step / 2)
-                        if let edge = hit(at: point, in: referenceBounds) {
-                            regions.append((
-                                MainPanelCursorRegion(rect: NSRect(x: x, y: y, width: step, height: step), edge: edge),
-                                right,
-                                top
-                            ))
+                        if let edge = hit(at: point, in: referenceBounds, includingOuterMargin: includingOuterMargin) {
+                            let rect = NSRect(x: x, y: y, width: step, height: step)
+                            if let last = regions.last,
+                               last.right == right, last.top == top, last.region.edge == edge,
+                               last.region.rect.minX == x, last.region.rect.maxY == y {
+                                regions[regions.count - 1] = (
+                                    MainPanelCursorRegion(rect: last.region.rect.union(rect), edge: edge), right, top
+                                )
+                            } else {
+                                regions.append((MainPanelCursorRegion(rect: rect, edge: edge), right, top))
+                            }
                         }
                     }
                 }
             }
         }
         return regions
-    }()
+    }
 
     @MainActor
-    static func cursorRegions(in bounds: NSRect) -> [MainPanelCursorRegion] {
-        let inset: CGFloat = 8
+    static func cursorRegions(in bounds: NSRect, includingOuterMargin: Bool = false) -> [MainPanelCursorRegion] {
+        let margin = includingOuterMargin ? outerMargin : 0
+        let inset: CGFloat = 8 + margin
         var regions = [
-            MainPanelCursorRegion(rect: NSRect(x: bounds.minX, y: bounds.minY + cornerExtent, width: inset, height: bounds.height - 2 * cornerExtent), edge: .left),
-            MainPanelCursorRegion(rect: NSRect(x: bounds.maxX - inset, y: bounds.minY + cornerExtent, width: inset, height: bounds.height - 2 * cornerExtent), edge: .right),
-            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + cornerExtent, y: bounds.minY, width: bounds.width - 2 * cornerExtent, height: inset), edge: .bottom),
-            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + cornerExtent, y: bounds.maxY - inset, width: bounds.width - 2 * cornerExtent, height: inset), edge: .top)
+            MainPanelCursorRegion(rect: NSRect(x: bounds.minX - margin, y: bounds.minY + cornerExtent, width: inset, height: bounds.height - 2 * cornerExtent), edge: .left),
+            MainPanelCursorRegion(rect: NSRect(x: bounds.maxX - 8, y: bounds.minY + cornerExtent, width: inset, height: bounds.height - 2 * cornerExtent), edge: .right),
+            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + cornerExtent, y: bounds.minY - margin, width: bounds.width - 2 * cornerExtent, height: inset), edge: .bottom),
+            MainPanelCursorRegion(rect: NSRect(x: bounds.minX + cornerExtent, y: bounds.maxY - 8, width: bounds.width - 2 * cornerExtent, height: inset), edge: .top)
         ]
-        regions.reserveCapacity(regions.count + cornerCursorRegions.count)
-        for template in cornerCursorRegions {
+        let templates = includingOuterMargin ? outerCornerCursorRegions : cornerCursorRegions
+        regions.reserveCapacity(regions.count + templates.count)
+        for template in templates {
             regions.append(MainPanelCursorRegion(
                 rect: template.region.rect.offsetBy(
-                    dx: template.right ? bounds.maxX - cornerExtent : bounds.minX,
-                    dy: template.top ? bounds.maxY - cornerExtent : bounds.minY
+                    dx: template.right ? bounds.maxX - cornerExtent : bounds.minX - margin,
+                    dy: template.top ? bounds.maxY - cornerExtent : bounds.minY - margin
                 ),
                 edge: template.region.edge
             ))
@@ -145,13 +165,38 @@ struct MainPanelCursorRegion: Equatable {
     let edge: MainPanelResizeEdge
 }
 
-/// 光标与拖动使用同一命中规则，不在输入框或按钮上设置缩放光标。
+/// 外层只接收鼠标，玻璃及其背板裁切在内层，透明外沿不会绘制系统边框。
 @MainActor
-final class MainPanelHostingView<Content: View>: NSHostingView<Content> {
+final class MainPanelContentView: NSView {
+    let surfaceView = NSView()
+
+    static func windowSize(for surfaceSize: NSSize) -> NSSize {
+        NSSize(
+            width: surfaceSize.width + 2 * MainPanelResizeEdge.outerMargin,
+            height: surfaceSize.height + 2 * MainPanelResizeEdge.outerMargin
+        )
+    }
+
+    init(hostingView: NSView, surfaceSize: NSSize) {
+        super.init(frame: NSRect(origin: .zero, size: Self.windowSize(for: surfaceSize)))
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        surfaceView.frame = bounds.insetBy(dx: MainPanelResizeEdge.outerMargin, dy: MainPanelResizeEdge.outerMargin)
+        surfaceView.autoresizingMask = [.width, .height]
+        addSubview(surfaceView)
+        MainPanelController.configureRoundedBackingLayer(surfaceView)
+        hostingView.frame = surfaceView.bounds
+        hostingView.autoresizingMask = [.width, .height]
+        surfaceView.addSubview(hostingView)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
     override func resetCursorRects() {
         super.resetCursorRects()
-        for region in MainPanelResizeEdge.cursorRegions(in: self) {
-            addCursorRect(region.rect, cursor: region.edge.cursor)
+        let surfaceBounds = surfaceView.convert(surfaceView.bounds, to: nil)
+        for region in MainPanelResizeEdge.cursorRegions(in: surfaceBounds, includingOuterMargin: true) {
+            addCursorRect(convert(region.rect, from: nil), cursor: region.edge.cursor)
         }
     }
 }
