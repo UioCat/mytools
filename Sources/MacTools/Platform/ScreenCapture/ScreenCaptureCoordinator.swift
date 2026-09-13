@@ -21,6 +21,8 @@ final class ScreenCaptureCoordinator {
     private let pasteboard: WritablePasteboard
     private var state: ScreenCaptureSessionState = .idle
     private var sessionGeneration = 0
+    private var snapshots: [ScreenCaptureSnapshot] = []
+    private var preparationTask: Task<Void, Never>?
 
     /// 创建 `ScreenCaptureCoordinator`，保存传入依赖并建立初始状态。
     init(
@@ -43,7 +45,7 @@ final class ScreenCaptureCoordinator {
         self.onSettingsChange = onSettingsChange
     }
 
-    /// 校验权限与会话互斥状态，同时预热共享内容并展示区域选择层。
+    /// 校验权限与会话互斥状态，先冻结屏幕再展示区域选择层。
     func start() {
         guard !isCaptureInProgress else {
             logger.info("screen capture request ignored while a session is active")
@@ -58,35 +60,54 @@ final class ScreenCaptureCoordinator {
         sessionGeneration += 1
         let sessionGeneration = sessionGeneration
         state.beginSelection()
-        Task { [weak self] in
-            guard let self else {
-                return
+        let displays = NSScreen.screens.compactMap { screen -> ScreenCaptureSelection? in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return nil
             }
-            let startedAt = DispatchTime.now().uptimeNanoseconds
+            return ScreenCaptureSelection(
+                displayID: id.uint32Value, displayFrame: screen.frame, rawSelectionFrame: screen.frame
+            )
+        }
+        overlay.prepareForCapture { [weak self] in
+            self?.cancelSession(sessionGeneration: sessionGeneration)
+        }
+        preparationTask = Task { [weak self] in
+            guard let self else { return }
             do {
-                try await stillCapture.prepare()
-                logger.info(
-                    "screen capture source prepared in \(elapsedMilliseconds(since: startedAt)) ms"
+                // 在任何选区窗口出现或接收鼠标事件之前保存临时弹窗。
+                // 每次会话重新采集像素，不能复用共享内容预热缓存中的旧画面。
+                stillCapture.invalidatePreparation()
+                var captured: [ScreenCaptureSnapshot] = []
+                for display in displays {
+                    let image = try await stillCapture.captureStill(for: display)
+                    try Task.checkCancellation()
+                    captured.append(ScreenCaptureSnapshot(
+                        displayID: display.displayID, displayFrame: display.displayFrame, image: image
+                    ))
+                }
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else { return }
+                guard !captured.isEmpty else { throw ScreenCaptureError.displayUnavailable }
+                snapshots = captured
+                preparationTask = nil
+                overlay.present(
+                    snapshots: captured,
+                    onSelection: { [weak self] selection, mode in
+                        self?.beginCapture(
+                            selection: selection,
+                            mode: mode,
+                            submittedAt: DispatchTime.now().uptimeNanoseconds,
+                            sessionGeneration: sessionGeneration
+                        )
+                    },
+                    onCancel: { [weak self] in
+                        self?.cancelSession(sessionGeneration: sessionGeneration)
+                    }
                 )
-            } catch is CancellationError {
-                return
             } catch {
-                logger.error("screen capture source preparation failed: \(error)")
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else { return }
+                fail(message: "截图准备失败，请检查屏幕录制权限后重试", error: error)
             }
         }
-        overlay.present(
-            onSelection: { [weak self] selection, mode in
-                self?.beginCapture(
-                    selection: selection,
-                    mode: mode,
-                    submittedAt: DispatchTime.now().uptimeNanoseconds,
-                    sessionGeneration: sessionGeneration
-                )
-            },
-            onCancel: { [weak self] in
-                self?.cancelSession(sessionGeneration: sessionGeneration)
-            }
-        )
     }
 
     private var isCaptureInProgress: Bool {
@@ -147,7 +168,10 @@ final class ScreenCaptureCoordinator {
             }
             do {
                 let startedAt = DispatchTime.now().uptimeNanoseconds
-                let image = try await stillCapture.captureStill(for: selection)
+                guard let image = snapshots.first(where: { $0.displayID == selection.displayID })?
+                    .croppedImage(for: selection) else {
+                    throw ScreenCaptureError.displayUnavailable
+                }
                 guard self.sessionGeneration == sessionGeneration, !isCancelled else {
                     return
                 }
@@ -205,6 +229,9 @@ final class ScreenCaptureCoordinator {
     /// 把编辑后的 PNG 写入剪贴板并结束截图会话，保留短期预热缓存。
     private func completeScreenshot(with data: Data) {
         overlay.dismiss()
+        snapshots.removeAll()
+        preparationTask?.cancel()
+        preparationTask = nil
         editor.dismiss()
         do {
             try pasteboard.writeImageData(data)
@@ -234,6 +261,7 @@ final class ScreenCaptureCoordinator {
                     return
                 }
                 overlay.dismiss()
+                snapshots.removeAll()
                 recordingControl.show(selection: selection, onStop: { [weak self] in
                     self?.stopRecording()
                 })
@@ -279,6 +307,9 @@ final class ScreenCaptureCoordinator {
     /// 计算并返回 `fail` 对应的屏幕捕获系统集成数据或状态结果。
     private func fail(message: String, error: Error) {
         overlay.dismiss()
+        snapshots.removeAll()
+        preparationTask?.cancel()
+        preparationTask = nil
         editor.dismiss()
         recordingControl.hide()
         state.fail()
@@ -304,6 +335,9 @@ final class ScreenCaptureCoordinator {
     /// 取消当前会话但保留短期共享内容缓存，便于快速重新截图。
     private func cancelCurrentSession() {
         overlay.dismiss()
+        snapshots.removeAll()
+        preparationTask?.cancel()
+        preparationTask = nil
         editor.dismiss()
         state.cancel()
         sessionGeneration += 1

@@ -20,6 +20,7 @@ final class ScreenSelectionOverlayController {
 
     /// 在每块屏幕上创建不激活应用的全屏选区面板，并安装本地及全局 Escape 监听。
     func present(
+        snapshots: [ScreenCaptureSnapshot],
         onSelection: @escaping (ScreenCaptureSelection, ScreenCaptureMode) -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -34,7 +35,14 @@ final class ScreenSelectionOverlayController {
                 continue
             }
 
-            let selectionView = ScreenSelectionView(displayID: displayID, displayFrame: screen.frame)
+            guard let snapshot = snapshots.first(where: {
+                $0.displayID == displayID && $0.displayFrame == screen.frame
+            }) else {
+                continue
+            }
+            let selectionView = ScreenSelectionView(
+                displayID: displayID, displayFrame: screen.frame, snapshot: snapshot.image
+            )
             selectionView.onDragBegan = { [weak self, weak selectionView] in
                 guard let self, let selectionView else {
                     return
@@ -71,6 +79,10 @@ final class ScreenSelectionOverlayController {
             panels.append(panel)
         }
 
+        guard !panels.isEmpty else {
+            cancel()
+            return
+        }
         let mouseLocation = NSEvent.mouseLocation
         let preferredView = panels
             .compactMap { $0.contentView as? ScreenSelectionView }
@@ -80,6 +92,17 @@ final class ScreenSelectionOverlayController {
             showModeToolbar(in: preferredView)
         }
 
+        installEscapeEventMonitors()
+    }
+
+    /// 采集冻结帧期间尚未显示窗口，但仍允许 Escape 取消等待。
+    func prepareForCapture(onCancel: @escaping () -> Void) {
+        dismiss()
+        self.onCancel = onCancel
+        installEscapeEventMonitors()
+    }
+
+    private func installEscapeEventMonitors() {
         escapeEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else {
                 return event
@@ -314,6 +337,7 @@ private final class ScreenSelectionView: NSView {
     var onDragFinished: ((ScreenCaptureSelection, CGRect) -> Void)?
     var isInteractionLocked = false
 
+    private let snapshot: CGImage
     private var dragStart: CGPoint?
     private var currentPoint: CGPoint?
     private var completedSelectionFrame: CGRect?
@@ -321,9 +345,10 @@ private final class ScreenSelectionView: NSView {
     private weak var editorView: NSView?
 
     /// 创建 `ScreenSelectionView`，保存传入依赖并建立初始状态。
-    init(displayID: UInt32, displayFrame: CGRect) {
+    init(displayID: UInt32, displayFrame: CGRect, snapshot: CGImage) {
         self.displayID = displayID
         self.displayFrame = displayFrame
+        self.snapshot = snapshot
         super.init(frame: NSRect(origin: .zero, size: displayFrame.size))
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -408,6 +433,8 @@ private final class ScreenSelectionView: NSView {
 
     /// 在当前图形上下文中绘制 `draw` 指定的截图标注内容。
     override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.draw(snapshot, in: bounds)
         NSColor.black.withAlphaComponent(0.42).setFill()
         bounds.fill()
 
@@ -420,12 +447,9 @@ private final class ScreenSelectionView: NSView {
             return
         }
 
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            return
-        }
         context.saveGState()
-        context.setBlendMode(.clear)
-        context.fill(rect)
+        context.clip(to: rect)
+        context.draw(snapshot, in: bounds)
         context.restoreGState()
 
         guard !isEditing else {

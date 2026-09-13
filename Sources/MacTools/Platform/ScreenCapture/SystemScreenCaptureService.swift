@@ -189,7 +189,7 @@ final class SystemScreenCaptureService: NSObject, ScreenStillCapturing {
         configuration.sourceRect = sourceRect
         configuration.width = Int(outputPixelSize.width)
         configuration.height = Int(outputPixelSize.height)
-        configuration.showsCursor = true
+        configuration.showsCursor = purpose == .recording
 
         logger.info(
             "screen capture source configured in "
