@@ -209,16 +209,19 @@ final class ScreenSelectionOverlayController {
         }
     }
 
+    /// 接受工具栏的模式选择；提交选区后保持模式不变。
+    func selectMode(_ mode: ScreenCaptureMode) {
+        guard !isSelectionCommitted else { return }
+        selectedMode = mode
+    }
+
     /// 展示 `showModeToolbar` 对应的屏幕捕获系统集成界面或系统位置。
     private func showModeToolbar(in selectionView: ScreenSelectionView) {
         removeModeToolbar()
 
         let hostingView = NSHostingView(
             rootView: CaptureModeToolbarView(selectedMode: selectedMode) { [weak self] mode in
-                guard let self, !self.isSelectionCommitted else {
-                    return
-                }
-                self.selectedMode = mode
+                self?.selectMode(mode)
             }
         )
         hostingView.wantsLayer = true
