@@ -81,7 +81,16 @@ extension AppEnvironment {
         let legacySettingsURL = legacySettingsURL
 
         switch state {
-        case .record:
+        case .record(let record):
+            guard CredentialRuntimeUpdatePolicy.shouldReloadLocal(
+                loadFinished: credentialLoadFinished,
+                isUnavailable: translationCredentialModel.isUnavailable,
+                settingsValue: fallback,
+                cloudValue: record.value
+            ) else {
+                if let legacySettingsURL { redactLegacyCredential(at: legacySettingsURL) }
+                return
+            }
             let credentialAccess = credentialAccess
             Task { @MainActor [weak self] in
                 guard let self, generation == credentialLoadGeneration else { return }
@@ -194,16 +203,15 @@ extension AppEnvironment {
 
     /// 调整 `redactLegacyCredential` 涉及的应用运行时与 AppKit 集成状态，并保持迁移或恢复语义。
     func redactLegacyCredential(at url: URL) {
-        do {
-            let legacyStore = SettingsStore(fileURL: url)
-            var legacySettings = try legacyStore.load()
-            guard !legacySettings.translation.apiKey.isEmpty else { return }
-            legacySettings.translation.apiKey = ""
-            try legacyStore.save(legacySettings)
-        } catch {
-            logger.error(
-                "legacy credential redaction failed: \(String(reflecting: type(of: error)))"
-            )
+        let credentialAccess = credentialAccess
+        Task { @MainActor [weak self] in
+            do {
+                try await credentialAccess.redactLegacySettings(at: url)
+            } catch {
+                self?.logger.error(
+                    "legacy credential redaction failed: \(String(reflecting: type(of: error)))"
+                )
+            }
         }
     }
 }

@@ -102,6 +102,7 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
     )
     private var timer: DispatchSourceTimer?
     private var pasteboardWriteObserver: NSObjectProtocol?
+    private var onSnapshot: (@Sendable (ClipboardSnapshot) -> Void)?
 
     init(
         sampler: ClipboardSnapshotSampler,
@@ -114,7 +115,8 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
     /// 启动独立于主 RunLoop 的高频采样，并监听应用自身的剪贴板写入作为即时触发信号。
     func start(onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void) {
         queue.async { [weak self] in
-            guard let self, timer == nil else { return }
+            guard let self, self.onSnapshot == nil else { return }
+            self.onSnapshot = onSnapshot
 
             pasteboardWriteObserver = notificationCenter.addObserver(
                 forName: .macToolsPasteboardDidWrite,
@@ -124,25 +126,20 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
                 self?.captureSoon(sourceApp: "MacTools", onSnapshot: onSnapshot)
             }
 
-            let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(
-                deadline: .now(),
-                repeating: .milliseconds(100),
-                leeway: .milliseconds(10)
-            )
-            timer.setEventHandler { [weak self] in
-                let sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName
-                self?.capture(sourceApp: sourceApp, onSnapshot: onSnapshot)
-            }
-            self.timer = timer
-            timer.resume()
+            startTimerIfNeeded()
         }
     }
 
     /// 热更新录制开关；其余设置由持久化 Actor 在自己的串行边界内应用。
     func updateRecordingEnabled(_ isRecordingEnabled: Bool) {
         queue.async { [weak self] in
-            self?.sampler.updateRecordingEnabled(isRecordingEnabled)
+            guard let self else { return }
+            sampler.updateRecordingEnabled(isRecordingEnabled)
+            if isRecordingEnabled {
+                startTimerIfNeeded()
+            } else {
+                cancelTimer()
+            }
         }
     }
 
@@ -150,14 +147,33 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
     func stop() {
         queue.async { [weak self] in
             guard let self else { return }
-            timer?.setEventHandler {}
-            timer?.cancel()
-            timer = nil
+            cancelTimer()
+            onSnapshot = nil
             if let pasteboardWriteObserver {
                 notificationCenter.removeObserver(pasteboardWriteObserver)
                 self.pasteboardWriteObserver = nil
             }
         }
+    }
+
+    private func startTimerIfNeeded() {
+        guard timer == nil, sampler.isRecordingEnabled, let onSnapshot else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100), leeway: .milliseconds(10))
+        timer.setEventHandler { [weak self] in
+            self?.capture(
+                sourceApp: NSWorkspace.shared.frontmostApplication?.localizedName,
+                onSnapshot: onSnapshot
+            )
+        }
+        self.timer = timer
+        timer.resume()
+    }
+
+    private func cancelTimer() {
+        timer?.setEventHandler {}
+        timer?.cancel()
+        timer = nil
     }
 
     private func captureSoon(
@@ -170,10 +186,10 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
     }
 
     private func capture(
-        sourceApp: String?,
+        sourceApp: @autoclosure () -> String?,
         onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void
     ) {
-        guard let snapshot = sampler.captureOnce(sourceApp: sourceApp) else {
+        guard let snapshot = sampler.captureOnce(sourceApp: sourceApp()) else {
             return
         }
         onSnapshot(snapshot)

@@ -3,6 +3,27 @@ import XCTest
 @testable import MacToolsCore
 
 final class CredentialAccessCoordinatorTests: XCTestCase {
+    func testLegacyRedactionRetriesFailureAndDoesNotReadAgainAfterSuccess() async throws {
+        let fixture = makeFixture()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("settings.json")
+        try Data("invalid-json".utf8).write(to: url)
+        await XCTAssertThrowsErrorAsync(try await fixture.access.redactLegacySettings(at: url))
+
+        var settings = AppSettings.defaults
+        settings.translation.apiKey = "legacy-placeholder"
+        let legacyStore = SettingsStore(fileURL: url)
+        try legacyStore.save(settings)
+        try await fixture.access.redactLegacySettings(at: url)
+        XCTAssertTrue(try legacyStore.load().translation.apiKey.isEmpty)
+
+        // 若重复读取就会抛出解码错误；成功迁移后的云端回声不应再次碰旧文件。
+        try Data("invalid-json".utf8).write(to: url)
+        try await fixture.access.redactLegacySettings(at: url)
+    }
+
     func testQueuedUserSaveWinsAfterBlockedLegacyMigration() async throws {
         let fixture = makeFixture(legacyValue: "legacy-placeholder", blocksRead: true)
         let loadTask = Task {

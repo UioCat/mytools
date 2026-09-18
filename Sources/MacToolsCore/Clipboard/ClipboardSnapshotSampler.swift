@@ -32,7 +32,7 @@ public final class ClipboardSnapshotSampler {
     private let maximumReadAttempts: Int
     private let now: () -> Date
     private var lastChangeCount: Int
-    private var isRecordingEnabled: Bool
+    public private(set) var isRecordingEnabled: Bool
 
     public init(
         pasteboard: PasteboardClient,
@@ -49,11 +49,14 @@ public final class ClipboardSnapshotSampler {
 
     /// 热更新录制开关；暂停期间的变化会在下一次采样时被直接跳过。
     public func updateRecordingEnabled(_ isRecordingEnabled: Bool) {
+        if self.isRecordingEnabled != isRecordingEnabled {
+            lastChangeCount = pasteboard.changeCount
+        }
         self.isRecordingEnabled = isRecordingEnabled
     }
 
     /// 返回一次稳定快照。连续写入导致读取前后计数不一致时，立即读取最新内容。
-    public func captureOnce(sourceApp: String?) -> ClipboardSnapshot? {
+    public func captureOnce(sourceApp: @autoclosure () -> String?) -> ClipboardSnapshot? {
         let observedChangeCount = pasteboard.changeCount
 
         guard isRecordingEnabled else {
@@ -80,7 +83,7 @@ public final class ClipboardSnapshotSampler {
             lastChangeCount = changeCountAfterRead
             return ClipboardSnapshot(
                 payload: payload,
-                sourceApp: sourceApp,
+                sourceApp: sourceApp(),
                 capturedAt: now(),
                 changeCount: changeCountAfterRead,
                 skippedChangeCount: skippedChangeCount

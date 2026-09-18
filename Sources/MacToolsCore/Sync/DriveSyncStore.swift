@@ -250,18 +250,21 @@ public final class DriveSyncStore: @unchecked Sendable {
     private let fileManager: FileManager
     private let fileCoordinator: any SyncFileCoordinating
     private let publicationLedger: SyncSnapshotPublicationLedger?
+    private let onInventoryScan: @Sendable () -> Void
 
     /// 创建 `DriveSyncStore`，保存传入依赖并建立初始状态。
     public init(
         rootURL: URL,
         fileManager: FileManager = .default,
         fileCoordinator: any SyncFileCoordinating = DirectSyncFileCoordinator(),
-        publicationLedger: SyncSnapshotPublicationLedger? = nil
+        publicationLedger: SyncSnapshotPublicationLedger? = nil,
+        onInventoryScan: @escaping @Sendable () -> Void = {}
     ) {
         self.rootURL = rootURL.standardizedFileURL
         self.fileManager = fileManager
         self.fileCoordinator = fileCoordinator
         self.publicationLedger = publicationLedger
+        self.onInventoryScan = onInventoryScan
     }
 
     /// 创建或校验同步目录协议结构，并在首次初始化时写入容量配置。
@@ -391,7 +394,6 @@ public final class DriveSyncStore: @unchecked Sendable {
             bundle.clipboard.deviceID,
             isDirectory: true
         )
-        let metadataBytesBeforeWrite = try regularFileBytes(in: deviceDirectory)
         try fileManager.createDirectory(at: deviceDirectory, withIntermediateDirectories: true)
 
         let clipboardData = try SyncSnapshotCodec.encode(bundle.clipboard)
@@ -413,6 +415,9 @@ public final class DriveSyncStore: @unchecked Sendable {
             snapshotDirectoryName,
             isDirectory: true
         )
+        let manifestURL = deviceDirectory.appendingPathComponent("manifest.json")
+        let metadataBytesBeforeWrite = try regularFileBytes(in: snapshotDirectory, cancellation: cancellation)
+            + regularFileBytes(at: manifestURL)
         var normalizedSeenRevisions = seenRevisions
         normalizedSeenRevisions[bundle.clipboard.deviceID] = bundle.clipboard.revision
         let manifest = SyncReplicaManifest(
@@ -465,7 +470,6 @@ public final class DriveSyncStore: @unchecked Sendable {
         // manifest 是 revision 的唯一发布点，发布前必须重新确认周期仍有效。
         try cancellation.check()
         try publicationLedger?.markPublicationUncertain(publicationIdentity, at: updatedAt)
-        let manifestURL = deviceDirectory.appendingPathComponent("manifest.json")
         let coordinated = try fileCoordinator.coordinateManifest(at: manifestURL) { versions in
             try self.manifestMutation(
                 versions: versions,
@@ -486,7 +490,8 @@ public final class DriveSyncStore: @unchecked Sendable {
         } else {
             outcome = .adoptedNewerRemote
         }
-        let metadataBytesAfterWrite = try regularFileBytes(in: deviceDirectory)
+        let metadataBytesAfterWrite = try regularFileBytes(in: snapshotDirectory, cancellation: cancellation)
+            + regularFileBytes(at: manifestURL)
         return DriveSyncWriteResult(
             manifest: publishedManifest,
             manifestDigest: publishedDigest,
@@ -504,7 +509,8 @@ public final class DriveSyncStore: @unchecked Sendable {
         storeID: UUID,
         deviceID: String,
         generation: Int,
-        protectedDirectories: Set<String>
+        protectedDirectories: Set<String>,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
     ) throws -> Int64 {
         let revisionsDirectory = replicasURL
             .appendingPathComponent(deviceID, isDirectory: true)
@@ -514,7 +520,8 @@ public final class DriveSyncStore: @unchecked Sendable {
             deviceID: deviceID,
             generation: generation,
             revisionsDirectory: revisionsDirectory,
-            keeping: protectedDirectories
+            keeping: protectedDirectories,
+            cancellation: cancellation
         )
     }
 
@@ -723,12 +730,32 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     /// 递归盘点共享内容、设备快照和协议元数据，形成可缓存清单。
-    public func storageInventory() throws -> SyncStorageInventory {
+    public func storageInventory(
+        revisionCache: SyncRevisionInventoryCache? = nil,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> SyncStorageInventory {
+        onInventoryScan()
+        return try inventory(in: rootURL, revisionCache: revisionCache, cancellation: cancellation)
+    }
+
+    /// 对象下载尚未完成时，仅刷新对象目录，保留已盘点的历史元数据容量。
+    public func contentInventory(
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> SyncStorageInventory {
+        try inventory(in: rootURL.appendingPathComponent("objects"), cancellation: cancellation)
+    }
+
+    private func inventory(
+        in directory: URL,
+        revisionCache: SyncRevisionInventoryCache? = nil,
+        cancellation: SyncCycleCancellation
+    ) throws -> SyncStorageInventory {
+        try cancellation.check()
         var objects: [SyncStoredObject] = []
         var imageBytes: Int64 = 0
         var textBytes: Int64 = 0
         var metadataBytes: Int64 = 0
-        guard fileManager.fileExists(atPath: rootURL.path) else {
+        guard fileManager.fileExists(atPath: directory.path) else {
             return SyncStorageInventory(
                 objects: [],
                 imageBytes: 0,
@@ -736,13 +763,30 @@ public final class DriveSyncStore: @unchecked Sendable {
                 metadataBytes: 0
             )
         }
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .fileSizeKey, .isDirectoryKey, .isSymbolicLinkKey,
+            .contentModificationDateKey, .creationDateKey, .fileResourceIdentifierKey
+        ]
+        var observedRevisions: Set<URL> = []
         let enumerator = fileManager.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            at: directory,
+            includingPropertiesForKeys: Array(keys),
             options: [.skipsHiddenFiles]
         )
         while let url = enumerator?.nextObject() as? URL {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            try cancellation.check()
+            let values = try url.resourceValues(forKeys: keys)
+            let relativeComponents = Array(url.pathComponents.dropFirst(rootURL.pathComponents.count))
+            if let revisionCache, values.isDirectory == true, values.isSymbolicLink != true,
+               relativeComponents.count == 4, relativeComponents[0] == "replicas",
+               relativeComponents[2] == "revisions" {
+                metadataBytes += try revisionCache.bytes(at: url, values: values) {
+                    try regularFileBytes(in: url, cancellation: cancellation)
+                }
+                observedRevisions.insert(url)
+                enumerator?.skipDescendants()
+                continue
+            }
             guard values.isRegularFile == true else { continue }
             let bytes = Int64(values.fileSize ?? 0)
             let directoryKind = storedObjectDirectoryKind(for: url)
@@ -766,6 +810,7 @@ public final class DriveSyncStore: @unchecked Sendable {
                 )
             )
         }
+        revisionCache?.retain(observedRevisions)
         return SyncStorageInventory(
             objects: objects.sorted { $0.contentID < $1.contentID },
             imageBytes: imageBytes,
@@ -1018,25 +1063,28 @@ public final class DriveSyncStore: @unchecked Sendable {
         deviceID: String,
         generation: Int,
         revisionsDirectory: URL,
-        keeping names: Set<String>
+        keeping names: Set<String>,
+        cancellation: SyncCycleCancellation
     ) throws -> Int64 {
         guard let publicationLedger else { return 0 }
         var reclaimedBytes: Int64 = 0
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(0.05)
         let candidates = try publicationLedger.cleanupCandidates(
             storeID: storeID,
             deviceID: deviceID,
             generation: generation,
             protectedDirectories: names,
-            limit: 256
+            limit: 16
         )
         for candidate in candidates where Date() < deadline {
+            try cancellation.check()
             let url = revisionsDirectory.appendingPathComponent(
                 candidate.snapshotDirectory,
                 isDirectory: true
             )
             if fileManager.fileExists(atPath: url.path) {
-                let bytes = try regularFileBytes(in: url)
+                let bytes = try regularFileBytes(in: url, cancellation: cancellation)
+                try cancellation.check()
                 try fileManager.removeItem(at: url)
                 reclaimedBytes += bytes
             }
@@ -1462,7 +1510,10 @@ public final class DriveSyncStore: @unchecked Sendable {
     }
 
     /// 统计一个局部目录下的普通文件大小，只用于实际写入周期的 delta。
-    private func regularFileBytes(in directory: URL) throws -> Int64 {
+    private func regularFileBytes(
+        in directory: URL,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> Int64 {
         guard fileManager.fileExists(atPath: directory.path) else { return 0 }
         let enumerator = fileManager.enumerator(
             at: directory,
@@ -1471,6 +1522,7 @@ public final class DriveSyncStore: @unchecked Sendable {
         )
         var bytes: Int64 = 0
         while let url = enumerator?.nextObject() as? URL {
+            try cancellation.check()
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             if values.isRegularFile == true {
                 bytes += Int64(values.fileSize ?? 0)

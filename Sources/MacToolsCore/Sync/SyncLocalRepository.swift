@@ -751,7 +751,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
             )
         }
         try db.execute(
-            sql: "UPDATE tombstones SET uploadedAt = ? WHERE deletedAt <= ?",
+            sql: "UPDATE tombstones SET uploadedAt = ? WHERE deletedAt <= ? AND uploadedAt IS NULL",
             arguments: [date, cutoff]
         )
         if !uploadedContentIDs.isEmpty {

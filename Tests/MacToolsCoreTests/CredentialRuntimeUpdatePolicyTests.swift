@@ -2,6 +2,27 @@ import XCTest
 @testable import MacToolsCore
 
 final class CredentialRuntimeUpdatePolicyTests: XCTestCase {
+    func testCloudEchoSkipsDecryptionButChangesAndRecoveryStillReload() {
+        XCTAssertFalse(CredentialRuntimeUpdatePolicy.shouldReloadLocal(
+            loadFinished: true, isUnavailable: false, settingsValue: "placeholder", cloudValue: "placeholder"
+        ))
+        XCTAssertFalse(CredentialRuntimeUpdatePolicy.shouldReloadLocal(
+            loadFinished: true, isUnavailable: false, settingsValue: "", cloudValue: nil
+        ))
+        XCTAssertTrue(CredentialRuntimeUpdatePolicy.shouldReloadLocal(
+            loadFinished: false, isUnavailable: false, settingsValue: "placeholder", cloudValue: "placeholder"
+        ))
+        XCTAssertTrue(CredentialRuntimeUpdatePolicy.shouldReloadLocal(
+            loadFinished: true, isUnavailable: true, settingsValue: "placeholder", cloudValue: "placeholder"
+        ))
+        XCTAssertTrue(CredentialRuntimeUpdatePolicy.shouldReloadLocal(
+            loadFinished: true, isUnavailable: false, settingsValue: "placeholder", cloudValue: nil
+        ))
+        XCTAssertTrue(CredentialRuntimeUpdatePolicy.shouldReloadLocal(
+            loadFinished: true, isUnavailable: false, settingsValue: "old-placeholder", cloudValue: "new-placeholder"
+        ))
+    }
+
     func testStableAvailableCredentialDoesNotPublishOrRefreshServices() {
         let decision = CredentialRuntimeUpdatePolicy.decision(
             settingsValue: "stable-placeholder",

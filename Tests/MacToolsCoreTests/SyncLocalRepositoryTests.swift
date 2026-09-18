@@ -720,6 +720,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
     }
 
     private struct Replica {
+        var database: MacToolsDatabase
         var clipboard: ClipboardRepository
         var preferences: PreferenceRepository
         var sync: SyncLocalRepository
@@ -740,6 +741,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
         let overrides = DeviceOverrideRepository(database: database)
         _ = try overrides.deviceID()
         return Replica(
+            database: database,
             clipboard: clipboard,
             preferences: preferences,
             sync: SyncLocalRepository(
@@ -751,6 +753,26 @@ final class SyncLocalRepositoryTests: XCTestCase {
             payloadStore: payloadStore,
             workingDirectory: workingDirectory
         )
+    }
+
+    func testRepeatedAcknowledgementDoesNotRewritePublishedTombstones() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        try replica.sync.bindStore(UUID())
+        let item = textItem(id: UUID(), text: "synthetic deletion")
+        try replica.clipboard.upsert(item)
+        try replica.clipboard.delete(id: item.id)
+        let first = Date().addingTimeInterval(1)
+        try replica.sync.acknowledgeSnapshot(upTo: first, at: first)
+        let before = try replica.database.writer.read { db in
+            try Date.fetchOne(db, sql: "SELECT uploadedAt FROM tombstones")
+        }
+        XCTAssertNotNil(before)
+        try replica.sync.acknowledgeSnapshot(upTo: first.addingTimeInterval(10), at: first.addingTimeInterval(10))
+        let after = try replica.database.writer.read { db in
+            try Date.fetchOne(db, sql: "SELECT uploadedAt FROM tombstones")
+        }
+        XCTAssertEqual(after, before)
     }
 
     private func textItem(id: UUID, text: String) -> ClipboardItem {

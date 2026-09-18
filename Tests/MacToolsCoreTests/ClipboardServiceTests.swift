@@ -322,6 +322,34 @@ final class PasteboardClientTests: XCTestCase {
 }
 
 final class ClipboardSnapshotSamplerTests: XCTestCase {
+    func testSourceApplicationIsOnlyResolvedForANewRecordedSnapshot() throws {
+        let pasteboard = FakePasteboardClient(payload: ClipboardPayload(text: "synthetic"), changeCount: 0)
+        let sampler = ClipboardSnapshotSampler(pasteboard: pasteboard, isRecordingEnabled: true)
+        var lookups = 0
+        func sourceApplication() -> String? { lookups += 1; return "Tests" }
+
+        for _ in 0..<20 { XCTAssertNil(sampler.captureOnce(sourceApp: sourceApplication())) }
+        XCTAssertEqual(lookups, 0)
+        pasteboard.changeCount = 1
+        XCTAssertEqual(sampler.captureOnce(sourceApp: sourceApplication())?.sourceApp, "Tests")
+        XCTAssertEqual(lookups, 1)
+        sampler.updateRecordingEnabled(false)
+        pasteboard.changeCount = 2
+        XCTAssertNil(sampler.captureOnce(sourceApp: sourceApplication()))
+        XCTAssertEqual(lookups, 1)
+    }
+
+    func testResumeSkipsChangesEvenWhenNoTimerFiredWhilePaused() {
+        let pasteboard = FakePasteboardClient(payload: ClipboardPayload(text: "paused"), changeCount: 0)
+        let sampler = ClipboardSnapshotSampler(pasteboard: pasteboard, isRecordingEnabled: true)
+        sampler.updateRecordingEnabled(false)
+        pasteboard.changeCount = 1
+        sampler.updateRecordingEnabled(true)
+        XCTAssertNil(sampler.captureOnce(sourceApp: "Tests"))
+        pasteboard.changeCount = 2
+        XCTAssertNotNil(sampler.captureOnce(sourceApp: "Tests"))
+    }
+
     func testRetriesImmediatelyWhenPasteboardChangesDuringSnapshotRead() throws {
         let pasteboard = FakePasteboardClient(
             payload: ClipboardPayload(text: "stale clipboard item"),

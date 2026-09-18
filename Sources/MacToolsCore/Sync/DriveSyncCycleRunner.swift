@@ -73,6 +73,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         var removedDeviceIDs: Set<String>
         var inventory: SyncStorageInventory
         var lastFullInventoryAuditAt: Date
+        var needsContentRefresh: Bool
     }
 
     /// 为同步核心领域中的相关类型提供 `DateProvider` 别名。
@@ -94,6 +95,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
     private let inventoryAuditInterval: TimeInterval
     private let observationLock = NSLock()
     private var observationCache: ObservationCache?
+    private let revisionInventoryCache = SyncRevisionInventoryCache()
 
     /// 创建 `DriveSyncCycleRunner`，保存传入依赖并建立初始状态。
     public init(
@@ -204,9 +206,18 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         var storageInventory: SyncStorageInventory
         if cachedInventoryIsFresh, let cachedObservation {
             storageInventory = cachedObservation.inventory
+            if cachedObservation.needsContentRefresh {
+                let contents = try store.contentInventory(cancellation: cancellation)
+                storageInventory = SyncStorageInventory(
+                    objects: contents.objects, imageBytes: contents.imageBytes,
+                    textBytes: contents.textBytes, metadataBytes: storageInventory.metadataBytes
+                )
+            }
             lastFullInventoryAuditAt = cachedObservation.lastFullInventoryAuditAt
         } else {
-            storageInventory = try store.storageInventory()
+            storageInventory = try store.storageInventory(
+                revisionCache: revisionInventoryCache, cancellation: cancellation
+            )
             lastFullInventoryAuditAt = now
         }
         let storedObjectsBeforeWrite = storageInventory.objects
@@ -407,9 +418,6 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let blockedClipboardRecordNames = Set(draft.clipboard.records.compactMap { record in
             blockedImageContentIDs.contains(record.contentID) ? record.recordName : nil
         })
-        let deferredClipboardRecordNames = blockedClipboardRecordNames.union(
-            unavailableLocalRecordNames
-        )
 
         var remoteSettings: AppSettings?
         try cancellation.check()
@@ -516,15 +524,15 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let currentEvictionSnapshot = try store.evictionSnapshot(deviceID: deviceID)
         let evictionSnapshotChanged = currentEvictionSnapshot?.generation != generation
             || currentEvictionSnapshot?.records != localEvictions
-        let hasRelevantPendingChanges = try localRepository.hasPendingChanges(
-            excludingClipboardRecordNames: deferredClipboardRecordNames
-        )
+        let hasMissingPublishedContent = publishableDraft.contentDescriptors.contains {
+            !storedContentIDs.contains($0.contentID)
+        }
         // 恢复本机较新云端副本时，任一对象缺失都必须保留其唯一发布点，直到全部导入。
         let needsWrite = !incompleteDeviceIDs.contains(deviceID) && (resetReplicaState
             || currentRevision == 0
             || ownReplicaUnverifiable
             || forceWrite
-            || hasRelevantPendingChanges
+            || hasMissingPublishedContent
             || snapshotChanged
             || evictionSnapshotChanged)
 
@@ -606,20 +614,6 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                     seenRevisions: seenRevisions,
                     at: now
                 )
-                do {
-                    let reclaimedBytes = try store.cleanupSnapshotPublications(
-                        storeID: publicationIdentity.storeID,
-                        deviceID: publicationIdentity.deviceID,
-                        generation: publicationIdentity.generation,
-                        protectedDirectories: Set(
-                            [writeResult.manifest.snapshotDirectory].compactMap { $0 }
-                        )
-                    )
-                    storageInventory = storageInventory.adjustingMetadataBytes(by: -reclaimedBytes)
-                } catch {
-                    // 删除可能只完成了一部分；重新盘点，不能继续累计已不存在的快照容量。
-                    storageInventory = try store.storageInventory()
-                }
             } else {
                 try localRepository.acknowledgeSnapshot(
                     upTo: finalBundle.outboxCutoff,
@@ -638,6 +632,37 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 tombstones: finalBundle.tombstones,
                 manifestDigest: writeResult.manifestDigest
             )
+        } else if ownReplica != nil, !ownReplicaUnverifiable, !incompleteDeviceIDs.contains(deviceID),
+                  try localRepository.hasPendingChanges(
+                    excludingClipboardRecordNames: blockedClipboardRecordNames.union(unavailableLocalRecordNames)
+                  ) {
+            // 当前发布已准确表示草稿，无需为范围外复制或重复 outbox 再写相同快照。
+            // 截止时间后的并发变化与不可用载荷仍保留，不把未上传对象标成已上传。
+            try cancellation.check()
+            try localRepository.acknowledgeSnapshot(
+                upTo: draft.outboxCutoff,
+                excludingClipboardRecordNames: blockedClipboardRecordNames.union(unavailableLocalRecordNames)
+            )
+        }
+
+        // 回收是独立维护任务；稳定周期也分批推进，不能依赖再次复制才清理积压。
+        if let currentReplica = writtenReplica ?? ownReplica, !ownReplicaUnverifiable {
+            do {
+                let reclaimedBytes = try store.cleanupSnapshotPublications(
+                    storeID: descriptor.storeID, deviceID: deviceID, generation: generation,
+                    protectedDirectories: Set([currentReplica.manifest.snapshotDirectory].compactMap { $0 }),
+                    cancellation: cancellation
+                )
+                storageInventory = storageInventory.adjustingMetadataBytes(by: -reclaimedBytes)
+            } catch is SyncCycleCancellationError {
+                invalidateObservationCache()
+                throw SyncCycleCancellationError.cancelled
+            } catch {
+                invalidateObservationCache()
+                storageInventory = try store.storageInventory(
+                    revisionCache: revisionInventoryCache, cancellation: cancellation
+                )
+            }
         }
 
         var referencedContentIDs: Set<String> = []
@@ -680,23 +705,21 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             reusableReplicasByDeviceID[deviceID] = writtenReplica
             resultingReplicaDigests[deviceID] = writtenManifestDigest
         }
-        // 未完整读取的目录不能成为稳定观察，否则迟到内容在 manifest 不变时会被缓存隐藏。
-        if missingRemoteContent || hasInvalidRemoteContent || !replicaFailures.isEmpty {
-            invalidateObservationCache()
-        } else {
-            storeObservation(
-                ObservationCache(
-                    rootURL: rootURL.standardizedFileURL,
-                    storeID: descriptor.storeID,
-                    generation: generation,
-                    replicasByDeviceID: reusableReplicasByDeviceID,
-                    replicaDigests: resultingReplicaDigests,
-                    removedDeviceIDs: removedDeviceIDs,
-                    inventory: finalStorageInventory,
-                    lastFullInventoryAuditAt: lastFullInventoryAuditAt
-                )
+        // 只复用已成功校验的副本；坏设备不清空健康设备及历史容量的观察。
+        // 迟到或损坏内容单独刷新对象目录，下一周期仍能恢复，不重扫全部 revision。
+        storeObservation(
+            ObservationCache(
+                rootURL: rootURL.standardizedFileURL,
+                storeID: descriptor.storeID,
+                generation: generation,
+                replicasByDeviceID: reusableReplicasByDeviceID,
+                replicaDigests: resultingReplicaDigests,
+                removedDeviceIDs: removedDeviceIDs,
+                inventory: finalStorageInventory,
+                lastFullInventoryAuditAt: lastFullInventoryAuditAt,
+                needsContentRefresh: missingRemoteContent || hasInvalidRemoteContent
             )
-        }
+        )
         let usage = finalStorageInventory.usage(
             capacityBytes: configuration.storageLimit.byteLimit,
             ordinaryHistoryCount: decision.ordinaryCount

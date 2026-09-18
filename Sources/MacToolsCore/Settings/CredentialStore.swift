@@ -28,6 +28,16 @@ public struct CredentialRuntimeUpdateDecision: Equatable, Sendable {
 
 /// 根据内存中的凭据状态决定是否需要发布界面状态或重建依赖服务。
 public enum CredentialRuntimeUpdatePolicy {
+    /// 已应用的相同云端值无需再次解密；首次加载、值变化和故障恢复仍读取本地信封。
+    public static func shouldReloadLocal(
+        loadFinished: Bool,
+        isUnavailable: Bool,
+        settingsValue: String,
+        cloudValue: String?
+    ) -> Bool {
+        !loadFinished || isUnavailable || settingsValue != (cloudValue ?? "")
+    }
+
     /// 相同凭据只恢复可用状态；仅凭据值变化时刷新翻译和全局右键依赖。
     public static func decision(
         settingsValue: String,
@@ -61,6 +71,7 @@ public actor CredentialAccessCoordinator {
     private let legacyReader: any LegacyCredentialReading
     private let deviceID: String
     private let now: @Sendable () -> Date
+    private var redactedLegacyURLs: Set<URL> = []
 
     /// 创建 `CredentialAccessCoordinator`，保存传入依赖并建立初始状态。
     public init(
@@ -168,6 +179,19 @@ public actor CredentialAccessCoordinator {
         )
         try? store.markMigrationComplete()
         return result.record
+    }
+
+    /// 在串行后台 Actor 中擦除旧明文；成功后不重复读盘，失败允许下次重试。
+    public func redactLegacySettings(at url: URL) throws {
+        let url = url.standardizedFileURL
+        guard !redactedLegacyURLs.contains(url) else { return }
+        let legacyStore = SettingsStore(fileURL: url)
+        var settings = try legacyStore.load()
+        if !settings.translation.apiKey.isEmpty {
+            settings.translation.apiKey = ""
+            try legacyStore.save(settings)
+        }
+        redactedLegacyURLs.insert(url)
     }
 
     /// 提交 `markMigrationCompleteIfNeeded` 对应的设置与凭据领域状态，并记录后续流程所需的进度。
