@@ -9,6 +9,13 @@ public struct RightClickStateMachine {
     private var pressStartMilliseconds: Int?
     private var didTrigger = false
 
+    public var isPressed: Bool { pressStartMilliseconds != nil }
+
+    public mutating func cancel() {
+        pressStartMilliseconds = nil
+        didTrigger = false
+    }
+
     /// 使用给定长按阈值创建空闲状态机。
     public init(thresholdMilliseconds: Int) {
         self.thresholdMilliseconds = thresholdMilliseconds
@@ -18,7 +25,8 @@ public struct RightClickStateMachine {
     public mutating func handle(_ event: RightClickEvent) -> RightClickDecision {
         switch event {
         case let .pressed(atMilliseconds):
-            // 新按压会开启独立手势，并清除上一轮的触发标记。
+            // 重复 down 不得把已消费的长按变回短按；必须等配对 up 或显式取消。
+            guard !isPressed else { return .none }
             pressStartMilliseconds = atMilliseconds
             didTrigger = false
             return .none
@@ -72,6 +80,10 @@ public enum RightClickEventRoute: Equatable {
 public struct RightClickGestureRouter {
     private var stateMachine: RightClickStateMachine
 
+    public var isPressed: Bool { stateMachine.isPressed }
+
+    public mutating func cancel() { stateMachine.cancel() }
+
     /// 创建 `RightClickGestureRouter`，保存传入依赖并建立初始状态。
     public init(thresholdMilliseconds: Int) {
         self.stateMachine = RightClickStateMachine(thresholdMilliseconds: thresholdMilliseconds)
@@ -88,6 +100,7 @@ public struct RightClickGestureRouter {
                 ? .suppressAndTriggerSuperRightClick
                 : .suppressOriginalEvent
         case .released:
+            guard stateMachine.isPressed else { return .passOriginalEvent }
             switch stateMachine.handle(event) {
             case .allowSystemMenu:
                 return .suppressAndReplaySystemRightClick

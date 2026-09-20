@@ -2,6 +2,19 @@ import XCTest
 @testable import MacToolsCore
 
 final class RightClickStateMachineTests: XCTestCase {
+    func testDuplicateDownAfterLongPressCannotReopenSystemMenu() {
+        var router = RightClickGestureRouter(thresholdMilliseconds: 250)
+        _ = router.handle(.pressed(atMilliseconds: 1_000))
+        XCTAssertEqual(router.handle(.timerFired(atMilliseconds: 1_250)), .suppressAndTriggerSuperRightClick)
+        _ = router.handle(.pressed(atMilliseconds: 1_260))
+        XCTAssertEqual(router.handle(.released(atMilliseconds: 1_300)), .suppressOriginalEvent)
+    }
+
+    func testReleaseWithoutCapturedDownPassesThrough() {
+        var router = RightClickGestureRouter(thresholdMilliseconds: 250)
+        XCTAssertEqual(router.handle(.released(atMilliseconds: 1_000)), .passOriginalEvent)
+    }
+
     func testGestureRouterSuppressesPressAndReplaysSystemClickForShortPress() {
         var router = RightClickGestureRouter(thresholdMilliseconds: 600)
 

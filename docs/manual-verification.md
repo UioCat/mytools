@@ -20,11 +20,25 @@
 | 主面板、窗口样式、宿主视图、公共 DesignSystem | 上述六项 |
 | 编辑菜单、搜索/标签/翻译输入、键盘监听或焦点 | `TEXT-EDIT-001`、`PANEL-FOCUS-001`；影响尺寸或表面时增加对应场景 |
 | 截图选区、静态采集或截图编辑交接 | `CAPTURE-POPUP-001` 及下文截图录屏检查 |
+| 超级右键事件、捕获、翻译结果或面板关闭 | `RIGHT-CLICK-001`、`RIGHT-CLICK-002` 及下文超级右键检查 |
 | 其他 UI 或系统集成 | 下文中直接受影响的功能检查；触及共用窗口或输入链路时增加上述关联场景 |
 | 同步协议、同步持久化或后台调度 | 下列五项同步回归；单机自动化覆盖主要故障，不依赖人工双机配合 |
 | 剪贴板轮询、暂停恢复或来源应用查询 | `CLIPBOARD-IDLE-001`；同步联动时增加 `SYNC-IDLE-PERF-001` |
 
 每个新修复的用户 Bug 都应关联已有场景 ID；无法覆盖时新增稳定 ID，并保留复现步骤、通过标准与相邻负例。自动化回归测试应能在修复前失败、修复后通过；无法自动化的操作保留可重复实测步骤。
+
+### 超级右键回归
+
+| 场景 ID | 操作与通过标准 |
+| --- | --- |
+| `RIGHT-CLICK-001` 长短按互斥 | 使用已授予辅助功能和输入监控权限的打包应用，在 Finder 与普通文本应用分别测试 250、300、350 毫秒阈值。短按仅出现一次原系统菜单；长按、按住轻微移动、触发后继续按住再松开，只出现超级右键面板，松开后保持可见。连续交替短按与长按至少 20 次；模拟主线程繁忙时，事件拦截仍须工作。自动化补充重复 down、迟到计时器、零时间戳、中断后孤立 up、2,000 次混合手势。 |
+| `RIGHT-CLICK-002` 面板与异步结果归属 | 长按打开文本面板，在翻译完成前点击外部关闭；翻译返回不得重开。连续打开不同内容，旧翻译或 Finder 目录解析不得覆盖新内容；更新设置或关闭功能后旧捕获不得继续弹窗。打开新面板后，迟到的旧点击不得关闭它；新点击按事件发生位置判定，面板内保持、面板外关闭。 |
+
+相邻负例：阈值内明显右键拖动（移动至少 6 pt）应完整交给目标应用，不得退化为普通点击或触发超级右键；长按触发后再移动仍属于已消费的长按。
+
+自动化命令：`swift test --filter 'RightClick|ContextPanelInteraction|SelectionCaptureCancellation'`、`swift test`、`swift build --product MacTools -Xswiftc -strict-concurrency=complete -Xswiftc -warn-concurrency`。进程内 WindowServer 集成测试使用 `MACTOOLS_EVENT_TAP_INTEGRATION=1 swift test --filter RightClickEventTapTests`，要求测试进程获得事件权限，默认全量测试会明确跳过该项。证据应记录构建版本、两项场景的运行结果、短按回放数与长按触发数，以及旧版本重复 down 后错误回放系统菜单的失败测试。原生 NSPanel 测试验证真实可见性，但不替代带权限打包应用的全局输入验证。
+
+实现参考：[Mac Mouse Fix ClickCycle](https://github.com/noah-nuebling/mac-mouse-fix/blob/master/Helper/Core/Buttons/ClickCycle.swift) 的手势状态与计时串行约束、[Hammerspoon eventtap](https://github.com/Hammerspoon/hammerspoon/blob/master/extensions/eventtap/libeventtap.m) 的 tap 下游事件投递与完整失效清理。实现为独立编写，未引入外部代码或依赖。
 
 ### 截图回归
 

@@ -45,8 +45,10 @@ public final class SelectionCaptureService: SelectionCapturing {
 
     /// 捕获 `captureSelection` 对应的超级右键领域上下文，并返回可继续处理的结果。
     public func captureSelection() -> ClipboardPayload {
+        guard !Task.isCancelled else { return ClipboardPayload() }
         // Accessibility 不会改写用户剪贴板，因此只要返回可用文本就优先采用。
         let accessibilityValue = selectedTextReader.readSelectedText()
+        guard !Task.isCancelled else { return ClipboardPayload() }
         if let selectedText = Self.normalizedAccessibilityText(accessibilityValue) {
             logger?.info("selection capture read selected text via accessibility")
             return ClipboardPayload(text: selectedText)
@@ -58,8 +60,10 @@ public final class SelectionCaptureService: SelectionCapturing {
         // 复制降级路径以 changeCount 判断目标应用是否真的响应，避免返回旧剪贴板内容。
         let changeCountBeforeCopy = pasteboard.changeCount
         logger?.info("selection capture falling back to copy shortcut")
+        guard !Task.isCancelled else { return ClipboardPayload() }
         eventSender.sendCopyShortcut()
         Thread.sleep(forTimeInterval: 0.12)
+        guard !Task.isCancelled else { return ClipboardPayload() }
 
         guard pasteboard.changeCount != changeCountBeforeCopy else {
             logger?.error("selection capture copy fallback produced no pasteboard change")

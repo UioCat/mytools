@@ -661,8 +661,17 @@ final class AppEnvironment {
                 )
             ),
             logger: logger,
-            onResultCaptured: { [weak self] result in
-                self?.handleSuperRightClickResult(result)
+            onGestureBegan: { [weak self] id, timestamp in
+                guard let self else { return }
+                self.finderFolderResolutionCoordinator.cancel()
+                self.contextPanel.beginInteraction(id: id, at: timestamp)
+            },
+            onCancelled: { [weak self] in
+                self?.finderFolderResolutionCoordinator.cancel()
+                self?.contextPanel.cancelInteraction()
+            },
+            onResultCaptured: { [weak self] result, id in
+                self?.handleSuperRightClickResult(result, gestureID: id)
             }
         )
         guard monitor.start() else {
@@ -670,6 +679,10 @@ final class AppEnvironment {
         }
 
         superRightClickMonitor = monitor
+        contextPanel.onDismiss = { [weak self] in
+            self?.superRightClickMonitor?.cancelCapture()
+            self?.finderFolderResolutionCoordinator.cancel()
+        }
     }
 
     /// 配置持久化回调后启动独立采样队列；快照立即送往后台 Actor 顺序消费。
@@ -772,7 +785,8 @@ final class AppEnvironment {
     }
 
     /// 按捕获类型和来源应用路由结果，选择文本、文件、Finder 目录或纯布局面板。
-    private func handleSuperRightClickResult(_ result: SuperRightClickResult) {
+    private func handleSuperRightClickResult(_ result: SuperRightClickResult, gestureID: UUID) {
+        guard contextPanel.acceptsResult(for: gestureID) else { return }
         switch SuperRightClickPresentationRouter.route(
             for: result.item.kind,
             sourceApplication: result.sourceApplication
@@ -797,7 +811,8 @@ final class AppEnvironment {
                     )
                 },
                 completion: { [weak self] folderURL in
-                    self?.showFinderCurrentFolder(
+                    guard let self, self.contextPanel.acceptsResult(for: gestureID) else { return }
+                    self.showFinderCurrentFolder(
                         folderURL: folderURL,
                         sourceApplication: sourceApplication
                     )

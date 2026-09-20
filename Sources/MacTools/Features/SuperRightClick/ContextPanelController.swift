@@ -23,6 +23,18 @@ final class ContextPanelController {
     private var panel: NSPanel?
     private var localDismissMonitor: Any?
     private var globalDismissMonitor: Any?
+    private var interaction = SuperRightClickPresentationSession()
+    var onDismiss: () -> Void = {}
+
+    func beginInteraction(id: UUID, at timestamp: TimeInterval) {
+        panel?.orderOut(nil)
+        interaction.begin(id: id, at: timestamp)
+        startOutsideClickDismissMonitors()
+    }
+
+    func acceptsResult(for id: UUID) -> Bool { interaction.accepts(id) }
+
+    func cancelInteraction() { hide() }
 
     /// 创建 `ContextPanelController`，保存传入依赖并建立初始状态。
     init(
@@ -217,8 +229,11 @@ final class ContextPanelController {
 
     /// 取消或关闭 `hide` 对应的应用运行时与 AppKit 集成流程，并清理临时状态。
     private func hide() {
+        interaction.dismiss()
         panel?.orderOut(nil)
         stopOutsideClickDismissMonitors()
+        logger.info("super right click panel dismissed")
+        onDismiss()
     }
 
     /// 展示 `showTextTransit` 对应的应用运行时与 AppKit 集成界面或系统位置。
@@ -239,7 +254,7 @@ final class ContextPanelController {
             localDismissMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
             ) { [weak self] event in
-                self?.hideIfClickIsOutsidePanel(eventScreenLocation: Self.screenLocation(for: event))
+                self?.hideIfClickIsOutsidePanel(eventScreenLocation: Self.screenLocation(for: event), timestamp: event.timestamp)
                 return event
             }
         }
@@ -247,8 +262,8 @@ final class ContextPanelController {
         if globalDismissMonitor == nil {
             globalDismissMonitor = NSEvent.addGlobalMonitorForEvents(
                 matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-            ) { [weak self] _ in
-                self?.hideIfClickIsOutsidePanel(eventScreenLocation: NSEvent.mouseLocation)
+            ) { [weak self] event in
+                self?.hideIfClickIsOutsidePanel(eventScreenLocation: Self.screenLocation(for: event), timestamp: event.timestamp)
             }
         }
     }
@@ -267,13 +282,10 @@ final class ContextPanelController {
     }
 
     /// 取消或关闭 `hideIfClickIsOutsidePanel` 对应的应用运行时与 AppKit 集成流程，并清理临时状态。
-    private func hideIfClickIsOutsidePanel(eventScreenLocation: NSPoint) {
-        guard let panel, panel.isVisible else {
-            return
-        }
-
-        if PanelOutsideClickPolicy.shouldDismiss(
-            panelFrame: panel.frame,
+    func hideIfClickIsOutsidePanel(eventScreenLocation: NSPoint, timestamp: TimeInterval) {
+        guard interaction.acceptsDismissal(at: timestamp) else { return }
+        if panel?.isVisible != true || PanelOutsideClickPolicy.shouldDismiss(
+            panelFrame: panel?.frame ?? .zero,
             eventScreenLocation: eventScreenLocation
         ) {
             hide()
@@ -281,9 +293,12 @@ final class ContextPanelController {
     }
 
     /// 计算并返回 `screenLocation` 对应的应用运行时与 AppKit 集成数据或状态结果。
-    private static func screenLocation(for event: NSEvent) -> NSPoint {
+    static func screenLocation(for event: NSEvent) -> NSPoint {
+        if let location = event.cgEvent?.location, let primaryScreen = NSScreen.screens.first {
+            return NSPoint(x: location.x, y: primaryScreen.frame.maxY - location.y)
+        }
         guard let window = event.window else {
-            return NSEvent.mouseLocation
+            return event.locationInWindow
         }
 
         return window.convertPoint(toScreen: event.locationInWindow)

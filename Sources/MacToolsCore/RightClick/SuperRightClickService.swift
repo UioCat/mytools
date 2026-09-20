@@ -49,12 +49,13 @@ public actor SuperRightClickService {
         _ decision: RightClickDecision,
         sourceApplication: SuperRightClickSourceApplication?
     ) async -> SuperRightClickResult? {
-        guard settings.isEnabled, decision == .triggerSuperRightClick else {
+        guard !Task.isCancelled, settings.isEnabled, decision == .triggerSuperRightClick else {
             return nil
         }
 
         // 捕获和分类先产出可展示结果，网络翻译由调用方随后执行，避免延迟首屏。
         let payload = selectionCapture.captureSelection()
+        guard !Task.isCancelled else { return nil }
         let item = classifier.classify(
             payload: payload,
             sourceApp: sourceApplication?.localizedName
