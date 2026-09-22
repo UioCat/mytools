@@ -401,6 +401,23 @@ final class ScreenshotAnnotationTests: XCTestCase {
         XCTAssertGreaterThan(wrapped.height, short.height)
     }
 
+    func testPlainTextFittedSizeIncludesTrailingEmptyLines() {
+        for fontSize: CGFloat in [12, 16, 24, 32, 48] {
+            let sizes = ["中文输入", "中文输入\n", "中文输入\n\n"].map {
+                ScreenshotTextLayout.fittedMultilineSize(
+                    text: $0,
+                    fontSize: fontSize,
+                    maximumWidth: 600,
+                    minimumSize: CGSize(width: 1, height: 1)
+                )
+            }
+            XCTAssertGreaterThan(sizes[1].height, sizes[0].height)
+            XCTAssertGreaterThan(sizes[2].height, sizes[1].height)
+            XCTAssertEqual(sizes[0].width, sizes[1].width)
+            XCTAssertEqual(sizes[1].width, sizes[2].width)
+        }
+    }
+
     func testPlainTextAtMaximumWidthStaysInsideHorizontalSafeArea() throws {
         let safeBounds = CGRect(x: 8, y: 0, width: 384, height: 300)
         let requiredSize = ScreenshotTextLayout.fittedMultilineSize(

@@ -289,8 +289,10 @@ public enum ScreenshotTextLayout {
         fontSize: CGFloat,
         maximumWidth: CGFloat
     ) -> CGSize {
+        // CoreText 不为末尾换行后的空行预留高度，但编辑器仍须展示该行的光标。
+        let measuredText = text.isEmpty || text.hasSuffix("\n") ? text + " " : text
         let framesetter = CTFramesetterCreateWithAttributedString(
-            attributedString(text: text.isEmpty ? " " : text, fontSize: fontSize, color: nil)
+            attributedString(text: measuredText, fontSize: fontSize, color: nil)
         )
         return CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,

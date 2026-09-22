@@ -763,6 +763,164 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testPlainTextEditorKeepsRepeatedChineseCompositionAndNewlinesVisible() throws {
+        for fontSize in ScreenshotAnnotationFontSize.allCases {
+            try verifyChineseCompositionAndNewlines(displayScale: 1, fontSize: fontSize)
+        }
+    }
+
+    @MainActor
+    func testPlainTextEditorKeepsRepeatedChineseCompositionAndNewlinesVisibleAtRetinaScale() throws {
+        for fontSize in ScreenshotAnnotationFontSize.allCases {
+            try verifyChineseCompositionAndNewlines(displayScale: 2, fontSize: fontSize)
+        }
+    }
+
+    @MainActor
+    private func verifyChineseCompositionAndNewlines(
+        displayScale: Int,
+        fontSize: ScreenshotAnnotationFontSize
+    ) throws {
+        let rootSize = CGSize(width: 800, height: 600)
+        let imageFrame = CGRect(x: 100, y: 100, width: 600, height: 300)
+        let toolbarFrame = CGRect(x: 162, y: 450, width: 476, height: 68)
+        let toolbarMeasurement = ScreenshotCompactToolbarMeasurementSink()
+        let editor = ScreenshotEditorView(
+            image: try makeSolidImage(width: 600 * displayScale, height: 300 * displayScale),
+            imageFrame: imageFrame,
+            toolbarFrame: toolbarFrame,
+            settings: ScreenCaptureSettings(annotationTool: .text, annotationFontSize: fontSize),
+            onSettingsChange: { _ in true },
+            onCopy: { _ in },
+            onCancel: {},
+            registerEscapeHandler: { _ in },
+            clearEscapeHandler: {}
+        )
+        .environment(\.screenshotCompactToolbarMeasurement, toolbarMeasurement)
+        .frame(width: rootSize.width, height: rootSize.height)
+        let window = NSWindow(
+            contentRect: CGRect(origin: .zero, size: rootSize),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.animationBehavior = .none
+        window.isReleasedWhenClosed = false
+        let hostingView = NSHostingView(rootView: editor)
+        hostingView.frame = CGRect(origin: .zero, size: rootSize)
+        window.contentView = hostingView
+        ScreenshotEditorTestWindowRetainer.windows.append(window)
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        runMainLoop()
+        let textToolFrame = try XCTUnwrap(toolbarMeasurement.frames["tool-text"])
+        sendClick(
+            to: window,
+            swiftUIPoint: compactControlCenter(textToolFrame, toolbarFrame: toolbarFrame),
+            rootHeight: rootSize.height
+        )
+        sendClick(to: window, swiftUIPoint: CGPoint(x: 200, y: 180), rootHeight: rootSize.height)
+        let textView = try XCTUnwrap(window.firstResponder as? ScreenshotPlainTextEditorTextView)
+        textView.insertText("3333333", replacementRange: NSRange(location: NSNotFound, length: 0))
+        runMainLoop()
+
+        for phrase in ["你好你", "好中文输入", "继续显示"] {
+            for pinyin in ["n", "ni", "ni'h", "ni'hao", "ni'hao'ni"] {
+                textView.setMarkedText(
+                    pinyin,
+                    selectedRange: NSRange(location: (pinyin as NSString).length, length: 0),
+                    replacementRange: NSRange(location: NSNotFound, length: 0)
+                )
+                runMainLoop()
+                try assertAllTextVisible(in: textView)
+            }
+            textView.setMarkedText(
+                phrase,
+                selectedRange: NSRange(location: (phrase as NSString).length, length: 0),
+                replacementRange: NSRange(location: NSNotFound, length: 0)
+            )
+            runMainLoop()
+            XCTAssertTrue(textView.hasMarkedText())
+            try assertAllTextVisible(in: textView)
+            textView.insertText(phrase, replacementRange: NSRange(location: NSNotFound, length: 0))
+            runMainLoop()
+            XCTAssertFalse(textView.hasMarkedText())
+            try assertAllTextVisible(in: textView)
+        }
+        XCTAssertEqual(textView.string, "3333333你好你好中文输入继续显示")
+        let firstLineHeight = textView.bounds.height
+        textView.insertNewline(nil)
+        runMainLoop()
+        XCTAssertGreaterThan(textView.bounds.height, firstLineHeight, "Return 后空行和光标也应可见")
+        try assertInsertionPointVisible(in: textView)
+        for phrase in ["第二行中文输入继续显示", "第三行中文输入继续显示"] {
+            textView.setMarkedText(
+                NSAttributedString(string: phrase, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]),
+                selectedRange: NSRange(location: (phrase as NSString).length, length: 0),
+                replacementRange: NSRange(location: NSNotFound, length: 0)
+            )
+            runMainLoop()
+            try assertAllTextVisible(in: textView)
+            textView.insertText(phrase, replacementRange: NSRange(location: NSNotFound, length: 0))
+            runMainLoop()
+            try assertAllTextVisible(in: textView)
+            textView.insertNewline(nil)
+            runMainLoop()
+            try assertInsertionPointVisible(in: textView)
+        }
+        XCTAssertEqual(textView.string, "3333333你好你好中文输入继续显示\n第二行中文输入继续显示\n第三行中文输入继续显示\n")
+    }
+
+    @MainActor
+    private func assertInsertionPointVisible(
+        in textView: NSTextView,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let window = try XCTUnwrap(textView.window, file: file, line: line)
+        let caretOnScreen = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
+        let caret = textView.convert(window.convertFromScreen(caretOnScreen), from: nil)
+        XCTAssertGreaterThan(caret.height, 0, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(caret.minY, textView.visibleRect.minY - 0.5, file: file, line: line)
+        XCTAssertLessThanOrEqual(caret.maxY, textView.visibleRect.maxY + 0.5, file: file, line: line)
+    }
+
+    @MainActor
+    private func assertAllTextVisible(
+        in textView: NSTextView,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let container = try XCTUnwrap(textView.textContainer, file: file, line: line)
+        if let manager = textView.textLayoutManager {
+            let bounds = manager.usageBoundsForTextContainer
+            XCTAssertGreaterThan(bounds.width, 0, file: file, line: line)
+            XCTAssertLessThanOrEqual(bounds.maxX, textView.visibleRect.maxX + 0.5, "TextKit 2 content=\(bounds), view=\(textView.bounds)", file: file, line: line)
+            XCTAssertLessThanOrEqual(bounds.maxY, textView.visibleRect.maxY + 0.5, "TextKit 2 content=\(bounds), view=\(textView.bounds)", file: file, line: line)
+            var renderedCharacters = 0
+            manager.enumerateTextLayoutFragments(from: nil, options: []) { fragment in
+                for textLine in fragment.textLineFragments {
+                    renderedCharacters += textLine.characterRange.length
+                    let lineBounds = textLine.typographicBounds.offsetBy(
+                        dx: fragment.layoutFragmentFrame.minX,
+                        dy: fragment.layoutFragmentFrame.minY
+                    )
+                    XCTAssertLessThanOrEqual(lineBounds.maxY, textView.visibleRect.maxY + 0.5, file: file, line: line)
+                }
+                return true
+            }
+            XCTAssertEqual(renderedCharacters, (textView.string as NSString).length, file: file, line: line)
+            return
+        }
+        let manager = try XCTUnwrap(textView.layoutManager, file: file, line: line)
+        manager.ensureLayout(for: container)
+        let visibleGlyphs = manager.glyphRange(forBoundingRect: textView.visibleRect, in: container)
+        let visibleCharacters = manager.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
+        XCTAssertEqual(visibleCharacters, NSRange(location: 0, length: (textView.string as NSString).length), file: file, line: line)
+        let glyphBounds = manager.boundingRect(forGlyphRange: manager.glyphRange(for: container), in: container)
+        XCTAssertGreaterThanOrEqual(glyphBounds.minY, textView.visibleRect.minY - 0.5, file: file, line: line)
+        XCTAssertLessThanOrEqual(glyphBounds.maxY, textView.visibleRect.maxY + 0.5, "glyphs=\(glyphBounds), view=\(textView.bounds)", file: file, line: line)
+    }
+
+    @MainActor
     func testPlainTextPlaceholderKeepsGlobalOriginAtWrappingBoundaryForEachDisplayScale() throws {
         let rootSize = CGSize(width: 800, height: 600)
         let imageFrame = CGRect(x: 200, y: 100, width: 108, height: 300)
