@@ -477,6 +477,7 @@ enum ScreenshotPlainTextEditorInteraction {
 private struct ScreenshotPlainTextEditor: NSViewRepresentable {
     @Binding var text: String
     let fontSize: CGFloat
+    let maximumWidth: CGFloat
     let color: ScreenshotAnnotationColor
     let onCommit: () -> Void
 
@@ -491,6 +492,8 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         editor.delegate = context.coordinator
         ScreenshotPlainTextTextViewStyle.configureLayout(placeholder)
         ScreenshotPlainTextTextViewStyle.configureLayout(editor)
+        // 组合文字先于 SwiftUI 外框扩宽到达，不能用上一帧的框宽触发软换行。
+        editor.textContainer?.widthTracksTextView = false
         placeholder.string = ScreenshotPlainTextEditorMetrics.placeholderText
         placeholder.isEditable = false
         placeholder.isSelectable = false
@@ -537,6 +540,10 @@ private struct ScreenshotPlainTextEditor: NSViewRepresentable {
         placeholder: NSTextView
     ) {
         let font = NSFont.systemFont(ofSize: max(1, fontSize))
+        let containerSize = CGSize(width: max(1, maximumWidth), height: CGFloat.greatestFiniteMagnitude)
+        if editor.textContainer?.containerSize != containerSize {
+            editor.textContainer?.containerSize = containerSize
+        }
         editor.font = font
         placeholder.font = font
         editor.textColor = ScreenshotPlainTextTextViewStyle.color(color)
@@ -1963,6 +1970,7 @@ public struct ScreenshotEditorView: View {
             ScreenshotPlainTextEditor(
                 text: editingTextBinding,
                 fontSize: canvasLineWidth(draft.fontSize, in: imageRect),
+                maximumWidth: canvasLineWidth(draft.maximumWidth, in: imageRect),
                 color: draft.color,
                 onCommit: commitEditing
             )

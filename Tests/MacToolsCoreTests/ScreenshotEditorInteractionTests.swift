@@ -674,7 +674,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         XCTAssertEqual(grownTextView.string, "不该，不该，333")
         XCTAssertEqual(
             grownTextContainer.containerSize.width,
-            grownTextView.bounds.width,
+            imageFrame.width - 16,
             accuracy: 0.5
         )
         let expectedGrownWidth = ScreenshotTextLayout.fittedMultilineSize(
@@ -829,6 +829,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
                     selectedRange: NSRange(location: (pinyin as NSString).length, length: 0),
                     replacementRange: NSRange(location: NSNotFound, length: 0)
                 )
+                try assertTextRemainsOnSingleLine(in: textView)
                 runMainLoop()
                 try assertAllTextVisible(in: textView)
             }
@@ -837,10 +838,12 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
                 selectedRange: NSRange(location: (phrase as NSString).length, length: 0),
                 replacementRange: NSRange(location: NSNotFound, length: 0)
             )
+            try assertTextRemainsOnSingleLine(in: textView)
             runMainLoop()
             XCTAssertTrue(textView.hasMarkedText())
             try assertAllTextVisible(in: textView)
             textView.insertText(phrase, replacementRange: NSRange(location: NSNotFound, length: 0))
+            try assertTextRemainsOnSingleLine(in: textView)
             runMainLoop()
             XCTAssertFalse(textView.hasMarkedText())
             try assertAllTextVisible(in: textView)
@@ -867,6 +870,32 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             try assertInsertionPointVisible(in: textView)
         }
         XCTAssertEqual(textView.string, "3333333你好你好中文输入继续显示\n第二行中文输入继续显示\n第三行中文输入继续显示\n")
+
+        // 达到画布上限仍须软换行，不能以无限宽文本容器掩盖组合输入的问题。
+        textView.selectAll(nil)
+        textView.insertText(String(repeating: "中文", count: 30), replacementRange: NSRange(location: NSNotFound, length: 0))
+        runMainLoop()
+        let firstCharacter = textView.firstRect(forCharacterRange: NSRange(location: 0, length: 1), actualRange: nil)
+        let caret = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
+        XCTAssertLessThan(caret.minY, firstCharacter.minY)
+        XCTAssertLessThanOrEqual(textView.bounds.width, imageFrame.width - 16)
+        try assertAllTextVisible(in: textView)
+        try assertInsertionPointVisible(in: textView)
+    }
+
+    /// 不推进主循环，复现输入法在 SwiftUI 扩框前查询文字和光标位置的时序。
+    @MainActor
+    private func assertTextRemainsOnSingleLine(
+        in textView: NSTextView,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        _ = try XCTUnwrap(textView.window, file: file, line: line)
+        let firstCharacter = textView.firstRect(forCharacterRange: NSRange(location: 0, length: 1), actualRange: nil)
+        let caret = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
+        XCTAssertGreaterThan(firstCharacter.height, 0, file: file, line: line)
+        XCTAssertEqual(caret.minY, firstCharacter.minY, accuracy: 0.5, "组合输入不应按旧框宽提前换行", file: file, line: line)
+        XCTAssertFalse(textView.string.contains("\n"), file: file, line: line)
     }
 
     @MainActor
