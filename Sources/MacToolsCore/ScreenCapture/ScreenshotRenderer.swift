@@ -21,7 +21,12 @@ public enum ScreenshotRenderer {
     private static let ciContext = CIContext(options: nil)
 
     /// 按标注顺序合成原图、线条、箭头、矩形和马赛克，并编码为 PNG。
-    public static func pngData(image: CGImage, annotations: [ScreenshotAnnotation]) throws -> Data {
+    /// textDisplayScale 使普通文字沿用编辑器的显示点字号，标注坐标仍为图像像素。
+    public static func pngData(
+        image: CGImage,
+        annotations: [ScreenshotAnnotation],
+        textDisplayScale: CGFloat = 1
+    ) throws -> Data {
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         guard let context = CGContext(
             data: nil,
@@ -62,7 +67,8 @@ public enum ScreenshotRenderer {
                     text: text,
                     frame: frame,
                     color: color,
-                    fontSize: fontSize
+                    fontSize: fontSize,
+                    displayScale: textDisplayScale
                 )
             case let .label(text, anchor, direction, color, fontSize, maximumWidth):
                 drawLabel(
@@ -255,18 +261,23 @@ public enum ScreenshotRenderer {
         text: String,
         frame: CGRect,
         color: ScreenshotAnnotationColor,
-        fontSize: CGFloat
+        fontSize: CGFloat,
+        displayScale: CGFloat
     ) {
         guard !text.isEmpty, !frame.isEmpty else {
             return
         }
+        let scale = max(1, displayScale)
         let framesetter = CTFramesetterCreateWithAttributedString(
-            ScreenshotTextLayout.attributedString(text: text, fontSize: fontSize, color: color.cgColor)
+            ScreenshotTextLayout.attributedString(text: text, fontSize: fontSize / scale, color: color.cgColor)
         )
-        let path = CGPath(rect: frame.standardized, transform: nil)
+        let layoutFrame = frame.standardized.applying(CGAffineTransform(scaleX: 1 / scale, y: 1 / scale))
+        let path = CGPath(rect: layoutFrame, transform: nil)
         let textFrame = CTFramesetterCreateFrame(framesetter, CFRange(), path, nil)
 
         context.saveGState()
+        // 保持与编辑器相同的字号和换行位置，只在绘制时放大到截图像素。
+        context.scaleBy(x: scale, y: scale)
         context.textMatrix = .identity
         CTFrameDraw(textFrame, context)
         context.restoreGState()

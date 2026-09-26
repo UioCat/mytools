@@ -418,6 +418,25 @@ final class ScreenshotAnnotationTests: XCTestCase {
         }
     }
 
+    func testRetinaTextLayoutPreservesDisplayFontMetricsAndWrapping() {
+        for fontSize: CGFloat in [12, 16, 24] {
+            for text in ["你好你好你好 hello 你好", "你好你好你好hello你好", "hello 中文\n第二行\n", String(repeating: "你好 hello ", count: 12)] {
+                let displaySize = ScreenshotTextLayout.fittedMultilineSize(
+                    text: text, fontSize: fontSize, maximumWidth: 280,
+                    minimumSize: CGSize(width: 1, height: 1)
+                )
+                for scale: CGFloat in [1, 2] {
+                    let pixelSize = ScreenshotTextLayout.fittedMultilineSize(
+                        text: text, fontSize: fontSize * scale, maximumWidth: 280 * scale,
+                        minimumSize: CGSize(width: scale, height: scale), displayScale: scale
+                    )
+                    XCTAssertEqual(pixelSize.width / scale, displaySize.width, accuracy: 0.01)
+                    XCTAssertEqual(pixelSize.height / scale, displaySize.height, accuracy: 0.01)
+                }
+            }
+        }
+    }
+
     func testPlainTextAtMaximumWidthStaysInsideHorizontalSafeArea() throws {
         let safeBounds = CGRect(x: 8, y: 0, width: 384, height: 300)
         let requiredSize = ScreenshotTextLayout.fittedMultilineSize(

@@ -881,6 +881,49 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         XCTAssertLessThanOrEqual(textView.bounds.width, imageFrame.width - 16)
         try assertAllTextVisible(in: textView)
         try assertInsertionPointVisible(in: textView)
+
+        // 混排在 Retina 上不能用两倍字号的宽度缩回屏幕点，否则提交后会藏掉末字。
+        let mixedText = "你好你好你好 hello 你好"
+        textView.selectAll(nil)
+        textView.insertText("你好你好你好 hello ", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setMarkedText("你好", selectedRange: NSRange(location: 2, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        runMainLoop()
+        try assertAllTextVisible(in: textView)
+        textView.insertText("你好", replacementRange: NSRange(location: NSNotFound, length: 0))
+        runMainLoop()
+        XCTAssertEqual(textView.string, mixedText)
+        try assertAllTextVisible(in: textView)
+        let editingSize = textView.bounds.size
+        sendClick(
+            to: window,
+            swiftUIPoint: CGPoint(x: imageFrame.maxX - 20, y: imageFrame.maxY - 20),
+            rootHeight: rootSize.height,
+            throughApplication: true
+        )
+        let preview = try XCTUnwrap(findTextView(with: mixedText, editable: false, below: hostingView))
+        try assertAllTextVisible(in: preview)
+        XCTAssertEqual(preview.bounds.width, editingSize.width, accuracy: 0.5)
+        XCTAssertEqual(preview.bounds.height, editingSize.height, accuracy: 0.5)
+        let firstRect = preview.firstRect(forCharacterRange: NSRange(location: 0, length: 1), actualRange: nil)
+        let lastRect = preview.firstRect(forCharacterRange: NSRange(location: (mixedText as NSString).length - 1, length: 1), actualRange: nil)
+        XCTAssertEqual(firstRect.minY, lastRect.minY, accuracy: 0.5, "提交后末字应留在第一行")
+
+        let center = preview.convert(CGPoint(x: preview.bounds.midX, y: preview.bounds.midY), to: nil)
+        sendClick(
+            to: window,
+            swiftUIPoint: CGPoint(x: center.x, y: rootSize.height - center.y),
+            rootHeight: rootSize.height
+        )
+        sendClick(
+            to: window,
+            swiftUIPoint: CGPoint(x: center.x, y: rootSize.height - center.y),
+            rootHeight: rootSize.height,
+            clickCount: 2
+        )
+        let reopened = try XCTUnwrap(window.firstResponder as? ScreenshotPlainTextEditorTextView)
+        XCTAssertEqual(reopened.string, mixedText)
+        try assertAllTextVisible(in: reopened)
+        XCTAssertEqual(reopened.bounds.width, editingSize.width, accuracy: 0.5)
     }
 
     /// 不推进主循环，复现输入法在 SwiftUI 扩框前查询文字和光标位置的时序。
@@ -1162,7 +1205,8 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
         to window: NSWindow,
         swiftUIPoint: CGPoint,
         rootHeight: CGFloat,
-        throughApplication: Bool = false
+        throughApplication: Bool = false,
+        clickCount: Int = 1
     ) {
         let location = CGPoint(x: swiftUIPoint.x, y: rootHeight - swiftUIPoint.y)
         let timestamp = ProcessInfo.processInfo.systemUptime
@@ -1174,7 +1218,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             windowNumber: window.windowNumber,
             context: nil,
             eventNumber: 1,
-            clickCount: 1,
+            clickCount: clickCount,
             pressure: 1
         )
         let mouseUp = NSEvent.mouseEvent(
@@ -1185,7 +1229,7 @@ final class ScreenshotEditorInteractionTests: XCTestCase {
             windowNumber: window.windowNumber,
             context: nil,
             eventNumber: 2,
-            clickCount: 1,
+            clickCount: clickCount,
             pressure: 0
         )
         if let mouseDown {

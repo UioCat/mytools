@@ -1,5 +1,32 @@
 # Learnings
 
+## [LRN-20260926-001] correction
+
+**Logged**: 2026-09-26
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+截图文字不能假定系统字体在图像像素字号与屏幕点字号之间严格等比；只验证输入态会漏掉提交预览和 PNG 的裁字。
+
+### Details
+上一轮固定编辑容器宽度消除了异步扩框前的折行，但用户仍反馈中英文混排提交后末字消失。原生 TextKit 2 对照复现：Retina 下用两倍字号测量再除二，得到的短句框宽小于屏幕点字号的实际字宽，预览末字落入被裁切的第二行。纯中文组合输入测试未覆盖该差异。
+
+### Suggested Action
+测量、提交、重新编辑、字号修改和 PNG 导出统一以显示点字号排版，只在映射图像坐标或绘制时缩放。回归覆盖三种字号、1×/Retina、中英文与空格混排、提交和重开后的完整字形，以及导出末字位置。
+
+### Metadata
+- Source: user_feedback
+- Related Files: Sources/MacToolsCore/ScreenCapture/ScreenshotTextLayout.swift, Sources/MacToolsCore/ScreenCapture/ScreenshotRenderer.swift, Tests/MacToolsCoreTests/ScreenshotEditorInteractionTests.swift
+- Tags: screenshot, retina, font-metrics, textkit, regression
+- See Also: LRN-20260810-002
+
+### Resolution
+- **Notes**: 原生预览对照由 18 组中 6 组失败变为全部通过；新增生产交互与导出回归，真实打包输入法检查仍须独立记录。
+
+---
+
 ## [LRN-20260810-003] correction
 
 **Logged**: 2026-08-10T19:49:00+08:00

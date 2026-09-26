@@ -304,12 +304,26 @@ public enum ScreenshotTextLayout {
     }
 
     /// 以最长一行的真实字形宽度为首选宽度，仅在达到画布上限后换行并增加高度。
+    /// 字号、尺寸和返回值使用图像像素；displayScale 是每个显示点对应的像素数。
     public static func fittedMultilineSize(
         text: String,
         fontSize: CGFloat,
         maximumWidth: CGFloat,
-        minimumSize: CGSize
+        minimumSize: CGSize,
+        displayScale: CGFloat = 1
     ) -> CGSize {
+        // 系统字体会随字号调整字形度量。先按屏幕点排版，再映射到图像像素，
+        // 不能用两倍字号的测量结果除以二来推算 Retina 编辑器的内容边界。
+        let scale = max(1, displayScale)
+        if scale != 1 {
+            let size = fittedMultilineSize(
+                text: text,
+                fontSize: fontSize / scale,
+                maximumWidth: maximumWidth / scale,
+                minimumSize: CGSize(width: minimumSize.width / scale, height: minimumSize.height / scale)
+            )
+            return CGSize(width: size.width * scale, height: size.height * scale)
+        }
         let resolvedText = text.isEmpty ? " " : text
         let resolvedMaximumWidth = max(1, maximumWidth)
         let naturalWidth = resolvedText

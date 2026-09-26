@@ -1,4 +1,6 @@
+import AppKit
 import CoreGraphics
+import CoreText
 import ImageIO
 import XCTest
 @testable import MacToolsCore
@@ -172,6 +174,43 @@ final class ScreenshotRendererTests: XCTestCase {
         )
 
         XCTAssertGreaterThan(try coloredPixelCount(in: data), 40)
+    }
+
+    func testExportedMixedTextPreservesDisplayGlyphWidthAtRetinaScale() throws {
+        let text = "你好你好你好 hello 你好"
+        for fontSize: CGFloat in [12, 16, 24] {
+            // 参考来自屏幕点字号的实际字形边界，不用图像像素字号重新排版。
+            let line = CTLineCreateWithAttributedString(NSAttributedString(
+                string: text, attributes: [.font: NSFont.systemFont(ofSize: fontSize)]
+            ) as CFAttributedString)
+            let displayGlyphBounds = CTLineGetImageBounds(line, nil)
+            for scale: CGFloat in [1, 2] {
+                let width = Int(360 * scale)
+                let image = try makeSolidImage(width: width, height: Int(80 * scale), color: CGColor(gray: 0, alpha: 1))
+                let size = ScreenshotTextLayout.fittedMultilineSize(
+                    text: text, fontSize: fontSize * scale, maximumWidth: 320 * scale,
+                    minimumSize: CGSize(width: scale, height: scale), displayScale: scale
+                )
+                let data = try ScreenshotRenderer.pngData(
+                    image: image,
+                    annotations: [.text(
+                        text: text, frame: CGRect(origin: CGPoint(x: 10 * scale, y: 10 * scale), size: size),
+                        color: .red, fontSize: fontSize * scale
+                    )],
+                    textDisplayScale: scale
+                )
+                let pixels = try rgbaPixels(in: data)
+                let redPixelColumns = stride(from: 0, to: pixels.count, by: 4).compactMap { offset -> Int? in
+                    guard pixels[offset] > 140, pixels[offset + 1] < 100, pixels[offset + 2] < 100 else { return nil }
+                    return (offset / 4) % width
+                }
+                let lastDrawnColumn = try XCTUnwrap(redPixelColumns.max())
+                XCTAssertEqual(
+                    CGFloat(lastDrawnColumn), (10 + displayGlyphBounds.maxX) * scale,
+                    accuracy: 3, "导出不能重新选择像素字号，导致末字位置与预览不同"
+                )
+            }
+        }
     }
 
     func testRendererDrawsLabelBubbleAndIndependentLocatorColor() throws {

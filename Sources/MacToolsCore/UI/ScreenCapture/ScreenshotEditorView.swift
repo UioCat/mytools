@@ -56,7 +56,8 @@ struct ScreenshotTextDraft {
                     text: updated.text,
                     fontSize: updated.fontSize,
                     maximumWidth: updated.maximumWidth,
-                    minimumSize: CGSize(width: 1, height: 1)
+                    minimumSize: CGSize(width: 1, height: 1),
+                    displayScale: scale
                 )
             guard let frame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
                 updated.frame,
@@ -2150,7 +2151,8 @@ public struct ScreenshotEditorView: View {
                 text: text,
                 fontSize: draft.fontSize,
                 maximumWidth: draft.maximumWidth,
-                minimumSize: CGSize(width: 1, height: 1)
+                minimumSize: CGSize(width: 1, height: 1),
+                displayScale: scale
             )
     }
 
@@ -2374,7 +2376,8 @@ public struct ScreenshotEditorView: View {
                 text: text,
                 fontSize: fontSize,
                 maximumWidth: maximumWidth,
-                minimumSize: CGSize(width: 1, height: 1)
+                minimumSize: CGSize(width: 1, height: 1),
+                displayScale: imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
             )
             editingDraft = ScreenshotTextDraft(
                 id: item.id,
@@ -2434,7 +2437,8 @@ public struct ScreenshotEditorView: View {
                 text: draft.text,
                 fontSize: draft.fontSize,
                 maximumWidth: draft.maximumWidth,
-                minimumSize: CGSize(width: 1, height: 1)
+                minimumSize: CGSize(width: 1, height: 1),
+                displayScale: imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
             )
             guard let frame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
                 draft.frame,
@@ -2617,7 +2621,8 @@ public struct ScreenshotEditorView: View {
                     text: text,
                     fontSize: resolvedFontSize,
                     maximumWidth: textContentBounds.width,
-                    minimumSize: CGSize(width: 1, height: 1)
+                    minimumSize: CGSize(width: 1, height: 1),
+                    displayScale: scale
                 )
                 guard let resizedFrame = ScreenshotAnnotationEditingPolicy.resizedTextFramePreservingTop(
                     frame,
@@ -2891,12 +2896,17 @@ public struct ScreenshotEditorView: View {
         }
         let annotations = annotationStore.annotations
         let image = image
+        let textDisplayScale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
         isExporting = true
         errorMessage = nil
         Task {
             do {
                 let data = try await Task.detached(priority: .userInitiated) {
-                    try ScreenshotRenderer.pngData(image: image, annotations: annotations)
+                    try ScreenshotRenderer.pngData(
+                        image: image,
+                        annotations: annotations,
+                        textDisplayScale: textDisplayScale
+                    )
                 }.value
                 onCopy(data)
             } catch {
