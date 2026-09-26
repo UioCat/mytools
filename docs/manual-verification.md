@@ -177,7 +177,8 @@ AppKit 测试采用 SwiftPM 隔离执行，必须运行全部发现的测试并�
 - After a successful directional layout, manually move the window away from the target edge and press the same shortcut; confirm it returns to the current display's requested edge before any cross-display movement.
 - Put a Chrome window in `右 1/3`, then trigger `右半屏` and `满屏` at least 20 times each. Confirm every result reaches both the target position and width, with no “position changed but one-third width remained” state. Repeat with a native AppKit app, then rapidly alternate `右 1/3`、`右半屏`、`满屏` and confirm an older delayed request never overwrites the latest layout.
 - 打开设置，在超级右键中拖动长按响应滑块到 `250 毫秒`、`300 毫秒` 和 `350 毫秒`；确认按钮可随拖动移动，松手后保存，并改变长按右键触发速度。
-- Open settings and confirm the translation section shows Aliyun Bailian, model `qwen-mt-turbo`, and a masked API Key after saving.
+- Open settings and confirm the translation section shows Aliyun Bailian, model `qwen-mt-flash`, and a masked API Key after saving.
+- Upgrade an existing default Bailian configuration using `qwen-mt-turbo`; confirm settings load `qwen-mt-flash`, saving and relaunching preserves it, and translation still works. Custom models, providers, and endpoints must remain unchanged.
 - Click the API Key eye button; confirm the saved key can be revealed and hidden again.
 - Long right-click selected text before Bailian credentials are configured; confirm the translation service reports unconfigured state.
 - Start composing Chinese text with IME in the translation tool; confirm the input placeholder disappears before candidate selection is committed.

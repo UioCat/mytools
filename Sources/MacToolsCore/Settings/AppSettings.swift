@@ -313,7 +313,7 @@ public enum SuperRightClickResponseSpeed {
 /// 封装 `TranslationSettings` 在设置与凭据领域中的值语义和相关操作。
 public struct TranslationSettings: Codable, Equatable, Sendable {
     public static let defaultProviderID = "bailian"
-    public static let defaultModel = "qwen-mt-turbo"
+    public static let defaultModel = "qwen-mt-flash"
     public static let defaultEndpointURLString = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
     public var providerID: String
@@ -373,6 +373,12 @@ public struct TranslationSettings: Codable, Equatable, Sendable {
         self.apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? Self.defaultModel
         self.endpointURLString = try container.decodeIfPresent(String.self, forKey: .endpointURLString) ?? Self.defaultEndpointURLString
+        // 升级旧版默认百炼模型，保留用户自定义的模型、提供方和端点。
+        if providerID == Self.defaultProviderID,
+           endpointURLString == Self.defaultEndpointURLString,
+           model == "qwen-mt-turbo" {
+            self.model = Self.defaultModel
+        }
     }
 
     /// 转换 `encode` 接收的设置与凭据领域数据，并返回规范化结果。

@@ -17,7 +17,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(settings.superRightClick.isEnabled)
         XCTAssertEqual(settings.superRightClick.longPressMilliseconds, 250)
         XCTAssertEqual(settings.translation.providerID, "bailian")
-        XCTAssertEqual(settings.translation.model, "qwen-mt-turbo")
+        XCTAssertEqual(settings.translation.model, "qwen-mt-flash")
         XCTAssertEqual(settings.translation.endpointURLString, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")
         XCTAssertEqual(settings.translation.apiKey, "")
         XCTAssertFalse(settings.translation.isConfigured)
@@ -58,6 +58,52 @@ final class SettingsStoreTests: XCTestCase {
             "居中",
             "满屏"
         ])
+    }
+
+    func testTranslationSettingsWithoutModelUseFlash() throws {
+        let settings = try JSONDecoder().decode(TranslationSettings.self, from: Data("{}".utf8))
+
+        XCTAssertEqual(settings.model, "qwen-mt-flash")
+        XCTAssertEqual(settings.providerID, TranslationSettings.defaultProviderID)
+        XCTAssertEqual(settings.endpointURLString, TranslationSettings.defaultEndpointURLString)
+    }
+
+    func testLegacyDefaultTranslationModelMigratesAndPersistsFlash() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SettingsStore(fileURL: directory.appendingPathComponent("settings.json"))
+        var legacy = AppSettings.defaults
+        legacy.translation.model = "qwen-mt-turbo"
+        try store.save(legacy)
+
+        let loaded = try store.load()
+
+        XCTAssertEqual(loaded.translation.model, "qwen-mt-flash")
+        var expected = legacy
+        expected.translation.model = "qwen-mt-flash"
+        XCTAssertEqual(loaded, expected)
+        var configured = loaded.translation
+        configured.apiKey = "sk-test-key"
+        XCTAssertEqual(configured.bailianConfiguration?.model, "qwen-mt-flash")
+        try store.save(loaded)
+        XCTAssertEqual(try store.load(), loaded)
+    }
+
+    func testTranslationModelMigrationPreservesCustomConfigurations() throws {
+        let configurations = [
+            TranslationSettings(model: "qwen-mt-lite"),
+            TranslationSettings(model: "qwen-mt-flash"),
+            TranslationSettings(providerID: "custom", model: "qwen-mt-turbo"),
+            TranslationSettings(model: "qwen-mt-turbo", endpointURLString: "https://example.com/v1/chat/completions")
+        ]
+
+        for settings in configurations {
+            let decoded = try JSONDecoder().decode(
+                TranslationSettings.self,
+                from: JSONEncoder().encode(settings)
+            )
+            XCTAssertEqual(decoded, settings)
+        }
     }
 
     func testLegacyDefaultWindowLayoutAddsVerticalModesAndShortcuts() throws {

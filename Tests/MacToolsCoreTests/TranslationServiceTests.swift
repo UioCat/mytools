@@ -22,7 +22,7 @@ final class TranslationServiceTests: XCTestCase {
         let provider = BailianTranslationProvider(
             configuration: BailianTranslationConfiguration(
                 apiKey: "sk-test-key",
-                model: "qwen-mt-turbo",
+                model: "qwen-mt-flash",
                 endpointURL: URL(string: "https://example.com/v1/chat/completions")!
             ),
             httpClient: httpClient
@@ -44,7 +44,7 @@ final class TranslationServiceTests: XCTestCase {
 
         let body = try XCTUnwrap(sentRequest.httpBody)
         let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        XCTAssertEqual(json?["model"] as? String, "qwen-mt-turbo")
+        XCTAssertEqual(json?["model"] as? String, "qwen-mt-flash")
 
         let messages = try XCTUnwrap(json?["messages"] as? [[String: Any]])
         XCTAssertEqual(messages.first?["role"] as? String, "user")
@@ -62,7 +62,7 @@ final class TranslationServiceTests: XCTestCase {
         let provider = BailianTranslationProvider(
             configuration: BailianTranslationConfiguration(
                 apiKey: "sk-test-key",
-                model: "qwen-mt-turbo",
+                model: "qwen-mt-flash",
                 endpointURL: URL(string: "https://example.com/v1/chat/completions")!
             ),
             httpClient: httpClient
@@ -92,7 +92,7 @@ final class TranslationServiceTests: XCTestCase {
         let provider = BailianTranslationProvider(
             configuration: BailianTranslationConfiguration(
                 apiKey: "sk-test-key",
-                model: "qwen-mt-turbo",
+                model: "qwen-mt-flash",
                 endpointURL: URL(string: "https://example.com/v1/chat/completions")!
             ),
             httpClient: httpClient

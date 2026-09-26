@@ -68,7 +68,7 @@ MacTools 默认不显示 Dock 图标，需要时通过菜单栏或全局快捷�
 
 ### 百炼翻译
 
-- 使用阿里云百炼 `qwen-mt-turbo` 模型和 DashScope OpenAI 兼容接口。
+- 使用阿里云百炼 `qwen-mt-flash` 模型和 DashScope OpenAI 兼容接口。
 - 自动判断翻译方向：中文译为英文，其他语言译为中文。
 - 原文和译文都可使用 macOS 系统音色朗读，也可以一键复制译文。
 - 使用前需在设置中填写自己的 `DASHSCOPE_API_KEY`。
