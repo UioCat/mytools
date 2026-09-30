@@ -300,22 +300,27 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         try cancellation.check()
         for replica in unappliedPeerReplicas {
             try localRepository.apply(tombstones: replica.tombstones)
-            let legacyRemovals = replica.clipboard.records.compactMap { record in
+        }
+        let tombstonedRecordNames = try localRepository.tombstonedRecordNames(
+            generation: generation
+        )
+        let favoriteRemovals: [SyncFavoriteRemoval] = unappliedPeerReplicas.flatMap { replica -> [SyncFavoriteRemoval] in
+            replica.clipboard.favoriteRemovals + replica.clipboard.records.compactMap { record -> SyncFavoriteRemoval? in
                 !record.isFavorite && record.favoriteClock.counter > 0
                     ? SyncFavoriteRemoval(contentID: record.contentID, favoriteClock: record.favoriteClock)
                     : nil
             }
-            try localRepository.applyFavoriteRemovals(
-                replica.clipboard.favoriteRemovals + legacyRemovals, generation: generation,
-                historyLimit: configuration.historyLimit
-            )
         }
+        try localRepository.applyFavoriteRemovals(
+            favoriteRemovals, generation: generation, historyLimit: configuration.historyLimit,
+            pruneHistory: false,
+            mergingFavoriteRecords: peerReplicas.flatMap { $0.clipboard.records }.filter {
+                !tombstonedRecordNames.contains($0.recordName)
+            }
+        )
         let removalsByContentID = Dictionary(uniqueKeysWithValues: try localRepository.favoriteRemovals(
             generation: generation
         ).map { ($0.contentID, $0) })
-        let tombstonedRecordNames = try localRepository.tombstonedRecordNames(
-            generation: generation
-        )
         var draft = try localRepository.exportDraft(
             deviceID: deviceID,
             generation: generation,
@@ -410,7 +415,8 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                     ),
                     contents: [key.contentID: contentData],
                     payloadStore: payloadStore,
-                    historyLimit: configuration.historyLimit
+                    historyLimit: configuration.historyLimit,
+                    pruneHistory: false
                 )
             }
             remoteSettings = try localRepository.apply(preferences: replica.preferences) ?? remoteSettings
@@ -431,12 +437,20 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             }
         }
 
+        // 内容组或下载尚未完成时不裁剪，避免删除后续较新收藏合并还需要的本机字段与载荷。
+        try cancellation.check()
+        if incompleteDeviceIDs.isEmpty && replicaFailures.isEmpty
+            && !missingRemoteContent && !hasInvalidRemoteContent {
+            try localRepository.completeClipboardImport(historyLimit: configuration.historyLimit)
+        }
+
         // 发布必须描述合并后的本地状态；收到远端记录本身不会产生本地 outbox。
         draft = try localRepository.exportDraft(
             deviceID: deviceID, generation: generation, revision: nextRevision,
             scope: .favoritesOnly
         )
-        unavailableLocalRecordNames.formUnion(draft.unavailableClipboardRecordNames)
+        // 远端导入可能已恢复本机载荷；以合并后草稿重新判断，再保留后续准备阶段的失败项。
+        unavailableLocalRecordNames = draft.unavailableClipboardRecordNames
         let publishableDraft = draft
         let ownReplica = replicas.first { $0.manifest.deviceID == deviceID }
         let snapshotChanged = try ownReplica.map {

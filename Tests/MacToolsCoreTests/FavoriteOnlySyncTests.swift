@@ -367,6 +367,266 @@ final class FavoriteOnlySyncTests: XCTestCase {
         XCTAssertEqual(try fixture.clipboard.countNormalItems(), 3)
     }
 
+    func testSameSnapshotCancellationMustPreserveNewerLocalTagsBeforeRefavorite() throws {
+        for containsRemoval in [false, true] {
+            let fixture = try FavoriteSyncFixture()
+            defer { fixture.remove() }
+            let id = try fixture.capture("fixture-probe-refavorite-snapshot", favorite: true, at: Date(timeIntervalSince1970: 100))
+            try fixture.clipboard.setFavorite(id: id, isFavorite: true)
+            for _ in 0..<5 { try fixture.clipboard.setTags(id: id, tags: ["local-new"]) }
+            let localBefore = try XCTUnwrap(fixture.clipboard.item(id: id))
+            XCTAssertEqual(localBefore.favoriteClock.counter, 1)
+            XCTAssertEqual(localBefore.tagsClock.counter, 5)
+            for index in 0..<500 {
+                _ = try fixture.capture("fixture-probe-newer-ordinary-\(index)", favorite: false, at: Date(timeIntervalSince1970: Double(200 + index)))
+            }
+            var bundle = try fixture.sync.exportBundle(deviceID: "probe-refavorite-peer", generation: 1, revision: 1, scope: .allHistory)
+            let original = try XCTUnwrap(bundle.clipboard.records.first)
+            bundle.clipboard.records[0].favoriteClock = .init(counter: 3, deviceID: "probe-refavorite-peer")
+            bundle.clipboard.records[0].tags = []
+            bundle.clipboard.records[0].tagsClock = .zero
+            if containsRemoval {
+                bundle.clipboard.favoriteRemovals = [.init(contentID: original.contentID, favoriteClock: .init(counter: 2, deviceID: "probe-cancel-peer"))]
+            }
+            let contents = Dictionary(uniqueKeysWithValues: bundle.contents.map { ($0.contentID, $0.data) })
+            try fixture.sync.apply(clipboard: bundle.clipboard, contents: contents, payloadStore: fixture.payloads, historyLimit: 500)
+            let merged = try XCTUnwrap(fixture.clipboard.item(id: id))
+            XCTAssertTrue(merged.isFavorite)
+            XCTAssertEqual(merged.favoriteClock.counter, 3)
+            XCTAssertEqual(merged.tags, ["local-new"], "containsRemoval=\(containsRemoval): newer independent local tags must survive")
+            XCTAssertEqual(merged.tagsClock, localBefore.tagsClock, "containsRemoval=\(containsRemoval): newer local tag clock must survive")
+        }
+    }
+
+    func testRunnerTwoPeersCancellationMustPreserveLocalFieldsBeforeRefavorite() throws {
+        let fixture = try FavoriteSyncFixture()
+        defer { fixture.remove() }
+        let id = try fixture.capture("fixture-probe-runner-refavorite", favorite: true, at: Date(timeIntervalSince1970: 100))
+        try fixture.clipboard.setFavorite(id: id, isFavorite: true)
+        for _ in 0..<5 {
+            try fixture.clipboard.setTags(id: id, tags: ["local-new"])
+            try fixture.clipboard.setPinned(id: id, isPinned: false)
+        }
+        let localBefore = try XCTUnwrap(fixture.clipboard.item(id: id))
+        XCTAssertEqual(localBefore.favoriteClock.counter, 1)
+        XCTAssertEqual(localBefore.tagsClock.counter, 5)
+        XCTAssertEqual(localBefore.pinnedClock.counter, 5)
+        for index in 0..<500 {
+            _ = try fixture.capture("fixture-probe-runner-ordinary-\(index)", favorite: false, at: Date(timeIntervalSince1970: Double(200 + index)))
+        }
+        var cancel = try fixture.sync.exportBundle(deviceID: "probe-cancel-peer", generation: 1, revision: 1, scope: .allHistory)
+        var refavorite = try fixture.sync.exportBundle(deviceID: "probe-refavorite-peer", generation: 1, revision: 1, scope: .allHistory)
+        let original = try XCTUnwrap(refavorite.clipboard.records.first)
+        cancel.clipboard.records = []
+        cancel.clipboard.favoriteRemovals = [.init(contentID: original.contentID, favoriteClock: .init(counter: 2, deviceID: "probe-cancel-peer"))]
+        cancel.contents = []
+        refavorite.clipboard.records[0].favoriteClock = .init(counter: 3, deviceID: "probe-refavorite-peer")
+        refavorite.clipboard.records[0].tags = ["old-tag"]
+        refavorite.clipboard.records[0].tagsClock = .init(counter: 1, deviceID: "probe-refavorite-peer")
+        refavorite.clipboard.records[0].isPinned = true
+        refavorite.clipboard.records[0].pinnedClock = .init(counter: 1, deviceID: "probe-refavorite-peer")
+        _ = try fixture.store.write(cancel, seenRevisions: ["probe-cancel-peer": 1], updatedAt: Date(timeIntervalSince1970: 1_000))
+        _ = try fixture.store.write(refavorite, seenRevisions: ["probe-refavorite-peer": 1], updatedAt: Date(timeIntervalSince1970: 1_000))
+        let result = try fixture.run()
+        guard case .synced = result.status else { XCTFail("Synthetic runner must complete a real two-peer sync"); return }
+        let merged = try XCTUnwrap(fixture.clipboard.item(id: id))
+        XCTAssertTrue(merged.isFavorite)
+        XCTAssertEqual(merged.favoriteClock.counter, 3)
+        XCTAssertEqual(merged.tags, ["local-new"], "same-cycle cancellation must not discard newer local tags")
+        XCTAssertEqual(merged.tagsClock, localBefore.tagsClock)
+        XCTAssertFalse(merged.isPinned, "same-cycle cancellation must not discard newer local unpin")
+        XCTAssertEqual(merged.pinnedClock, localBefore.pinnedClock)
+    }
+
+    func testIncompleteSnapshotPreservesFieldsThroughForegroundPruningAndRetry() throws {
+        for corruptContent in [false, true] {
+            let fixture = try FavoriteSyncFixture()
+            defer { fixture.remove() }
+            let id = try fixture.capture("fixture-incomplete-refavorite", favorite: true)
+            let before = try fixture.prepareIndependentFieldsAndFullHistory(id: id)
+            let bundle = try fixture.refavoriteBundle(id: id)
+            let content = try XCTUnwrap(bundle.contents.first)
+            if corruptContent {
+                XCTAssertThrowsError(try fixture.sync.apply(
+                    clipboard: bundle.clipboard, contents: [content.contentID: Data("invalid-json".utf8)],
+                    payloadStore: fixture.payloads, historyLimit: 500
+                ))
+            } else {
+                try fixture.sync.apply(clipboard: bundle.clipboard, contents: [:], payloadStore: fixture.payloads, historyLimit: 500)
+            }
+            _ = try fixture.capture("fixture-foreground-pressure", favorite: false, at: Date(timeIntervalSince1970: 1_000))
+            _ = try fixture.clipboard.enforceHistoryLimit(500)
+            let pending = try XCTUnwrap(fixture.clipboard.item(id: id))
+            XCTAssertTrue(pending.isFavorite)
+            XCTAssertEqual(pending.favoriteClock.counter, 3)
+            XCTAssertEqual(pending.tagsClock, before.tagsClock)
+            XCTAssertEqual(pending.pinnedClock, before.pinnedClock)
+            try fixture.sync.apply(
+                clipboard: bundle.clipboard, contents: [content.contentID: content.data],
+                payloadStore: fixture.payloads, historyLimit: 500
+            )
+            let merged = try XCTUnwrap(fixture.clipboard.item(id: id))
+            XCTAssertEqual(merged.tags, ["local-new"])
+            XCTAssertEqual(merged.tagsClock, before.tagsClock)
+            XCTAssertFalse(merged.isPinned)
+            XCTAssertEqual(merged.pinnedClock, before.pinnedClock)
+            XCTAssertEqual(try fixture.clipboard.countNormalItems(), 500)
+        }
+    }
+
+    func testEarlierContentGroupDoesNotPruneRefavoriteFieldsBeforeLaterMerge() throws {
+        let fixture = try FavoriteSyncFixture()
+        defer { fixture.remove() }
+        let id = try fixture.capture("fixture-ordered-refavorite", favorite: true)
+        let before = try fixture.prepareIndependentFieldsAndFullHistory(id: id)
+        var bundle = try fixture.refavoriteBundle(id: id)
+        let original = try XCTUnwrap(bundle.clipboard.records.first)
+        let earlierText = "fixture-ordered-new-favorite-0"
+        let earlierID = ClipboardContentHasher.sha256String(for: Data("text:\(earlierText)".utf8))
+        XCTAssertLessThan(earlierID, original.contentID, "Runner must import this distinct content group first")
+        var earlierRecord = original
+        earlierRecord.recordName = UUID().uuidString
+        earlierRecord.contentID = earlierID
+        earlierRecord.displayTitle = earlierText
+        earlierRecord.searchableText = earlierText
+        bundle.clipboard.records.append(earlierRecord)
+        bundle.contents.append(.init(contentID: earlierID, kind: .text, data: try SyncSnapshotCodec.encode(
+            SyncTextContentObject(contentID: earlierID, kind: .text, text: earlierText, byteCount: Int64(Data(earlierText.utf8).count))
+        )))
+        _ = try fixture.store.write(bundle, seenRevisions: [bundle.clipboard.deviceID: 1], updatedAt: Date(timeIntervalSince1970: 1_000))
+        guard case .synced = try fixture.run().status else { return XCTFail("All content groups must finish before pruning") }
+        XCTAssertNotNil(try fixture.clipboard.item(id: try XCTUnwrap(UUID(uuidString: earlierRecord.recordName))))
+        let merged = try XCTUnwrap(fixture.clipboard.item(id: id))
+        XCTAssertEqual(merged.tags, ["local-new"])
+        XCTAssertEqual(merged.tagsClock, before.tagsClock)
+        XCTAssertFalse(merged.isPinned)
+        XCTAssertEqual(merged.pinnedClock, before.pinnedClock)
+        XCTAssertEqual(try fixture.clipboard.countNormalItems(), 500)
+    }
+
+    func testRunnerMissingRefavoritePayloadPreservesFieldsThroughCaptureAndRetry() throws {
+        let fixture = try FavoriteSyncFixture()
+        defer { fixture.remove() }
+        let id = try fixture.capturePNG()
+        let before = try fixture.prepareIndependentFieldsAndFullHistory(id: id)
+        let bundle = try fixture.refavoriteBundle(id: id)
+        let content = try XCTUnwrap(bundle.contents.first)
+        _ = try fixture.store.write(bundle, seenRevisions: [bundle.clipboard.deviceID: 1], updatedAt: Date(timeIntervalSince1970: 1_000))
+        let sharedURL = try fixture.store.contentLocation(contentID: content.contentID, kind: content.kind)
+        try FileManager.default.removeItem(at: sharedURL)
+        try FileManager.default.removeItem(atPath: try XCTUnwrap(before.cachedFilePath))
+        guard case .waitingForDownload = try fixture.run().status else { return XCTFail("Missing newer favorite payload must remain retryable") }
+        XCTAssertTrue(try fixture.sync.hasPendingChanges(), "Unavailable local favorite must remain in the outbox")
+        _ = try fixture.capture("fixture-missing-payload-foreground", favorite: false, at: Date(timeIntervalSince1970: 1_000))
+        _ = try fixture.clipboard.enforceHistoryLimit(500)
+        let pending = try XCTUnwrap(fixture.clipboard.item(id: id))
+        XCTAssertTrue(pending.isFavorite)
+        XCTAssertEqual(pending.favoriteClock.counter, 3)
+        XCTAssertEqual(pending.tagsClock, before.tagsClock)
+        XCTAssertEqual(pending.pinnedClock, before.pinnedClock)
+        try content.data.write(to: sharedURL, options: .atomic)
+        guard case .synced = try fixture.run().status else { return XCTFail("Downloaded payload must complete the deferred import") }
+        let merged = try XCTUnwrap(fixture.clipboard.item(id: id))
+        XCTAssertEqual(merged.tags, ["local-new"])
+        XCTAssertEqual(merged.tagsClock, before.tagsClock)
+        XCTAssertFalse(merged.isPinned)
+        XCTAssertEqual(merged.pinnedClock, before.pinnedClock)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(merged.cachedFilePath)))
+        XCTAssertEqual(try fixture.clipboard.countNormalItems(), 500)
+        XCTAssertTrue(try fixture.sync.exportDraft(deviceID: fixture.id, generation: 1, revision: 3, scope: .allHistory).unavailableClipboardRecordNames.isEmpty)
+        XCTAssertFalse(try fixture.sync.hasPendingChanges(), "Restored and published favorite must be acknowledged in the same cycle")
+    }
+
+    func testRunnerCancellationAfterFavoritePremergePreservesFieldsForRetry() throws {
+        let fixture = try FavoriteSyncFixture()
+        defer { fixture.remove() }
+        let id = try fixture.capturePNG()
+        let before = try fixture.prepareIndependentFieldsAndFullHistory(id: id)
+        let bundle = try fixture.refavoriteBundle(id: id)
+        let content = try XCTUnwrap(bundle.contents.first)
+        _ = try fixture.store.write(bundle, seenRevisions: [bundle.clipboard.deviceID: 1], updatedAt: Date(timeIntervalSince1970: 1_000))
+        let sharedURL = try fixture.store.contentLocation(contentID: content.contentID, kind: content.kind)
+        try FileManager.default.removeItem(at: sharedURL)
+        try FileManager.default.removeItem(atPath: try XCTUnwrap(before.cachedFilePath))
+        let cancellation = FavoriteSyncCancellationFlag()
+        XCTAssertThrowsError(try fixture.run(
+            requestDownload: { _ in cancellation.cancel() },
+            cancellation: .init(isCancelled: { cancellation.isCancelled })
+        )) { error in
+            XCTAssertEqual(error as? SyncCycleCancellationError, .cancelled)
+        }
+        XCTAssertTrue(try fixture.sync.hasPendingChanges(), "Cancelled cycle must not acknowledge local changes")
+        _ = try fixture.capture("fixture-cancelled-foreground", favorite: false, at: Date(timeIntervalSince1970: 1_000))
+        _ = try fixture.clipboard.enforceHistoryLimit(500)
+        let pending = try XCTUnwrap(fixture.clipboard.item(id: id))
+        XCTAssertTrue(pending.isFavorite)
+        XCTAssertEqual(pending.tagsClock, before.tagsClock)
+        XCTAssertEqual(pending.pinnedClock, before.pinnedClock)
+        XCTAssertEqual(try fixture.sync.favoriteRemovals(generation: 1).first?.favoriteClock.counter, 2)
+        try content.data.write(to: sharedURL, options: .atomic)
+        guard case .synced = try fixture.run().status else { return XCTFail("A new cycle must complete after cancellation") }
+        let merged = try XCTUnwrap(fixture.clipboard.item(id: id))
+        XCTAssertEqual(merged.tags, ["local-new"])
+        XCTAssertEqual(merged.tagsClock, before.tagsClock)
+        XCTAssertFalse(merged.isPinned)
+        XCTAssertEqual(merged.pinnedClock, before.pinnedClock)
+        XCTAssertEqual(try fixture.clipboard.countNormalItems(), 500)
+        XCTAssertTrue(try fixture.sync.exportDraft(deviceID: fixture.id, generation: 1, revision: 2, scope: .allHistory).unavailableClipboardRecordNames.isEmpty)
+        XCTAssertFalse(try fixture.sync.hasPendingChanges())
+    }
+
+    func testUnrestoredLocalPayloadRemainsFailedAndPendingAfterFinalExport() throws {
+        let fixture = try FavoriteSyncFixture()
+        defer { fixture.remove() }
+        let id = try fixture.capturePNG()
+        let before = try XCTUnwrap(fixture.clipboard.item(id: id))
+        try FileManager.default.removeItem(atPath: try XCTUnwrap(before.cachedFilePath))
+        guard case .failed = try fixture.run().status else { return XCTFail("A payload still unavailable after merging must not report success") }
+        XCTAssertTrue(try fixture.sync.hasPendingChanges())
+        XCTAssertEqual(try fixture.sync.exportDraft(deviceID: fixture.id, generation: 1, revision: 2, scope: .allHistory).unavailableClipboardRecordNames, [id.uuidString])
+        XCTAssertTrue(try XCTUnwrap(fixture.store.replicas(generation: 1).first { $0.manifest.deviceID == fixture.id }).clipboard.records.isEmpty)
+    }
+
+    func testPersistedNewerCancellationRejectsLateFavoriteForRecapturedContent() throws {
+        let fixture = try FavoriteSyncFixture()
+        defer { fixture.remove() }
+        let id = try fixture.capture("fixture-persisted-cancel-refavorite", favorite: true)
+        var bundle = try fixture.refavoriteBundle(id: id)
+        let content = try XCTUnwrap(bundle.contents.first)
+        let removal = SyncFavoriteRemoval(contentID: content.contentID, favoriteClock: .init(counter: 4, deviceID: "cancel-peer"))
+        try fixture.sync.applyFavoriteRemovals([removal], generation: 1, historyLimit: 0)
+        XCTAssertNil(try fixture.clipboard.item(id: id))
+        let recapturedID = try fixture.capture("fixture-persisted-cancel-refavorite", favorite: false)
+        bundle.clipboard.favoriteRemovals = []
+        try fixture.sync.apply(
+            clipboard: bundle.clipboard, contents: [content.contentID: content.data],
+            payloadStore: fixture.payloads, historyLimit: 500
+        )
+        let item = try XCTUnwrap(fixture.clipboard.item(id: recapturedID))
+        XCTAssertFalse(item.isFavorite)
+        XCTAssertEqual(item.favoriteClock, .zero)
+        XCTAssertEqual(try fixture.sync.favoriteRemovals(generation: 1), [removal])
+        XCTAssertTrue(try fixture.sync.exportBundle(deviceID: fixture.id, generation: 1, revision: 2, scope: .allHistory).clipboard.records.isEmpty)
+    }
+
+    func testNewerCancellationWinsOverRefavoriteAndPrunesOnlyAfterCompleteImport() throws {
+        let fixture = try FavoriteSyncFixture()
+        defer { fixture.remove() }
+        let id = try fixture.capture("fixture-latest-cancellation", favorite: true)
+        _ = try fixture.prepareIndependentFieldsAndFullHistory(id: id)
+        var bundle = try fixture.refavoriteBundle(id: id)
+        let content = try XCTUnwrap(bundle.contents.first)
+        let removal = SyncFavoriteRemoval(contentID: content.contentID, favoriteClock: .init(counter: 4, deviceID: "cancel-peer"))
+        bundle.clipboard.favoriteRemovals = [removal]
+        try fixture.sync.apply(
+            clipboard: bundle.clipboard, contents: [content.contentID: content.data],
+            payloadStore: fixture.payloads, historyLimit: 500
+        )
+        XCTAssertNil(try fixture.clipboard.item(id: id))
+        XCTAssertEqual(try fixture.clipboard.countNormalItems(), 500)
+        XCTAssertEqual(try fixture.sync.favoriteRemovals(generation: 1), [removal])
+    }
+
     private static func legacyProtocolReader(at url: URL) throws -> SyncProtocolDescriptor {
         let descriptor = try SyncSnapshotCodec.decode(SyncProtocolDescriptor.self, from: Data(contentsOf: url))
         guard descriptor.protocolVersion == 1 else { throw DriveSyncStoreError.incompatibleProtocol(found: descriptor.protocolVersion) }
@@ -421,16 +681,47 @@ private final class FavoriteSyncFixture {
         return id
     }
 
-    func run(now: Date = Date(timeIntervalSince1970: 2_000_000_000)) throws -> DriveSyncCycleResult {
+    func run(
+        now: Date = Date(timeIntervalSince1970: 2_000_000_000),
+        requestDownload: @escaping DriveSyncCycleRunner.DownloadRequester = { _ in },
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> DriveSyncCycleResult {
         let ledger = sync.snapshotPublicationLedger
         let runner = DriveSyncCycleRunner(
             localRepository: sync, deviceOverrideRepository: overrides, payloadStore: payloads,
-            currentDate: { now }, deviceName: { "Fixture Mac" }, requestDownload: { _ in },
+            currentDate: { now }, deviceName: { "Fixture Mac" }, requestDownload: requestDownload,
             makeStore: { DriveSyncStore(rootURL: $0, publicationLedger: ledger) }
         )
         return try runner.run(rootURL: root, configuration: .init(
             historyLimit: 500, clipboardScope: .allHistory, storageLimit: .megabytes256
-        ))
+        ), cancellation: cancellation)
+    }
+
+    func prepareIndependentFieldsAndFullHistory(id: UUID) throws -> ClipboardItem {
+        try clipboard.setFavorite(id: id, isFavorite: true)
+        for _ in 0..<5 {
+            try clipboard.setTags(id: id, tags: ["local-new"])
+            try clipboard.setPinned(id: id, isPinned: false)
+        }
+        for index in 0..<500 {
+            _ = try capture("fixture-pressure-ordinary-\(index)", favorite: false, at: Date(timeIntervalSince1970: Double(200 + index)))
+        }
+        return try XCTUnwrap(clipboard.item(id: id))
+    }
+
+    func refavoriteBundle(id: UUID) throws -> SyncExportBundle {
+        var bundle = try sync.exportBundle(deviceID: "refavorite-peer", generation: 1, revision: 1, scope: .allHistory)
+        let index = try XCTUnwrap(bundle.clipboard.records.firstIndex { $0.recordName == id.uuidString })
+        bundle.clipboard.records[index].favoriteClock = .init(counter: 3, deviceID: "refavorite-peer")
+        bundle.clipboard.records[index].tags = ["old-tag"]
+        bundle.clipboard.records[index].tagsClock = .init(counter: 1, deviceID: "refavorite-peer")
+        bundle.clipboard.records[index].isPinned = true
+        bundle.clipboard.records[index].pinnedClock = .init(counter: 1, deviceID: "refavorite-peer")
+        bundle.clipboard.favoriteRemovals = [.init(
+            contentID: bundle.clipboard.records[index].contentID,
+            favoriteClock: .init(counter: 2, deviceID: "cancel-peer")
+        )]
+        return bundle
     }
 
     @discardableResult
@@ -462,6 +753,13 @@ private final class FavoriteSyncFixture {
     }
 
     func remove() { try? FileManager.default.removeItem(at: directory) }
+}
+
+private final class FavoriteSyncCancellationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    var isCancelled: Bool { lock.withLock { cancelled } }
+    func cancel() { lock.withLock { cancelled = true } }
 }
 
 private struct RejectProtocolWrite: SyncFileCoordinating {
