@@ -468,11 +468,15 @@ public enum AppAppearanceMode: String, Codable, CaseIterable, Equatable, Sendabl
 
 /// 描述 `ClipboardSyncScope` 在设置与凭据领域中可取的状态、选项或错误。
 public enum ClipboardSyncScope: String, Codable, CaseIterable, Equatable, Sendable {
+    case favoritesOnly
+    // 保留旧值用于读取旧设置和旧客户端数据；运行时始终使用 favoritesOnly。
     case favoritesAndPinned
     case allHistory
 
     public var displayName: String {
         switch self {
+        case .favoritesOnly:
+            return "仅收藏"
         case .favoritesAndPinned:
             return "仅收藏与置顶"
         case .allHistory:
@@ -484,24 +488,25 @@ public enum ClipboardSyncScope: String, Codable, CaseIterable, Equatable, Sendab
 /// 封装 `SyncSettings` 在设置与凭据领域中的值语义和相关操作。
 public struct SyncSettings: Codable, Equatable, Sendable {
     public var isEnabled: Bool
+    // 旧公开字段用于源码兼容，不写入新设置；同步实现固定收藏且不设应用容量上限。
     public var clipboardScope: ClipboardSyncScope
     public var storageLimit: SyncStorageLimit
 
     public static let defaults = SyncSettings(
         isEnabled: false,
-        clipboardScope: .favoritesAndPinned,
+        clipboardScope: .favoritesOnly,
         storageLimit: .default
     )
 
     /// 创建 `SyncSettings`，保存传入依赖并建立初始状态。
     public init(
         isEnabled: Bool,
-        clipboardScope: ClipboardSyncScope,
+        clipboardScope: ClipboardSyncScope = .favoritesOnly,
         storageLimit: SyncStorageLimit = .default
     ) {
         self.isEnabled = isEnabled
-        self.clipboardScope = clipboardScope
-        self.storageLimit = storageLimit
+        self.clipboardScope = .favoritesOnly
+        self.storageLimit = .default
     }
 
     /// 描述 `CodingKeys` 在设置与凭据领域中可取的状态、选项或错误。
@@ -515,14 +520,14 @@ public struct SyncSettings: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
-        self.clipboardScope = try container.decodeIfPresent(
-            ClipboardSyncScope.self,
-            forKey: .clipboardScope
-        ) ?? .favoritesAndPinned
-        self.storageLimit = try container.decodeIfPresent(
-            SyncStorageLimit.self,
-            forKey: .storageLimit
-        ) ?? .default
+        // 旧范围和空间上限只作为兼容字段读取，不再控制同步行为。
+        self.clipboardScope = .favoritesOnly
+        self.storageLimit = .default
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isEnabled, forKey: .isEnabled)
     }
 }
 
@@ -534,6 +539,13 @@ public struct SyncStorageUsage: Equatable, Sendable {
     public var imageBytes: Int64
     public var textBytes: Int64
     public var metadataBytes: Int64
+
+    /// 同步占用统一使用 MB；小于一个显示刻度的非零空间不会误报为零。
+    public static func formattedUsedMegabytes(_ usedBytes: Int64) -> String {
+        let megabytes = Double(max(0, usedBytes)) / 1_024 / 1_024
+        if usedBytes > 0 && megabytes < 0.1 { return "已占用 < 0.1 MB" }
+        return String(format: "已占用 %.1f MB", megabytes)
+    }
 
     public static let empty = SyncStorageUsage(
         usedBytes: 0,
@@ -570,7 +582,6 @@ public enum SyncStatus: Equatable, Sendable {
     case syncing
     case waitingForDownload
     case synced(lastSyncAt: Date?, usage: SyncStorageUsage)
-    case capacityFull(usage: SyncStorageUsage)
     case folderUnavailable
     case protocolIncompatible
     case conflictNeedsAttention
@@ -584,7 +595,6 @@ public enum SyncStatus: Equatable, Sendable {
         case .syncing: return "正在同步"
         case .synced: return "已同步"
         case .waitingForDownload: return "等待 iCloud 下载"
-        case .capacityFull: return "同步空间已满"
         case .folderUnavailable: return "同步文件夹不可用"
         case .protocolIncompatible: return "同步协议版本不兼容"
         case .conflictNeedsAttention: return "同步数据存在版本冲突"
@@ -594,7 +604,7 @@ public enum SyncStatus: Equatable, Sendable {
 
     public var storageUsage: SyncStorageUsage? {
         switch self {
-        case let .synced(_, usage), let .capacityFull(usage): return usage
+        case let .synced(_, usage): return usage
         default: return nil
         }
     }

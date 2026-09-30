@@ -132,7 +132,7 @@ final class DriveSyncCycleRunnerTests: XCTestCase {
                 lastUsedAt: nil,
                 useCount: 0,
                 isPinned: false,
-                isFavorite: false
+                isFavorite: true
             ),
             data: imageData
         )

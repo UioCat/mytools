@@ -38,8 +38,6 @@ struct SyncSettingsEditor: View {
     let folderIsUbiquitous: Bool?
     let devices: [SyncDeviceSummary]
     @Binding var isEnabled: Bool
-    @Binding var clipboardScope: ClipboardSyncScope
-    @Binding var storageLimit: SyncStorageLimit
     @Binding var saveMessage: String?
     let saveSettings: (SyncSettings) throws -> Void
     let syncNow: () -> Void
@@ -50,6 +48,7 @@ struct SyncSettingsEditor: View {
     @State private var isDeleteConfirmationPresented = false
     @State private var isFolderSelectionRequiredPresented = false
     @State private var devicePendingRemoval: SyncDeviceSummary?
+    @State private var lastStorageUsage: SyncStorageUsage?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -143,17 +142,11 @@ struct SyncSettingsEditor: View {
                         .font(.system(size: 12, weight: .medium))
                 }
 
-                if let usage = status.storageUsage {
-                    HStack(spacing: 6) {
-                        Text(Self.byteCountFormatter.string(fromByteCount: usage.usedBytes))
-                        Text("/")
-                        Text(Self.byteCountFormatter.string(fromByteCount: usage.capacityBytes))
-                        Spacer(minLength: 8)
-                        Text("普通历史 \(usage.ordinaryHistoryCount) / 500")
-                    }
+                Text(storageUsageText)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(MacToolsGlassTheme.textSecondary)
-                }
+                    .monospacedDigit()
+
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
@@ -162,46 +155,22 @@ struct SyncSettingsEditor: View {
                 .overlay(MacToolsGlassTheme.divider)
                 .opacity(0.9)
 
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 10) {
-                    Text("剪贴板范围")
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("仅同步收藏与设置")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(MacToolsGlassTheme.textPrimary)
-
-                    Spacer(minLength: 10)
-
+                    Spacer(minLength: 8)
                     if let saveMessage {
                         Text(saveMessage)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(MacToolsGlassTheme.textSecondary)
                     }
                 }
-
-                Picker("剪贴板同步范围", selection: scopeBinding) {
-                    ForEach(ClipboardSyncScope.allCases, id: \.self) { scope in
-                        Text(scope.displayName).tag(scope)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .disabled(!isEnabled || folderPath == nil)
-
-                HStack(spacing: 10) {
-                    Text("同步空间")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(MacToolsGlassTheme.textPrimary)
-
-                    Spacer(minLength: 10)
-
-                    Picker("同步空间上限", selection: storageLimitBinding) {
-                        ForEach(SyncStorageLimit.allCases) { limit in
-                            Text(limit.displayName).tag(limit)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 110)
-                    .disabled(!isEnabled || folderPath == nil)
-                }
+                Text("普通历史和仅置顶项保留在本机，收藏内容与相关配置存储到同步文件夹。")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(MacToolsGlassTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
@@ -229,9 +198,11 @@ struct SyncSettingsEditor: View {
         }
         .onChange(of: currentSettings) { _, settings in
             isEnabled = settings.isEnabled
-            clipboardScope = settings.clipboardScope
-            storageLimit = settings.storageLimit
         }
+        .onChange(of: status) { oldStatus, newStatus in
+            if let usage = newStatus.storageUsage ?? oldStatus.storageUsage { lastStorageUsage = usage }
+        }
+        .onChange(of: folderPath) { _, _ in lastStorageUsage = nil }
         .alert("清空 MacTools 同步数据？", isPresented: $isDeleteConfirmationPresented) {
             Button("取消", role: .cancel) {}
             Button("清空", role: .destructive, action: deleteCloudData)
@@ -265,35 +236,16 @@ struct SyncSettingsEditor: View {
             set: { newValue in
                 let previous = isEnabled
                 isEnabled = newValue
-                save(previousEnabled: previous, previousScope: clipboardScope)
+                save(previousEnabled: previous)
             }
         )
     }
 
-    private var scopeBinding: Binding<ClipboardSyncScope> {
-        Binding(
-            get: { clipboardScope },
-            set: { newValue in
-                let previous = clipboardScope
-                clipboardScope = newValue
-                save(previousEnabled: isEnabled, previousScope: previous)
-            }
-        )
-    }
-
-    private var storageLimitBinding: Binding<SyncStorageLimit> {
-        Binding(
-            get: { storageLimit },
-            set: { newValue in
-                let previous = storageLimit
-                storageLimit = newValue
-                save(
-                    previousEnabled: isEnabled,
-                    previousScope: clipboardScope,
-                    previousStorageLimit: previous
-                )
-            }
-        )
+    private var storageUsageText: String {
+        if let usage = status.storageUsage ?? lastStorageUsage {
+            return SyncStorageUsage.formattedUsedMegabytes(usage.usedBytes)
+        }
+        return folderPath == nil ? "选择文件夹后显示同步占用" : "同步后显示已占用空间（MB）"
     }
 
     private var statusColor: Color {
@@ -302,7 +254,7 @@ struct SyncSettingsEditor: View {
             return .green
         case .waitingForDownload, .preparingFolder, .syncing:
             return .orange
-        case .capacityFull, .folderUnavailable, .protocolIncompatible,
+        case .folderUnavailable, .protocolIncompatible,
              .conflictNeedsAttention, .failed:
             return .red
         case .off, .unconfigured:
@@ -324,36 +276,15 @@ struct SyncSettingsEditor: View {
     }
 
     /// 组装当前同步草稿并交给外部保存闭包，错误转换为页面提示。
-    private func save(
-        previousEnabled: Bool,
-        previousScope: ClipboardSyncScope,
-        previousStorageLimit: SyncStorageLimit? = nil
-    ) {
+    private func save(previousEnabled: Bool) {
         do {
-            try saveSettings(
-                SyncSettings(
-                    isEnabled: isEnabled,
-                    clipboardScope: clipboardScope,
-                    storageLimit: storageLimit
-                )
-            )
+            try saveSettings(SyncSettings(isEnabled: isEnabled))
             saveMessage = "已保存"
         } catch {
             isEnabled = previousEnabled
-            clipboardScope = previousScope
-            if let previousStorageLimit { storageLimit = previousStorageLimit }
             saveMessage = "保存失败"
         }
     }
-
-    private static let byteCountFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useGB]
-        formatter.countStyle = .binary
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        return formatter
-    }()
 
     /// 构建并返回 `lastSeenText` 对应的 SwiftUI 界面内容或展示状态。
     private func lastSeenText(for device: SyncDeviceSummary) -> String {

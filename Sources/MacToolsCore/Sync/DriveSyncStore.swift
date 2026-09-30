@@ -42,6 +42,13 @@ public struct DriveSyncReplica: Equatable, Sendable {
     }
 }
 
+/// 一批旧快照清理的进度；游标由 runner 保存，目录切换或 manifest 更新后丢弃。
+public struct SyncLegacySnapshotCleanupBatch: Sendable {
+    public let reclaimedBytes: Int64
+    public let lastScannedDirectory: String?
+    public let didComplete: Bool
+}
+
 /// 封装 `SyncStoredObject` 在同步核心领域中的值语义和相关操作。
 public struct SyncStoredObject: Equatable, Sendable {
     public var contentID: String
@@ -301,9 +308,22 @@ public final class DriveSyncStore: @unchecked Sendable {
             SyncProtocolDescriptor.self,
             from: readData(at: protocolURL)
         )
-        guard descriptor.protocolVersion == SyncProtocolDescriptor.currentVersion else {
+        guard (1...SyncProtocolDescriptor.currentVersion).contains(descriptor.protocolVersion) else {
             throw DriveSyncStoreError.incompatibleProtocol(found: descriptor.protocolVersion)
         }
+        return descriptor
+    }
+
+    /// 升级目录约定后旧客户端会报告版本不兼容，避免再次发布普通历史。
+    /// 原子写入失败可重试；原有 storeID、代际、设备快照和对象均保留。
+    public func requireFavoritesOnlyProtocol(
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> SyncProtocolDescriptor {
+        var descriptor = try readProtocol()
+        guard descriptor.protocolVersion < SyncProtocolDescriptor.currentVersion else { return descriptor }
+        try cancellation.check()
+        descriptor.protocolVersion = SyncProtocolDescriptor.currentVersion
+        try verifiedWrite(SyncSnapshotCodec.encode(descriptor), to: protocolURL)
         return descriptor
     }
 
@@ -523,6 +543,200 @@ public final class DriveSyncStore: @unchecked Sendable {
             keeping: protectedDirectories,
             cancellation: cancellation
         )
+    }
+
+    /// v1 无台账历史只有在可完整验证且被本机当前收藏发布因果覆盖时才回收。
+    /// 不碰当前目录、同 revision 分支、不完整目录、未知文件或尚未覆盖的收藏证据。
+    public func cleanupLegacySnapshots(
+        supersededBy current: DriveSyncReplica,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> Int64 {
+        try cleanupLegacySnapshotBatch(supersededBy: current, cancellation: cancellation).reclaimedBytes
+    }
+
+    /// 每次最多扫描 32 个目录并受 50 毫秒软预算约束；完成一轮后由 runner 延迟复查。
+    public func cleanupLegacySnapshotBatch(
+        supersededBy current: DriveSyncReplica,
+        afterDirectory: String? = nil,
+        scanLimit: Int = 32,
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> SyncLegacySnapshotCleanupBatch {
+        let empty = SyncLegacySnapshotCleanupBatch(reclaimedBytes: 0, lastScannedDirectory: nil, didComplete: true)
+        guard current.clipboard.records.allSatisfy(\.isFavorite),
+              let currentDirectory = current.manifest.snapshotDirectory else { return empty }
+        let deviceID = current.manifest.deviceID
+        guard Self.isValidPathComponent(deviceID) else { return empty }
+        let revisionsURL = replicasURL.appendingPathComponent(deviceID)
+            .appendingPathComponent("revisions")
+        guard fileManager.fileExists(atPath: revisionsURL.path) else { return empty }
+        let currentByContentID = Dictionary(grouping: current.clipboard.records, by: \.contentID)
+        let deletedNames = Set(current.tombstones.records.map(\.targetRecordName))
+        var reclaimedBytes: Int64 = 0
+        var scannedCount = 0
+        var lastScannedDirectory = afterDirectory
+        var didComplete = true
+        let deadline = Date().addingTimeInterval(0.05)
+        let directories = try fileManager.contentsOfDirectory(
+            at: revisionsURL, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+        ).filter { directory in
+            directory.lastPathComponent != currentDirectory
+                && (afterDirectory.map { directory.lastPathComponent > $0 } ?? true)
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for directory in directories {
+            try cancellation.check()
+            if scannedCount >= max(1, scanLimit) || Date() >= deadline {
+                didComplete = false
+                break
+            }
+            scannedCount += 1
+            lastScannedDirectory = directory.lastPathComponent
+            let values = try directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true else { continue }
+            do {
+                let files = try fileManager.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+                )
+                guard Set(files.map(\.lastPathComponent)) == ["clipboard.json", "preferences.json", "tombstones.json"],
+                      try files.allSatisfy({ file in
+                          let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+                          return values.isRegularFile == true && values.isSymbolicLink != true
+                              && (values.fileSize ?? Int.max) <= 16 * 1_024 * 1_024
+                      }) else { continue }
+                let clipboard = try SyncSnapshotCodec.decode(SyncClipboardSnapshot.self, from: readData(at: directory.appendingPathComponent("clipboard.json")))
+                let preferences = try SyncSnapshotCodec.decode(SyncPreferencesSnapshot.self, from: readData(at: directory.appendingPathComponent("preferences.json")))
+                let tombstones = try SyncSnapshotCodec.decode(SyncTombstoneSnapshot.self, from: readData(at: directory.appendingPathComponent("tombstones.json")))
+                guard clipboard.schemaVersion == SyncClipboardSnapshot.currentSchemaVersion,
+                      preferences.schemaVersion == SyncPreferencesSnapshot.currentSchemaVersion,
+                      tombstones.schemaVersion == SyncTombstoneSnapshot.currentSchemaVersion,
+                      clipboard.deviceID == deviceID, preferences.deviceID == deviceID, tombstones.deviceID == deviceID,
+                      clipboard.generation == current.manifest.generation,
+                      preferences.generation == clipboard.generation, tombstones.generation == clipboard.generation,
+                      clipboard.revision < current.manifest.revision,
+                      preferences.revision == clipboard.revision, tombstones.revision == clipboard.revision,
+                      (current.manifest.seenRevisions[deviceID] ?? 0) >= clipboard.revision else { continue }
+                let favoritesCovered = clipboard.records.filter(\.isFavorite).allSatisfy { record in
+                    deletedNames.contains(record.recordName)
+                        || current.clipboard.favoriteRemovals.contains { $0.excludes(record) }
+                        || currentByContentID[record.contentID]?.contains {
+                            ($0.favoriteClock == record.favoriteClock || $0.favoriteClock.wins(over: record.favoriteClock))
+                                && ($0.tagsClock == record.tagsClock || $0.tagsClock.wins(over: record.tagsClock))
+                                && ($0.pinnedClock == record.pinnedClock || $0.pinnedClock.wins(over: record.pinnedClock))
+                        } == true
+                }
+                let preferencesCovered = preferences.domains.allSatisfy { old in
+                    guard let latest = current.preferences.domains.first(where: { $0.domain == old.domain }) else { return false }
+                    return old.clocks.allSatisfy { field, clock in
+                        guard let currentClock = latest.clocks[field] else { return false }
+                        return currentClock == clock || currentClock.wins(over: clock)
+                    }
+                }
+                let tombstonesCovered = Set(tombstones.records.map(\.tombstoneID))
+                    .isSubset(of: Set(current.tombstones.records.map(\.tombstoneID)))
+                let removalsCovered = clipboard.favoriteRemovals.allSatisfy { old in
+                    current.clipboard.favoriteRemovals.contains {
+                        $0.contentID == old.contentID
+                            && ($0.favoriteClock == old.favoriteClock || $0.favoriteClock.wins(over: old.favoriteClock))
+                    } || currentByContentID[old.contentID]?.contains {
+                        $0.favoriteClock.wins(over: old.favoriteClock)
+                    } == true
+                }
+                guard favoritesCovered, preferencesCovered, tombstonesCovered, removalsCovered else { continue }
+                let bytes = try regularFileBytes(in: directory, cancellation: cancellation)
+                try cancellation.check()
+                try fileManager.removeItem(at: directory)
+                reclaimedBytes += bytes
+            } catch is SyncCycleCancellationError {
+                throw SyncCycleCancellationError.cancelled
+            } catch {
+                // 下载中、冲突或损坏数据不是删除依据，下一周期重新评估。
+                continue
+            }
+        }
+        return SyncLegacySnapshotCleanupBatch(
+            reclaimedBytes: reclaimedBytes, lastScannedDirectory: lastScannedDirectory,
+            didComplete: didComplete
+        )
+    }
+
+    /// 删除对象前也保护尚未回收的旧快照引用；未知或未下载快照阻止本轮对象回收。
+    public func retainedSnapshotContentIDs(
+        cancellation: SyncCycleCancellation = SyncCycleCancellation()
+    ) throws -> Set<String> {
+        var contentIDs: Set<String> = []
+        let deadline = Date().addingTimeInterval(0.05)
+        var snapshotCount = 0
+        func checkBudget() throws {
+            try cancellation.check()
+            guard Date() < deadline else {
+                throw DriveSyncStoreError.unreadableContent("retained-snapshot-budget")
+            }
+        }
+        func readSnapshot(in directory: URL, deviceID: String) throws {
+            try checkBudget()
+            snapshotCount += 1
+            guard snapshotCount <= 256 else {
+                throw DriveSyncStoreError.unreadableContent("retained-snapshot-budget")
+            }
+            var dataByName: [String: Data] = [:]
+            for name in ["clipboard.json", "preferences.json", "tombstones.json"] {
+                try checkBudget()
+                let url = directory.appendingPathComponent(name)
+                guard fileManager.fileExists(atPath: url.path) else {
+                    throw DriveSyncStoreError.itemNotDownloaded(url)
+                }
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+                guard values.isRegularFile == true, values.isSymbolicLink != true,
+                      (values.fileSize ?? Int.max) <= 16 * 1_024 * 1_024 else {
+                    throw DriveSyncStoreError.unreadableContent("retained-snapshot")
+                }
+                dataByName[name] = try readData(at: url)
+            }
+            let clipboard = try SyncSnapshotCodec.decode(SyncClipboardSnapshot.self, from: dataByName["clipboard.json"]!)
+            let preferences = try SyncSnapshotCodec.decode(SyncPreferencesSnapshot.self, from: dataByName["preferences.json"]!)
+            let tombstones = try SyncSnapshotCodec.decode(SyncTombstoneSnapshot.self, from: dataByName["tombstones.json"]!)
+            guard clipboard.schemaVersion == SyncClipboardSnapshot.currentSchemaVersion,
+                  preferences.schemaVersion == SyncPreferencesSnapshot.currentSchemaVersion,
+                  tombstones.schemaVersion == SyncTombstoneSnapshot.currentSchemaVersion,
+                  clipboard.deviceID == deviceID, preferences.deviceID == deviceID, tombstones.deviceID == deviceID,
+                  preferences.generation == clipboard.generation, tombstones.generation == clipboard.generation,
+                  preferences.revision == clipboard.revision, tombstones.revision == clipboard.revision else {
+                throw DriveSyncStoreError.inconsistentReplica(deviceID: deviceID)
+            }
+            contentIDs.formUnion(clipboard.records.map(\.contentID))
+        }
+        guard fileManager.fileExists(atPath: replicasURL.path) else { return [] }
+        for deviceURL in try fileManager.contentsOfDirectory(
+            at: replicasURL, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+        ) {
+            try checkBudget()
+            let values = try deviceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isSymbolicLink != true else {
+                throw DriveSyncStoreError.unreadableContent("retained-snapshot")
+            }
+            guard values.isDirectory == true else { continue }
+            let deviceID = deviceURL.lastPathComponent
+            // 旧版直接把三类快照放在设备目录；任一文件可见就要求完整证据。
+            if ["clipboard.json", "preferences.json", "tombstones.json"].contains(where: {
+                fileManager.fileExists(atPath: deviceURL.appendingPathComponent($0).path)
+            }) {
+                try readSnapshot(in: deviceURL, deviceID: deviceID)
+            }
+            let revisionsURL = deviceURL.appendingPathComponent("revisions")
+            guard fileManager.fileExists(atPath: revisionsURL.path) else { continue }
+            for directory in try fileManager.contentsOfDirectory(
+                at: revisionsURL, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            ) {
+                try checkBudget()
+                let values = try directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                guard values.isSymbolicLink != true else {
+                    throw DriveSyncStoreError.unreadableContent("retained-snapshot")
+                }
+                guard values.isDirectory == true else { continue }
+                // 从目录枚举开始建立证明，正文还未到达也不能被当成没有引用。
+                try readSnapshot(in: directory, deviceID: deviceID)
+            }
+        }
+        return contentIDs
     }
 
     /// 只在共享对象缺失或损坏时调用 provider，并把单内容不可用隔离到结果中。

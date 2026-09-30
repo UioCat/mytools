@@ -35,7 +35,7 @@ public enum SyncStorageLimit: Int, Codable, CaseIterable, Equatable, Identifiabl
 
 /// 封装 `SyncProtocolDescriptor` 在同步核心领域中的值语义和相关操作。
 public struct SyncProtocolDescriptor: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public var protocolVersion: Int
     public var storeID: UUID
@@ -53,6 +53,26 @@ public struct SyncProtocolDescriptor: Codable, Equatable, Sendable {
         self.storeID = storeID
         self.createdAt = createdAt
         self.capacityLimit = capacityLimit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case protocolVersion, storeID, createdAt, capacityLimit
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        protocolVersion = try container.decode(Int.self, forKey: .protocolVersion)
+        storeID = try container.decode(UUID.self, forKey: .storeID)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        capacityLimit = try container.decodeIfPresent(SyncStorageLimit.self, forKey: .capacityLimit) ?? .default
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(protocolVersion, forKey: .protocolVersion)
+        try container.encode(storeID, forKey: .storeID)
+        try container.encode(createdAt, forKey: .createdAt)
+        if protocolVersion == 1 { try container.encode(capacityLimit, forKey: .capacityLimit) }
     }
 }
 
@@ -236,7 +256,22 @@ public struct SyncClipboardRecord: Codable, Equatable, Sendable {
     }
 }
 
-/// 封装 `SyncClipboardSnapshot` 在同步核心领域中的值语义和相关操作。
+/// 取消收藏只同步内容标识和字段时钟，避免为传播取消操作上传普通历史正文。
+public struct SyncFavoriteRemoval: Codable, Equatable, Sendable {
+    public var contentID: String
+    public var favoriteClock: ClipboardFieldClock
+
+    public init(contentID: String, favoriteClock: ClipboardFieldClock) {
+        self.contentID = contentID
+        self.favoriteClock = favoriteClock
+    }
+
+    public func excludes(_ record: SyncClipboardRecord) -> Bool {
+        contentID == record.contentID && favoriteClock.wins(over: record.favoriteClock)
+    }
+}
+
+/// 封装收藏记录与取消收藏的因果元数据；旧快照缺少 favoriteRemovals 时按空集合解码。
 public struct SyncClipboardSnapshot: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -245,20 +280,36 @@ public struct SyncClipboardSnapshot: Codable, Equatable, Sendable {
     public var generation: Int
     public var revision: Int64
     public var records: [SyncClipboardRecord]
+    public var favoriteRemovals: [SyncFavoriteRemoval]
 
-    /// 创建 `SyncClipboardSnapshot`，保存传入依赖并建立初始状态。
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
         deviceID: String,
         generation: Int,
         revision: Int64,
-        records: [SyncClipboardRecord]
+        records: [SyncClipboardRecord],
+        favoriteRemovals: [SyncFavoriteRemoval] = []
     ) {
         self.schemaVersion = schemaVersion
         self.deviceID = deviceID
         self.generation = generation
         self.revision = revision
         self.records = records
+        self.favoriteRemovals = favoriteRemovals
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, deviceID, generation, revision, records, favoriteRemovals
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        deviceID = try container.decode(String.self, forKey: .deviceID)
+        generation = try container.decode(Int.self, forKey: .generation)
+        revision = try container.decode(Int64.self, forKey: .revision)
+        records = try container.decode([SyncClipboardRecord].self, forKey: .records)
+        favoriteRemovals = try container.decodeIfPresent([SyncFavoriteRemoval].self, forKey: .favoriteRemovals) ?? []
     }
 }
 

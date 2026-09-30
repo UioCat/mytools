@@ -27,7 +27,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.screenCapture.annotationFontSize, .medium)
         XCTAssertEqual(settings.appearanceMode, .followSystem)
         XCTAssertFalse(settings.sync.isEnabled)
-        XCTAssertEqual(settings.sync.clipboardScope, .favoritesAndPinned)
+        XCTAssertEqual(settings.sync.clipboardScope, .favoritesOnly)
         XCTAssertTrue(settings.windowLayout.isEnabled)
         XCTAssertEqual(settings.windowLayout.enabledModes, WindowLayoutMode.allCases)
         XCTAssertEqual(settings.windowLayout.modeShortcuts.map(\.mode), WindowLayoutMode.allCases)

@@ -336,9 +336,12 @@ public final class ClipboardRepository: @unchecked Sendable {
     public func syncCandidates(scope: ClipboardSyncScope) throws -> [ClipboardSyncCandidate] {
         let payloadRootPath = payloadStore?.rootDirectory.path
         return try database.writer.read { db in
-            let scopeClause = scope == .favoritesAndPinned
-                ? "AND (ci.isFavorite = 1 OR ci.isPinned = 1)"
-                : ""
+            let scopeClause: String
+            switch scope {
+            case .favoritesOnly: scopeClause = "AND ci.isFavorite = 1"
+            case .favoritesAndPinned: scopeClause = "AND (ci.isFavorite = 1 OR ci.isPinned = 1)"
+            case .allHistory: scopeClause = ""
+            }
             return try Row.fetchAll(
                 db,
                 sql: """

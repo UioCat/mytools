@@ -11,6 +11,7 @@ public enum DriveSyncCycleRetryError: Error, Equatable, Sendable {
 /// 封装 `DriveSyncCycleConfiguration` 在同步核心领域中的值语义和相关操作。
 public struct DriveSyncCycleConfiguration: Sendable {
     public let historyLimit: Int
+    // 仅为旧调用方保留的参数；导出固定收藏范围，storageLimit 不再参与容量决策。
     public let clipboardScope: ClipboardSyncScope
     public let storageLimit: SyncStorageLimit
 
@@ -63,6 +64,13 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         }
     }
 
+    private struct LegacyCleanupProgress {
+        var revision: Int64
+        var manifestDigest: String
+        var lastScannedDirectory: String?
+        var nextAuditAt: Date?
+    }
+
     /// 保存一次稳定远端观察结果，供无变化周期跳过重复目录扫描和摘要计算。
     private struct ObservationCache {
         var rootURL: URL
@@ -74,6 +82,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         var inventory: SyncStorageInventory
         var lastFullInventoryAuditAt: Date
         var needsContentRefresh: Bool
+        var legacyCleanupProgress: LegacyCleanupProgress?
     }
 
     /// 为同步核心领域中的相关类型提供 `DateProvider` 别名。
@@ -125,7 +134,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         }
     }
 
-    /// 执行一次完整同步：采纳代际、读取副本、应用墓碑、容量裁剪、写回并确认 receipt。
+    /// 执行一次完整同步：采纳代际、合并收藏和取消证据、应用墓碑、写回并确认 receipt。
     public func run(
         rootURL: URL,
         configuration: DriveSyncCycleConfiguration,
@@ -136,7 +145,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let now = currentDate()
         let currentDeviceName = deviceName()
         let store = makeStore(rootURL)
-        let descriptor = try store.readProtocol()
+        let descriptor = try store.requireFavoritesOnlyProtocol(cancellation: cancellation)
         try localRepository.bindStore(descriptor.storeID)
         var resetReplicaState = false
         if try deviceOverrideRepository.storeID() != descriptor.storeID {
@@ -291,7 +300,19 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         try cancellation.check()
         for replica in unappliedPeerReplicas {
             try localRepository.apply(tombstones: replica.tombstones)
+            let legacyRemovals = replica.clipboard.records.compactMap { record in
+                !record.isFavorite && record.favoriteClock.counter > 0
+                    ? SyncFavoriteRemoval(contentID: record.contentID, favoriteClock: record.favoriteClock)
+                    : nil
+            }
+            try localRepository.applyFavoriteRemovals(
+                replica.clipboard.favoriteRemovals + legacyRemovals, generation: generation,
+                historyLimit: configuration.historyLimit
+            )
         }
+        let removalsByContentID = Dictionary(uniqueKeysWithValues: try localRepository.favoriteRemovals(
+            generation: generation
+        ).map { ($0.contentID, $0) })
         let tombstonedRecordNames = try localRepository.tombstonedRecordNames(
             generation: generation
         )
@@ -299,7 +320,7 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             deviceID: deviceID,
             generation: generation,
             revision: nextRevision,
-            scope: configuration.clipboardScope
+            scope: .favoritesOnly
         )
         let localDescriptorsByKey = Dictionary(
             uniqueKeysWithValues: draft.contentDescriptors.map {
@@ -313,120 +334,33 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         var allRecords = draft.clipboard.records
         for replica in peerReplicas {
             allRecords.append(contentsOf: replica.clipboard.records.filter {
-                !tombstonedRecordNames.contains($0.recordName)
+                $0.isFavorite && !tombstonedRecordNames.contains($0.recordName)
+                    && removalsByContentID[$0.contentID]?.excludes($0) != true
             })
         }
 
-        var candidates: [SyncRetentionCandidate] = []
         var unknownContentIDs: Set<String> = []
         for record in allRecords {
             let key = ContentKey(contentID: record.contentID, kind: record.kind)
-            guard let byteCount = localDescriptorsByKey[key]?.storedByteCount
-                    ?? storedBytesByContentID[record.contentID] else {
+            if localDescriptorsByKey[key] == nil && storedBytesByContentID[record.contentID] == nil {
                 unknownContentIDs.insert(record.contentID)
                 missingRemoteContent = true
                 try? requestDownload(store.contentLocation(contentID: record.contentID, kind: record.kind))
-                continue
             }
-            candidates.append(SyncRetentionCandidate(
-                contentID: record.contentID,
-                kind: record.kind,
-                byteCount: byteCount,
-                createdAt: record.createdAt,
-                retentionAt: record.retentionAt,
-                isFavorite: record.isFavorite,
-                isPinned: record.isPinned,
-                favoriteClock: record.favoriteClock,
-                pinnedClock: record.pinnedClock
-            ))
         }
         for replica in unappliedPeerReplicas where replica.clipboard.records.contains(
-            where: { unknownContentIDs.contains($0.contentID) }
+            where: { $0.isFavorite && unknownContentIDs.contains($0.contentID) }
         ) {
             incompleteDeviceIDs.insert(replica.manifest.deviceID)
         }
-        var mergedCandidates: [String: SyncRetentionCandidate] = [:]
-        for candidate in candidates {
-            mergedCandidates[candidate.contentID] = mergedCandidates[candidate.contentID]?.merging(candidate)
-                ?? candidate
-        }
-        let remoteEvictions = try store.evictions(generation: generation).filter {
-            !removedDeviceIDs.contains($0.deviceID)
-        }
-        let effectiveRemoteEvictions = remoteEvictions.filter { eviction in
-            guard let candidate = mergedCandidates[eviction.contentID],
-                  eviction.isEffective(for: candidate) else { return false }
-            return true
-        }
-        let effectiveRemoteEvictionIDs = Set(effectiveRemoteEvictions.map(\.contentID))
-        candidates.removeAll { effectiveRemoteEvictionIDs.contains($0.contentID) }
-
-        let currentUsage = storageInventory.usage(
-            capacityBytes: configuration.storageLimit.byteLimit,
-            ordinaryHistoryCount: 0
-        )
-        let candidateContentIDs = Set(candidates.map(\.contentID))
-        let unreferencedStoredBytes = storedObjectsBeforeWrite.lazy
-            .filter { !candidateContentIDs.contains($0.contentID) }
-            .reduce(Int64(0)) { $0 + $1.byteCount }
-        let projectedSnapshotBytes = Int64(
-            try SyncSnapshotCodec.encode(draft.clipboard).count
-                + SyncSnapshotCodec.encode(draft.preferences).count
-                + SyncSnapshotCodec.encode(draft.tombstones).count
-                + 4_096
-        )
-        let decision = SyncRetentionPolicy.decide(
-            candidates: candidates,
-            metadataBytes: currentUsage.metadataBytes
-                + unreferencedStoredBytes
-                + projectedSnapshotBytes,
-            capacityLimitBytes: configuration.storageLimit.byteLimit,
-            generation: generation,
-            deviceID: deviceID,
-            now: now
-        )
-        let excludedContentIDs = effectiveRemoteEvictionIDs.union(
-            Set(decision.evictions.map(\.contentID))
-        )
-        let newObjectBytes = draft.contentDescriptors.lazy
-            .filter {
-                decision.keptContentIDs.contains($0.contentID)
-                    && !excludedContentIDs.contains($0.contentID)
-                    && !storedContentIDs.contains($0.contentID)
-            }
-            .reduce(Int64(0)) { $0 + $1.storedByteCount }
-        let shouldPauseImageUploads = SyncRetentionPolicy.mustPauseImageUploads(
-            decision: decision,
-            currentUsedBytes: currentUsage.usedBytes,
-            newObjectBytes: newObjectBytes,
-            projectedMetadataBytes: projectedSnapshotBytes,
-            capacityLimitBytes: configuration.storageLimit.byteLimit
-        )
-        let blockedImageContentIDs: Set<String>
-        if shouldPauseImageUploads {
-            blockedImageContentIDs = Set(mergedCandidates.values.compactMap { candidate in
-                candidate.kind == .imageData
-                    && decision.keptContentIDs.contains(candidate.contentID)
-                    && !excludedContentIDs.contains(candidate.contentID)
-                    && !storedContentIDs.contains(candidate.contentID)
-                    ? candidate.contentID
-                    : nil
-            })
-        } else {
-            blockedImageContentIDs = []
-        }
-        let blockedClipboardRecordNames = Set(draft.clipboard.records.compactMap { record in
-            blockedImageContentIDs.contains(record.contentID) ? record.recordName : nil
-        })
 
         var remoteSettings: AppSettings?
         try cancellation.check()
         for replica in unappliedPeerReplicas {
             try cancellation.check()
             let filteredRecords = replica.clipboard.records.filter {
-                    !tombstonedRecordNames.contains($0.recordName)
-                        && decision.keptContentIDs.contains($0.contentID)
-                        && !excludedContentIDs.contains($0.contentID)
+                    $0.isFavorite && !tombstonedRecordNames.contains($0.recordName)
+                        && removalsByContentID[$0.contentID]?.excludes($0) != true
                         && !unknownContentIDs.contains($0.contentID)
                 }
             let recordsByContent = Dictionary(grouping: filteredRecords) {
@@ -500,30 +434,18 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         // 发布必须描述合并后的本地状态；收到远端记录本身不会产生本地 outbox。
         draft = try localRepository.exportDraft(
             deviceID: deviceID, generation: generation, revision: nextRevision,
-            scope: configuration.clipboardScope
+            scope: .favoritesOnly
         )
         unavailableLocalRecordNames.formUnion(draft.unavailableClipboardRecordNames)
-        let publishableDraft = draft.excludingContentIDs(excludedContentIDs.union(blockedImageContentIDs))
+        let publishableDraft = draft
         let ownReplica = replicas.first { $0.manifest.deviceID == deviceID }
         let snapshotChanged = try ownReplica.map {
             try SyncSnapshotCodec.encode($0.clipboard.records) != SyncSnapshotCodec.encode(publishableDraft.clipboard.records)
+                || SyncSnapshotCodec.encode($0.clipboard.favoriteRemovals) != SyncSnapshotCodec.encode(publishableDraft.clipboard.favoriteRemovals)
                 || SyncSnapshotCodec.encode($0.preferences.domains) != SyncSnapshotCodec.encode(publishableDraft.preferences.domains)
                 || SyncSnapshotCodec.encode($0.tombstones.records) != SyncSnapshotCodec.encode(publishableDraft.tombstones.records)
         } ?? true
 
-        var localEvictionsByContentID: [String: SyncEvictionRecord] = [:]
-        for eviction in effectiveRemoteEvictions where eviction.deviceID == deviceID {
-            localEvictionsByContentID[eviction.contentID] = eviction
-        }
-        for eviction in decision.evictions {
-            localEvictionsByContentID[eviction.contentID] = eviction
-        }
-        let localEvictions = localEvictionsByContentID.values.sorted {
-            $0.contentID < $1.contentID
-        }
-        let currentEvictionSnapshot = try store.evictionSnapshot(deviceID: deviceID)
-        let evictionSnapshotChanged = currentEvictionSnapshot?.generation != generation
-            || currentEvictionSnapshot?.records != localEvictions
         let hasMissingPublishedContent = publishableDraft.contentDescriptors.contains {
             !storedContentIDs.contains($0.contentID)
         }
@@ -533,20 +455,36 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             || ownReplicaUnverifiable
             || forceWrite
             || hasMissingPublishedContent
-            || snapshotChanged
-            || evictionSnapshotChanged)
+            || snapshotChanged)
 
         var writtenBundle: SyncExportBundle?
         var writtenManifestDigest: String?
         var writtenReplica: DriveSyncReplica?
         if needsWrite {
+            // 完整校验过的本机旧发布点补入台账，成功发布新收藏快照后可安全回收旧正文快照。
+            if let ownReplica, let directory = ownReplica.manifest.snapshotDirectory {
+                let identity = SyncSnapshotPublicationIdentity(
+                    storeID: descriptor.storeID, deviceID: deviceID, generation: generation,
+                    revision: ownReplica.manifest.revision, snapshotDirectory: directory
+                )
+                if try localRepository.snapshotPublicationLedger.record(for: identity) == nil {
+                    try localRepository.snapshotPublicationLedger.recordPrepared(.init(
+                        storeID: descriptor.storeID, deviceID: deviceID, generation: generation,
+                        revision: ownReplica.manifest.revision, snapshotDirectory: directory,
+                        snapshotDigests: ownReplica.manifest.snapshotDigests,
+                        manifestDigest: ownReplica.manifestDigest, state: .prepared,
+                        supersededByRevision: nil, updatedAt: now
+                    ))
+                    try localRepository.snapshotPublicationLedger.markPublished(
+                        identity, manifestDigest: ownReplica.manifestDigest, at: now
+                    )
+                }
+            }
             // 从这里开始会改变目录；任一步失败都让下轮回退为完整 inventory 审计。
             invalidateObservationCache()
             try cancellation.check()
             seenRevisions[deviceID] = nextRevision
-            let preparedDraft = draft.excludingContentIDs(
-                excludedContentIDs.union(blockedImageContentIDs)
-            )
+            let preparedDraft = draft
             let preparation = try store.prepareContents(
                 preparedDraft.contentDescriptors,
                 cancellation: cancellation
@@ -583,23 +521,8 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             storageInventory = storageInventory.adjustingMetadataBytes(
                 by: writeResult.metadataByteDelta
             )
-            if evictionSnapshotChanged {
-                try cancellation.check()
-                let evictionMetadataDelta = try store.writeEvictions(
-                    SyncEvictionSnapshot(
-                        deviceID: deviceID,
-                        generation: generation,
-                        records: localEvictions
-                    )
-                )
-                storageInventory = storageInventory.adjustingMetadataBytes(
-                    by: evictionMetadataDelta
-                )
-            }
             try cancellation.check()
-            let excludedRecordNames = blockedClipboardRecordNames.union(
-                unavailableLocalRecordNames
-            )
+            let excludedRecordNames = unavailableLocalRecordNames
             let acknowledgedContentIDs = preparation.availableContentIDs.intersection(
                 Set(finalDraft.contentDescriptors.map(\.contentID))
             )
@@ -634,17 +557,18 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
             )
         } else if ownReplica != nil, !ownReplicaUnverifiable, !incompleteDeviceIDs.contains(deviceID),
                   try localRepository.hasPendingChanges(
-                    excludingClipboardRecordNames: blockedClipboardRecordNames.union(unavailableLocalRecordNames)
+                    excludingClipboardRecordNames: unavailableLocalRecordNames
                   ) {
             // 当前发布已准确表示草稿，无需为范围外复制或重复 outbox 再写相同快照。
             // 截止时间后的并发变化与不可用载荷仍保留，不把未上传对象标成已上传。
             try cancellation.check()
             try localRepository.acknowledgeSnapshot(
                 upTo: draft.outboxCutoff,
-                excludingClipboardRecordNames: blockedClipboardRecordNames.union(unavailableLocalRecordNames)
+                excludingClipboardRecordNames: unavailableLocalRecordNames
             )
         }
 
+        var legacyCleanupProgress = cachedObservation?.legacyCleanupProgress
         // 回收是独立维护任务；稳定周期也分批推进，不能依赖再次复制才清理积压。
         if let currentReplica = writtenReplica ?? ownReplica, !ownReplicaUnverifiable {
             do {
@@ -653,7 +577,27 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                     protectedDirectories: Set([currentReplica.manifest.snapshotDirectory].compactMap { $0 }),
                     cancellation: cancellation
                 )
-                storageInventory = storageInventory.adjustingMetadataBytes(by: -reclaimedBytes)
+                if legacyCleanupProgress?.revision != currentReplica.manifest.revision
+                    || legacyCleanupProgress?.manifestDigest != currentReplica.manifestDigest {
+                    legacyCleanupProgress = LegacyCleanupProgress(
+                        revision: currentReplica.manifest.revision,
+                        manifestDigest: currentReplica.manifestDigest,
+                        lastScannedDirectory: nil, nextAuditAt: nil
+                    )
+                }
+                var reclaimedLegacyBytes: Int64 = 0
+                if legacyCleanupProgress?.nextAuditAt.map({ now >= $0 }) ?? true {
+                    let batch = try store.cleanupLegacySnapshotBatch(
+                        supersededBy: currentReplica,
+                        afterDirectory: legacyCleanupProgress?.lastScannedDirectory,
+                        cancellation: cancellation
+                    )
+                    reclaimedLegacyBytes = batch.reclaimedBytes
+                    legacyCleanupProgress?.lastScannedDirectory = batch.didComplete ? nil : batch.lastScannedDirectory
+                    legacyCleanupProgress?.nextAuditAt = batch.didComplete
+                        ? now.addingTimeInterval(max(1, inventoryAuditInterval)) : nil
+                }
+                storageInventory = storageInventory.adjustingMetadataBytes(by: -reclaimedBytes - reclaimedLegacyBytes)
             } catch is SyncCycleCancellationError {
                 invalidateObservationCache()
                 throw SyncCycleCancellationError.cancelled
@@ -667,9 +611,8 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
 
         var referencedContentIDs: Set<String> = []
         for replica in replicas where writtenBundle == nil || replica.manifest.deviceID != deviceID {
-            referencedContentIDs.formUnion(replica.clipboard.records.compactMap { record in
-                excludedContentIDs.contains(record.contentID) ? nil : record.contentID
-            })
+            // 离线旧设备仍引用的对象保留，直到设备升级重发收藏快照或被用户移除。
+            referencedContentIDs.formUnion(replica.clipboard.records.map(\.contentID))
         }
         if let writtenBundle {
             referencedContentIDs.formUnion(writtenBundle.clipboard.records.map(\.contentID))
@@ -677,10 +620,24 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
         let storedObjects = storageInventory.objects
         var removedGarbageIDs: Set<String> = []
         if replicaFailures.isEmpty {
-            let garbageIDs = try localRepository.garbageCollectionCandidates(
+            var garbageIDs = try localRepository.garbageCollectionCandidates(
                 allContentIDs: Set(storedObjects.map(\.contentID)),
-                referencedContentIDs: referencedContentIDs
+                referencedContentIDs: referencedContentIDs,
+                now: now
             )
+            if !garbageIDs.isEmpty {
+                do {
+                    let retainedReferences = try store.retainedSnapshotContentIDs(cancellation: cancellation)
+                    garbageIDs = try localRepository.garbageCollectionCandidates(
+                        allContentIDs: Set(storedObjects.map(\.contentID)),
+                        referencedContentIDs: referencedContentIDs.union(retainedReferences), now: now
+                    )
+                } catch is SyncCycleCancellationError {
+                    throw SyncCycleCancellationError.cancelled
+                } catch {
+                    garbageIDs = []
+                }
+            }
             if !garbageIDs.isEmpty {
                 invalidateObservationCache()
             }
@@ -717,12 +674,13 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                 removedDeviceIDs: removedDeviceIDs,
                 inventory: finalStorageInventory,
                 lastFullInventoryAuditAt: lastFullInventoryAuditAt,
-                needsContentRefresh: missingRemoteContent || hasInvalidRemoteContent
+                needsContentRefresh: missingRemoteContent || hasInvalidRemoteContent,
+                legacyCleanupProgress: legacyCleanupProgress
             )
         )
         let usage = finalStorageInventory.usage(
             capacityBytes: configuration.storageLimit.byteLimit,
-            ordinaryHistoryCount: decision.ordinaryCount
+            ordinaryHistoryCount: 0
         )
         let status: SyncStatus
         if missingRemoteContent {
@@ -736,8 +694,6 @@ public final class DriveSyncCycleRunner: @unchecked Sendable {
                     || hasInvalidRemoteContent
                     || !unavailableLocalRecordNames.isEmpty {
             status = .failed
-        } else if shouldPauseImageUploads || usage.usedBytes > usage.capacityBytes {
-            status = .capacityFull(usage: usage)
         } else {
             status = .synced(lastSyncAt: now, usage: usage)
         }

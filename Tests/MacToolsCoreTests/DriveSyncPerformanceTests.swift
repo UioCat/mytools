@@ -3,7 +3,7 @@ import XCTest
 @testable import MacToolsCore
 
 final class DriveSyncPerformanceTests: XCTestCase {
-    func testOutOfScopeCopyDoesNotPublishOrLoseFutureScopeExpansion() throws {
+    func testOrdinaryCopyStaysLocalUntilFavoritedEvenWithLegacyScope() throws {
         let fixture = try makeFixture()
         let configuration = DriveSyncCycleConfiguration(
             historyLimit: 500, clipboardScope: .favoritesAndPinned, storageLimit: .megabytes512
@@ -22,6 +22,10 @@ final class DriveSyncPerformanceTests: XCTestCase {
         _ = try fixture.runner.run(rootURL: fixture.root, configuration: .init(
             historyLimit: 500, clipboardScope: .allHistory, storageLimit: .megabytes512
         ))
+        XCTAssertEqual(try fixture.store.replicas(generation: 1).first?.clipboard.records.count, 0)
+        let item = try XCTUnwrap(fixture.clipboard.search("", limit: 10).first)
+        try fixture.clipboard.setFavorite(id: item.id, isFavorite: true)
+        _ = try fixture.runner.run(rootURL: fixture.root, configuration: configuration)
         XCTAssertEqual(try fixture.store.replicas(generation: 1).first?.clipboard.records.count, 1)
     }
 

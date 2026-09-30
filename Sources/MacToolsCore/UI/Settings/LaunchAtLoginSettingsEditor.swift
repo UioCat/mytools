@@ -8,6 +8,8 @@ public enum LaunchAtLoginSettingsState: Equatable, Sendable {
     case disabled
     case enabled
     case requiresApproval
+    case registrationMissing
+    case requiresAppBundle
     case unavailable
     case failed(isEnabled: Bool, message: String)
 
@@ -17,13 +19,13 @@ public enum LaunchAtLoginSettingsState: Equatable, Sendable {
             return true
         case .failed(let isEnabled, _):
             return isEnabled
-        case .disabled, .unavailable:
+        case .disabled, .registrationMissing, .requiresAppBundle, .unavailable:
             return false
         }
     }
 
     public var isAvailable: Bool {
-        self != .unavailable
+        self != .unavailable && self != .requiresAppBundle
     }
 
     var detailText: String {
@@ -34,8 +36,12 @@ public enum LaunchAtLoginSettingsState: Equatable, Sendable {
             return "已由 macOS 登录项管理"
         case .requiresApproval:
             return "需要在系统设置的登录项中允许"
+        case .registrationMissing:
+            return "开启后将向 macOS 注册登录项"
+        case .requiresAppBundle:
+            return "请打开完整的 MacTools.app 后设置"
         case .unavailable:
-            return "当前应用无法注册为登录项"
+            return "无法读取登录项状态，请在系统设置中检查"
         case .failed(_, let message):
             return message
         }
@@ -43,6 +49,15 @@ public enum LaunchAtLoginSettingsState: Equatable, Sendable {
 
     var requiresSystemApproval: Bool {
         self == .requiresApproval
+    }
+
+    var showsSystemSettingsAction: Bool {
+        switch self {
+        case .requiresApproval, .failed, .unavailable:
+            return true
+        case .disabled, .enabled, .registrationMissing, .requiresAppBundle:
+            return false
+        }
     }
 }
 
@@ -56,12 +71,14 @@ struct LaunchAtLoginSettingsEditor: View {
         VStack(spacing: 0) {
             toggleRow
 
-            if state.requiresSystemApproval {
+            if state.showsSystemSettingsAction {
                 SettingsSectionDivider()
 
                 SettingsActionRow(
-                    title: "允许自动启动",
-                    detail: "macOS 需要确认此登录项",
+                    title: state.requiresSystemApproval ? "允许自动启动" : "检查登录项",
+                    detail: state.requiresSystemApproval
+                        ? "macOS 需要确认此登录项"
+                        : "切换开关可重试，也可查看系统登录项",
                     actionTitle: "打开登录项",
                     systemImage: "arrow.up.forward",
                     action: openSystemSettings
@@ -92,6 +109,7 @@ struct LaunchAtLoginSettingsEditor: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .accessibilityLabel(Text("登录时自动启动"))
+            .accessibilityHint(Text(state.detailText))
             .disabled(!state.isAvailable)
         }
         .padding(.horizontal, 16)

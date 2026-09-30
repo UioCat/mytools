@@ -2,6 +2,8 @@
 
 > CloudKit 同步后端已由 [MacTools iCloud Drive 多设备同步设计](2026-07-20-icloud-drive-sync-design.md) 替代。本文件中的统一本地存储、Payload 生命周期和本机 500 条淘汰规则继续有效；CloudKit、CKSyncEngine、应用专属 Container、APNs、CloudKit 加密和正式签名要求不再作为当前实现目标。
 
+> 2026-09-30 起跨设备剪贴板范围固定为仅收藏及相关配置，取消应用内同步容量上限与范围选择器；以下“仅收藏与置顶”“全部历史”约定属于旧方案。现行行为和迁移边界见 [同步可靠性与自动化验证](../../sync-reliability.md)。
+
 ## 文档状态
 
 - 状态：本地统一存储已实现；CloudKit 同步章节已废止。

@@ -195,7 +195,7 @@ final class SyncConvergenceTests: XCTestCase {
             id: id, kind: .imageData, displayTitle: "Fixture PNG", searchableText: "Fixture PNG", text: nil,
             originalPath: nil, cachedFilePath: nil, thumbnailPath: nil, sourceApp: "Fixture",
             contentHash: ClipboardContentHasher.sha256String(for: png), createdAt: Date(timeIntervalSince1970: 100),
-            lastUsedAt: nil, useCount: 0, isPinned: false, isFavorite: false
+            lastUsedAt: nil, useCount: 0, isPinned: false, isFavorite: true
         ), data: png)
         try network.a.run()
         let delivery = try network.a.delivery()
@@ -535,7 +535,7 @@ private final class SyncTestDevice {
             originalPath: nil, cachedFilePath: nil, thumbnailPath: nil, sourceApp: source,
             contentHash: ClipboardContentHasher.sha256String(for: Data("text:\(text)".utf8)),
             createdAt: date, lastUsedAt: nil, useCount: 0,
-            isPinned: false, isFavorite: false
+            isPinned: false, isFavorite: true
         ))
         return id
     }

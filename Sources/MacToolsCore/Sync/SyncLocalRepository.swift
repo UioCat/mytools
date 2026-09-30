@@ -310,7 +310,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
         excludingContentIDs: Set<String> = [],
         at cutoff: Date = Date()
     ) throws -> SyncExportDraft {
-        let candidates = try clipboardRepository.syncCandidates(scope: scope)
+        let candidates = try clipboardRepository.syncCandidates(scope: .favoritesOnly)
         var records: [SyncClipboardRecord] = []
         var descriptorsByID: [String: SyncContentDescriptor] = [:]
         var unavailableClipboardRecordNames: Set<String> = []
@@ -346,9 +346,6 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 guard let path = item.cachedFilePath,
                       let expectedByteCount = candidate.payloadByteCount else {
                     unavailableClipboardRecordNames.insert(item.id.uuidString)
-                    continue
-                }
-                guard expectedByteCount <= SyncRetentionPolicy.maximumImageBytes else {
                     continue
                 }
                 let url = URL(fileURLWithPath: path)
@@ -450,7 +447,8 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 deviceID: deviceID,
                 generation: generation,
                 revision: revision,
-                records: records
+                records: records,
+                favoriteRemovals: try favoriteRemovals(generation: generation)
             ),
             preferences: SyncPreferencesSnapshot(
                 deviceID: deviceID,
@@ -492,7 +490,6 @@ public final class SyncLocalRepository: @unchecked Sendable {
         case let .payloadFile(url):
             data = try Data(contentsOf: url, options: [.mappedIfSafe])
             guard Int64(data.count) == descriptor.storedByteCount,
-                  Int64(data.count) <= SyncRetentionPolicy.maximumImageBytes,
                   ClipboardContentHasher.sha256String(for: data) == descriptor.contentID else {
                 throw DriveSyncStoreError.contentHashMismatch(descriptor.contentID)
             }
@@ -512,7 +509,13 @@ public final class SyncLocalRepository: @unchecked Sendable {
         historyLimit: Int
     ) throws {
         let deletedRecordNames = try tombstonedRecordNames(generation: snapshot.generation)
-        for record in snapshot.records where !deletedRecordNames.contains(record.recordName) {
+        try applyFavoriteRemovals(snapshot.favoriteRemovals, generation: snapshot.generation, historyLimit: historyLimit)
+        let removalsByContentID = Dictionary(uniqueKeysWithValues: try favoriteRemovals(
+            generation: snapshot.generation
+        ).map { ($0.contentID, $0) })
+        for record in snapshot.records where record.isFavorite
+            && !deletedRecordNames.contains(record.recordName)
+            && removalsByContentID[record.contentID]?.excludes(record) != true {
             guard let data = contents[record.contentID] else { continue }
             let payload: PayloadObjectDescriptor?
             let text: String?
@@ -530,8 +533,7 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 text = object.text
             case .imageData:
                 // 当前图片先写 PayloadStore，再由 repository 建立数据库引用；两步之间不是同一原子操作。
-                guard Int64(data.count) <= SyncRetentionPolicy.maximumImageBytes,
-                      ClipboardContentHasher.sha256String(for: data) == record.contentID else {
+                guard ClipboardContentHasher.sha256String(for: data) == record.contentID else {
                     continue
                 }
                 payload = try payloadStore.storePNG(data)
@@ -573,6 +575,83 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 deterministicallyMergesRecordNames: true
             )
         }
+    }
+
+    /// 保存取消收藏证据到现有协议元数据表，不保存正文、路径或标题。
+    static func persistFavoriteRemoval(
+        _ removal: SyncFavoriteRemoval,
+        generation: Int,
+        in db: Database
+    ) throws {
+        let accounts = try String.fetchAll(db, sql: "SELECT accountHash FROM sync_accounts ORDER BY updatedAt DESC LIMIT 1")
+        for account in accounts {
+            if let data = try Data.fetchOne(
+                db,
+                sql: "SELECT systemFields FROM sync_record_metadata WHERE accountHash = ? AND recordType = 'favoriteRemoval' AND recordName = ? AND generation = ?",
+                arguments: [account, removal.contentID, generation]
+            ) {
+                let previous = try SyncSnapshotCodec.decode(SyncFavoriteRemoval.self, from: data)
+                guard removal.favoriteClock.wins(over: previous.favoriteClock) else { continue }
+            }
+            try db.execute(
+                sql: """
+                INSERT INTO sync_record_metadata (accountHash, recordType, recordName, generation, systemFields, updatedAt)
+                VALUES (?, 'favoriteRemoval', ?, ?, ?, ?)
+                ON CONFLICT(accountHash, recordType, recordName) DO UPDATE SET
+                    generation = excluded.generation, systemFields = excluded.systemFields, updatedAt = excluded.updatedAt
+                """,
+                arguments: [account, removal.contentID, generation, try SyncSnapshotCodec.encode(removal), Date()]
+            )
+        }
+    }
+
+    /// 合并本地记录与持久证据；普通历史被本地裁剪后仍能阻止离线收藏副本复活。
+    public func favoriteRemovals(generation: Int) throws -> [SyncFavoriteRemoval] {
+        try database.writer.write { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT contentHash, favoriteClock, favoriteDeviceID FROM clipboard_items WHERE isFavorite = 0 AND favoriteClock > 0 AND contentHash IS NOT NULL"
+            )
+            for row in rows {
+                try Self.persistFavoriteRemoval(.init(
+                    contentID: row["contentHash"],
+                    favoriteClock: .init(counter: row["favoriteClock"], deviceID: row["favoriteDeviceID"])
+                ), generation: generation, in: db)
+            }
+            return try Data.fetchAll(
+                db,
+                sql: "SELECT systemFields FROM sync_record_metadata WHERE recordType = 'favoriteRemoval' AND generation = ? AND accountHash = (SELECT accountHash FROM sync_accounts ORDER BY updatedAt DESC LIMIT 1) ORDER BY recordName",
+                arguments: [generation]
+            ).map { try SyncSnapshotCodec.decode(SyncFavoriteRemoval.self, from: $0) }
+        }
+    }
+
+    /// 取消收藏只更新保护状态与时钟，本地剪贴板记录及载荷继续由本地历史策略管理。
+    public func applyFavoriteRemovals(
+        _ removals: [SyncFavoriteRemoval], generation: Int, historyLimit: Int
+    ) throws {
+        guard !removals.isEmpty else { return }
+        let prunedItemIDs = try database.writer.write { db in
+            for removal in removals {
+                try Self.persistFavoriteRemoval(removal, generation: generation, in: db)
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: "SELECT id, favoriteClock, favoriteDeviceID FROM clipboard_items WHERE contentHash = ?",
+                    arguments: [removal.contentID]
+                )
+                for row in rows {
+                    let clock = ClipboardFieldClock(counter: row["favoriteClock"], deviceID: row["favoriteDeviceID"])
+                    guard removal.favoriteClock.wins(over: clock) else { continue }
+                    try db.execute(
+                        sql: "UPDATE clipboard_items SET isFavorite = 0, favoriteClock = ?, favoriteDeviceID = ? WHERE id = ?",
+                        arguments: [removal.favoriteClock.counter, removal.favoriteClock.deviceID, row["id"] as String]
+                    )
+                }
+            }
+            // 取消证据先持久化；同事务把刚转普通的项目纳入本机历史上限。
+            return try clipboardRepository.pruneNormalHistory(in: db, limit: historyLimit)
+        }
+        if !prunedItemIDs.isEmpty { clipboardRepository.collectPayloadGarbageAfterCommit() }
     }
 
     /// 在本地事务应用远端 tombstone，并阻止已删除记录由旧副本复活。

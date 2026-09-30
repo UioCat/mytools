@@ -53,8 +53,6 @@ public struct SettingsView: View {
     @State private var appearanceMode: AppAppearanceMode
     @State private var appearanceSaveMessage: String?
     @State private var syncIsEnabled: Bool
-    @State private var clipboardSyncScope: ClipboardSyncScope
-    @State private var syncStorageLimit: SyncStorageLimit
     @State private var syncSaveMessage: String?
 
     /// 创建 `SettingsView`，保存传入依赖并建立初始状态。
@@ -141,8 +139,6 @@ public struct SettingsView: View {
         self._appearanceMode = State(initialValue: settings.appearanceMode)
         self._appearanceSaveMessage = State(initialValue: nil)
         self._syncIsEnabled = State(initialValue: settings.sync.isEnabled)
-        self._clipboardSyncScope = State(initialValue: settings.sync.clipboardScope)
-        self._syncStorageLimit = State(initialValue: settings.sync.storageLimit)
         self._syncSaveMessage = State(initialValue: nil)
     }
 
@@ -285,8 +281,6 @@ public struct SettingsView: View {
                 folderIsUbiquitous: syncFolderIsUbiquitous,
                 devices: syncDevices,
                 isEnabled: $syncIsEnabled,
-                clipboardScope: $clipboardSyncScope,
-                storageLimit: $syncStorageLimit,
                 saveMessage: $syncSaveMessage,
                 saveSettings: saveSyncSettings,
                 syncNow: syncNow,

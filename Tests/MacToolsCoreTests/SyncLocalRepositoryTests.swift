@@ -79,7 +79,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
             lastUsedAt: nil,
             useCount: 0,
             isPinned: false,
-            isFavorite: false
+            isFavorite: true
         )
         try replica.clipboard.upsertPNG(image, data: imageData)
         let cutoff = Date(timeIntervalSince1970: 500)
@@ -122,7 +122,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
             lastUsedAt: nil,
             useCount: 0,
             isPinned: false,
-            isFavorite: false
+            isFavorite: true
         )
         try replica.clipboard.upsertPNG(image, data: imageData)
         var cache = SyncExportContentCache()
@@ -510,7 +510,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
             lastUsedAt: nil,
             useCount: 0,
             isPinned: false,
-            isFavorite: false
+            isFavorite: true
         )
         try replica.clipboard.upsertPNG(image, data: imageData)
         let text = textItem(id: UUID(), text: "available")
@@ -791,7 +791,7 @@ final class SyncLocalRepositoryTests: XCTestCase {
             lastUsedAt: nil,
             useCount: 0,
             isPinned: false,
-            isFavorite: false
+            isFavorite: true
         )
     }
 

@@ -14,6 +14,27 @@ final class LaunchAtLoginSettingsTests: XCTestCase {
             LaunchAtLoginSettingsState.failed(isEnabled: true, message: "关闭失败").isEnabled
         )
         XCTAssertFalse(LaunchAtLoginSettingsState.unavailable.isAvailable)
+        XCTAssertFalse(LaunchAtLoginSettingsState.requiresAppBundle.isAvailable)
+        XCTAssertFalse(LaunchAtLoginSettingsState.requiresAppBundle.isEnabled)
+        XCTAssertTrue(LaunchAtLoginSettingsState.registrationMissing.isAvailable)
+        XCTAssertFalse(LaunchAtLoginSettingsState.registrationMissing.isEnabled)
+    }
+
+    func testRecoveryPresentationOffersSystemSettingsForApprovalAndFailure() {
+        XCTAssertTrue(LaunchAtLoginSettingsState.requiresApproval.showsSystemSettingsAction)
+        XCTAssertTrue(LaunchAtLoginSettingsState.requiresApproval.requiresSystemApproval)
+        XCTAssertTrue(LaunchAtLoginSettingsState.unavailable.showsSystemSettingsAction)
+        let failure = LaunchAtLoginSettingsState.failed(isEnabled: false, message: "开启失败")
+        XCTAssertTrue(failure.showsSystemSettingsAction)
+        XCTAssertFalse(failure.requiresSystemApproval)
+        XCTAssertFalse(LaunchAtLoginSettingsState.disabled.showsSystemSettingsAction)
+        XCTAssertFalse(LaunchAtLoginSettingsState.enabled.showsSystemSettingsAction)
+        XCTAssertFalse(LaunchAtLoginSettingsState.registrationMissing.showsSystemSettingsAction)
+        XCTAssertFalse(LaunchAtLoginSettingsState.requiresAppBundle.showsSystemSettingsAction)
+        XCTAssertEqual(
+            LaunchAtLoginSettingsState.requiresAppBundle.detailText,
+            "请打开完整的 MacTools.app 后设置"
+        )
     }
 
     func testEditorKeepsSystemActionsInjected() throws {
@@ -24,7 +45,7 @@ final class LaunchAtLoginSettingsTests: XCTestCase {
         XCTAssertTrue(source.contains("Text(\"登录时自动启动\")"))
         XCTAssertTrue(source.contains("isOn: Binding(get: { state.isEnabled }, set: setEnabled)"))
         XCTAssertTrue(source.contains(".disabled(!state.isAvailable)"))
-        XCTAssertTrue(source.contains("if state.requiresSystemApproval"))
+        XCTAssertTrue(source.contains("if state.showsSystemSettingsAction"))
         XCTAssertTrue(source.contains("action: openSystemSettings"))
         XCTAssertFalse(source.contains("import ServiceManagement"))
     }
