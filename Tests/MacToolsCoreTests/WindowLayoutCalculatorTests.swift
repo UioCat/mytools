@@ -40,12 +40,63 @@ final class WindowLayoutCalculatorTests: XCTestCase {
         )
         XCTAssertEqual(
             WindowLayoutCalculator.targetFrame(for: .centered, in: visibleFrame),
-            CGRect(x: 220, y: 130, width: 960, height: 640)
+            CGRect(x: 220, y: 50, width: 960, height: 800)
         )
         XCTAssertEqual(
             WindowLayoutCalculator.targetFrame(for: .maximize, in: visibleFrame),
             visibleFrame
         )
+    }
+
+    func testCenteredLayoutFillsHeightAndPreservesHorizontalFractionOnOffsetScreen() {
+        let visibleFrame = CGRect(x: -1_203, y: -427, width: 1_203, height: 803)
+
+        XCTAssertEqual(
+            WindowLayoutCalculator.targetFrame(for: .centered, in: visibleFrame),
+            CGRect(x: -1_082, y: -427, width: 962, height: 803)
+        )
+    }
+
+    func testVerticalThirdLayoutsFillWidthAndAnchorToVisibleEdges() {
+        let visibleFrame = CGRect(x: -1_203, y: -427, width: 1_203, height: 803)
+        let cases: [(WindowLayoutMode, CGRect)] = [
+            (.topThird, CGRect(x: -1_203, y: 109, width: 1_203, height: 267)),
+            (.bottomThird, CGRect(x: -1_203, y: -427, width: 1_203, height: 267)),
+            (.topTwoThirds, CGRect(x: -1_203, y: -159, width: 1_203, height: 535)),
+            (.bottomTwoThirds, CGRect(x: -1_203, y: -427, width: 1_203, height: 535))
+        ]
+
+        for (mode, expected) in cases {
+            XCTAssertEqual(WindowLayoutCalculator.targetFrame(for: mode, in: visibleFrame), expected, mode.rawValue)
+        }
+    }
+
+    func testRepeatedVerticalThirdLayoutsTraverseWithMatchingFraction() {
+        let current = screen(id: "current", frame: CGRect(x: 0, y: 0, width: 1_200, height: 800))
+        let upper = screen(id: "upper", frame: CGRect(x: 100, y: 800, width: 900, height: 701))
+        let lower = screen(id: "lower", frame: CGRect(x: -100, y: -701, width: 1_000, height: 701))
+        let cases: [(WindowLayoutMode, WindowLayoutMode, WindowLayoutScreen)] = [
+            (.topThird, .bottomThird, upper),
+            (.bottomThird, .topThird, lower),
+            (.topTwoThirds, .bottomTwoThirds, upper),
+            (.bottomTwoThirds, .topTwoThirds, lower)
+        ]
+
+        for (mode, destinationMode, destination) in cases {
+            let previousTarget = WindowLayoutCalculator.targetFrame(for: mode, in: current.visibleFrame)
+            let target = WindowScreenNavigationPolicy.target(
+                requestedMode: mode,
+                currentFrame: previousTarget,
+                previousMode: mode,
+                previousTargetFrame: previousTarget,
+                currentScreen: current,
+                screens: [current, upper, lower]
+            )
+
+            XCTAssertEqual(target.screen, destination)
+            XCTAssertEqual(target.mode, destinationMode)
+            XCTAssertEqual(target.frame, WindowLayoutCalculator.targetFrame(for: destinationMode, in: destination.visibleFrame))
+        }
     }
 
     func testWindowFrameApplicationClassifiesPositionAndSizeIndependently() {
@@ -101,7 +152,7 @@ final class WindowLayoutCalculatorTests: XCTestCase {
 
     func testWindowFrameApplicationShrinksBeforeMovingFromMaximizedToCentered() {
         let current = CGRect(x: 100, y: 50, width: 1_200, height: 800)
-        let target = CGRect(x: 220, y: 130, width: 960, height: 640)
+        let target = WindowLayoutCalculator.targetFrame(for: .centered, in: current)
 
         XCTAssertEqual(
             WindowFrameApplicationPolicy.mutationPlan(
@@ -441,13 +492,15 @@ final class WindowLayoutCalculatorTests: XCTestCase {
     func testWindowLayoutSettingsEditorGroupsModesByMeaning() {
         XCTAssertEqual(
             WindowLayoutSettingsLayout.modeGroups.map(\.title),
-            ["水平半屏", "垂直半屏", "三分之一", "三分之二", "焦点"]
+            ["水平半屏", "垂直半屏", "水平 1/3", "垂直 1/3", "水平 2/3", "垂直 2/3", "焦点"]
         )
         XCTAssertEqual(WindowLayoutSettingsLayout.modeGroups.map(\.modes), [
             [.leftHalf, .rightHalf],
             [.topHalf, .bottomHalf],
             [.leftThird, .rightThird],
+            [.topThird, .bottomThird],
             [.leftTwoThirds, .rightTwoThirds],
+            [.topTwoThirds, .bottomTwoThirds],
             [.centered, .maximize]
         ])
     }
@@ -459,9 +512,13 @@ final class WindowLayoutCalculatorTests: XCTestCase {
         XCTAssertEqual(WindowLayoutMode.bottomHalf.previewSegment, .init(x: 0, y: 0.5, width: 1, height: 0.5))
         XCTAssertEqual(WindowLayoutMode.leftThird.previewSegment, .init(x: 0, y: 0, width: 1.0 / 3.0, height: 1))
         XCTAssertEqual(WindowLayoutMode.rightThird.previewSegment, .init(x: 2.0 / 3.0, y: 0, width: 1.0 / 3.0, height: 1))
+        XCTAssertEqual(WindowLayoutMode.topThird.previewSegment, .init(x: 0, y: 0, width: 1, height: 1.0 / 3.0))
+        XCTAssertEqual(WindowLayoutMode.bottomThird.previewSegment, .init(x: 0, y: 2.0 / 3.0, width: 1, height: 1.0 / 3.0))
         XCTAssertEqual(WindowLayoutMode.leftTwoThirds.previewSegment, .init(x: 0, y: 0, width: 2.0 / 3.0, height: 1))
         XCTAssertEqual(WindowLayoutMode.rightTwoThirds.previewSegment, .init(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1))
-        XCTAssertEqual(WindowLayoutMode.centered.previewSegment, .init(x: 0.2, y: 0.2, width: 0.6, height: 0.6))
+        XCTAssertEqual(WindowLayoutMode.topTwoThirds.previewSegment, .init(x: 0, y: 0, width: 1, height: 2.0 / 3.0))
+        XCTAssertEqual(WindowLayoutMode.bottomTwoThirds.previewSegment, .init(x: 0, y: 1.0 / 3.0, width: 1, height: 2.0 / 3.0))
+        XCTAssertEqual(WindowLayoutMode.centered.previewSegment, .init(x: 0.1, y: 0, width: 0.8, height: 1))
         XCTAssertEqual(WindowLayoutMode.maximize.previewSegment, .init(x: 0, y: 0, width: 1, height: 1))
     }
 

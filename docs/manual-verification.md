@@ -22,6 +22,7 @@
 | 截图选区、静态采集或截图编辑交接 | `CAPTURE-POPUP-001` 及下文截图录屏检查 |
 | 截图文字输入或排版测量 | `CAPTURE-TEXT-IME-001`、`CAPTURE-TEXT-MIXED-SCALE-001` 及下文截图文字、焦点、明暗背景与 PNG 检查 |
 | 超级右键事件、捕获、翻译结果或面板关闭 | `RIGHT-CLICK-001`、`RIGHT-CLICK-002` 及下文超级右键检查 |
+| 窗口布局模式、几何、预览或快捷键 | `WINDOW-LAYOUT-001`、`WINDOW-LAYOUT-002` 及下文窗口布局检查 |
 | 其他 UI 或系统集成 | 下文中直接受影响的功能检查；触及共用窗口或输入链路时增加上述关联场景 |
 | 同步协议、同步持久化或后台调度 | 下列同步回归；单机自动化覆盖主要故障，不依赖人工双机配合 |
 | 同步范围、同步空间统计或同步设置展示 | `SYNC-FAVORITES-001`、`SYNC-STORAGE-001`，以及关联同步回归 |
@@ -29,6 +30,15 @@
 | 剪贴板轮询、暂停恢复或来源应用查询 | `CLIPBOARD-IDLE-001`；同步联动时增加 `SYNC-IDLE-PERF-001` |
 
 每个新修复的用户 Bug 都应关联已有场景 ID；无法覆盖时新增稳定 ID，并保留复现步骤、通过标准与相邻负例。自动化回归测试应能在修复前失败、修复后通过；无法自动化的操作保留可重复实测步骤。
+
+### 窗口布局回归
+
+| 场景 ID | 操作与通过标准 |
+| --- | --- |
+| `WINDOW-LAYOUT-001` 居中填高 | 使用已授予辅助功能权限的打包应用，将可自由缩放的测试窗口先设为半屏，再分别通过超级右键的“居中”和已配置的居中快捷键操作。确认宽度保持屏幕可用宽度的 80%，左右等距，高度填满可用区域且避开菜单栏与 Dock；设置预览同样上下填满。负例：满屏仍为可用宽高的 100%，不受居中比例影响。 |
+| `WINDOW-LAYOUT-002` 上下比例 | 在设置 > 自动化 > 窗口布局检查上/下 1/3、上/下 2/3 的预览、显示开关及快捷键。分别通过面板和配置快捷键执行四种布局，确认宽度填满、按目标高度贴住上或下边缘。上下半屏保持原有行为；有相邻显示器时重复方向操作须保留比例并贴相邻屏内侧。完整旧版默认配置升级为十四种模式和默认按键，自定义显示项或快捷键保持原样；保存、重启后设置稳定。 |
+
+自动化命令：`swift test --filter 'WindowLayout|SettingsStoreTests|SuperPanel|HotKeyServiceTests'`、`swift test`。记录构建版本、居中修复前失败/修复后通过的测试结果，以及面板、快捷键、明暗背景、尺寸调整、焦点、外部点击关闭和键盘导航的实测结果。显示器原点偏移、不能整除的可用高度由几何测试覆盖；不能执行的实际跨屏场景须单独注明。
 
 ### 超级右键回归
 
@@ -171,20 +181,20 @@ AppKit 测试采用 SwiftPM 隔离执行，必须运行全部发现的测试并�
 - Repeat after opening another app's floating utility window, then open a system context menu or click outside the panel; confirm the super-right-click panel initially appears above the utility window, the later system menu can appear in front, and the panel still dismisses on the outside click.
 - Long right-click selected text; confirm the translation panel is `420 pt` wide and its height follows the rendered source and translation lines, starting at about `187 pt` for a short successful translation and stopping at the `620 pt` safety cap. Confirm the actions share one compact `44 pt` horizontal strip with `30 pt` pure-text buttons, `15 pt` labels, approximately `7 pt` above and below each button, no action icons, no unused bottom block, and no window-layout section.
 - In a browser, select styled heading text that Accessibility may expose as an object replacement character, then long right-click; confirm MacTools falls back to copying the selection and shows the real original text and translation instead of a `1 个` empty panel.
-- In a non-Finder app with no selected text or supported content, long right-click and confirm the `320 pt`-wide panel fits the configured window-layout list to its content with no unused bottom block; the standard ten-layout list is fully visible without a scrollbar.
+- In a non-Finder app with no selected text or supported content, long right-click and confirm the `320 pt`-wide panel fits the configured window-layout list to its content with no unused bottom block; the standard fourteen-layout list is fully visible without a scrollbar.
 - In Finder with no selected item, long right-click the current window background and confirm the `320 pt`-wide panel shows `新建文件`, `复制当前路径`, `在终端打开`, then the configured window-layout list for the active Finder directory, with only normal inner padding below the final row and no large blank region.
 - Build and relaunch with `scripts/rebuild_and_run_app.sh` (or launch the packaged app), then trigger Finder-current-folder fallback for the first time; grant the separate Automation request for Finder, allow the system prompt to remain open for longer than three seconds, and confirm the active Finder directory actions appear after authorization.
 - Deny the first Finder Automation request, then revoke an existing Finder Automation grant in System Settings and repeat; confirm both cases safely show only the configured window-layout list without freezing, exposing a path, or reusing stale clipboard content.
 - After granting Finder Automation permission, long right-click a Finder window background whose accessibility document is unavailable and confirm the directory actions target that window's current folder; the normal Finder query remains bounded and must degrade to layout-only if Finder does not respond.
 - Start a Finder-background resolution, then immediately long right-click selected text or a selected file before the Finder result returns; confirm the older Finder result or fallback never reopens or replaces the newer panel.
 - Do not use `swift run MacTools` to verify Apple Events permission behavior because Automation consent is tied to the built app identity; use stable mode through `scripts/rebuild_and_run_app.sh` and `/Applications/MacTools.app`.
-- In Finder with a selected folder, file, or image file, long right-click and confirm the 320 pt-wide panel shows only `复制文件路径` followed by the window-layout list; the standard ten-layout list is fully visible without a scrollbar.
+- In Finder with a selected folder, file, or image file, long right-click and confirm the 320 pt-wide panel shows only `复制文件路径` followed by the window-layout list; the standard fourteen-layout list is fully visible without a scrollbar.
 - Configure an oversized custom window-layout list and confirm the super-right-click panel stops growing at the 620 pt safety cap and allows the overflow content to scroll.
 - Place the super-right-click panel over contrasting light and dark windows; confirm it uses one compact rounded Liquid Glass shell, blue system icons, flat default action rows, and neutral-gray hover feedback without decorative per-action colors. Confirm no gray outline, titlebar residue, rectangular system shadow, or backing layer appears outside the surface.
 - Long right-click a selected folder; confirm only the MacTools context action window appears and the system menu does not appear.
 - Open Settings and confirm the top toolbar shows General, Clipboard, Translation, Automation, and Data Sync; only the selected category's sections are visible. Relaunch and confirm General is selected, then switch tools or hide and reopen the panel during the same run and confirm the last selected category is retained.
 - Place Settings over contrasting light and dark windows and resize from narrow to wide; confirm non-General pages keep their sections flat on the shared window surface, the header matches the translation page hierarchy, and only selected categories and primary interactions float with Liquid Glass. The five categories must remain reachable without clipping, and no gray outline, titlebar residue, rectangular system shadow, or backing layer may appear outside the rounded window surface.
-- Open Automation > Window Layout and confirm every preview has a visible neutral screen frame and blue inset target region. Verify left/right halves, top/bottom halves, one-third, two-thirds, centered, and maximized layouts are distinguishable before reading their labels; narrow the window and confirm controls remain unclipped.
+- Open Automation > Window Layout and confirm every preview has a visible neutral screen frame and blue inset target region. Verify left/right and top/bottom halves, one-third, two-thirds, centered (80% width and full height), and maximized layouts are distinguishable before reading their labels; narrow the window and confirm controls remain unclipped. Run `WINDOW-LAYOUT-001` and `WINDOW-LAYOUT-002`.
 - Hide and show a built-in layout from the context panel, then add at least two shortcuts to one layout row; confirm each shortcut label is horizontally and vertically centered inside its field.
 - Open settings and confirm Clipboard shows a fixed unified storage path, `历史上限 500 条`, and `图片对象：按内容去重 · 自动回收`; confirm there is no cache-folder picker or cache-capacity selector.
 - Open settings and switch appearance among `跟随系统`, `浅色模式`, and `深色模式`; confirm every open MacTools panel updates immediately, the choice survives relaunch, and `跟随系统` reacts to the macOS appearance.

@@ -27,8 +27,12 @@ final class HotKeyServiceTests: XCTestCase {
                 .windowLayout(.bottomHalf),
                 .windowLayout(.leftThird),
                 .windowLayout(.rightThird),
+                .windowLayout(.topThird),
+                .windowLayout(.bottomThird),
                 .windowLayout(.leftTwoThirds),
                 .windowLayout(.rightTwoThirds),
+                .windowLayout(.topTwoThirds),
+                .windowLayout(.bottomTwoThirds),
                 .windowLayout(.centered),
                 .windowLayout(.maximize)
             ]
@@ -55,8 +59,12 @@ final class HotKeyServiceTests: XCTestCase {
                 "Control+Command+Down",
                 "Control+Option+Left",
                 "Control+Option+Right",
+                "Control+Option+Up",
+                "Control+Option+Down",
                 "Option+Command+Left",
                 "Option+Command+Right",
+                "Option+Command+Up",
+                "Option+Command+Down",
                 "Control+Option+0",
                 "Control+Command+0"
             ]

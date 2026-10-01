@@ -77,6 +77,16 @@ final class SuperPanelLayoutTests: XCTestCase {
         )
     }
 
+    func testDefaultLayoutPanelFitsAllFourteenModes() {
+        let content = SuperPanelContent.windowLayoutOnly(
+            windowLayoutButtons: WindowLayoutSettings.defaults.visibleButtons
+        )
+
+        XCTAssertEqual(content.actions.count, 14)
+        XCTAssertEqual(content.actions.map(\.title), WindowLayoutMode.allCases.map(\.title))
+        XCTAssertEqual(SuperPanelLayout.panelSize(for: content), CGSize(width: 320, height: 452))
+    }
+
     func testSelectedItemPanelExpandsToFitTenLayoutButtons() {
         let item = ClipboardItem(
             id: UUID(),

@@ -40,8 +40,12 @@ final class SettingsStoreTests: XCTestCase {
                 ["Control+Command+Down"],
                 ["Control+Option+Left"],
                 ["Control+Option+Right"],
+                ["Control+Option+Up"],
+                ["Control+Option+Down"],
                 ["Option+Command+Left"],
                 ["Option+Command+Right"],
+                ["Option+Command+Up"],
+                ["Option+Command+Down"],
                 ["Control+Option+0"],
                 ["Control+Command+0"]
             ]
@@ -53,8 +57,12 @@ final class SettingsStoreTests: XCTestCase {
             "下半屏",
             "左 1/3",
             "右 1/3",
+            "上 1/3",
+            "下 1/3",
             "左 2/3",
             "右 2/3",
+            "上 2/3",
+            "下 2/3",
             "居中",
             "满屏"
         ])
@@ -183,6 +191,75 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(loaded.modeShortcuts, customized.modeShortcuts)
         XCTAssertTrue(loaded.shortcuts(for: .topHalf).isEmpty)
         XCTAssertTrue(loaded.shortcuts(for: .bottomHalf).isEmpty)
+        XCTAssertTrue(loaded.shortcuts(for: .topThird).isEmpty)
+        XCTAssertTrue(loaded.shortcuts(for: .bottomThird).isEmpty)
+        XCTAssertTrue(loaded.shortcuts(for: .topTwoThirds).isEmpty)
+        XCTAssertTrue(loaded.shortcuts(for: .bottomTwoThirds).isEmpty)
+    }
+
+    func testPreviousTenModeDefaultsMigrateAndRemainStableAfterSaving() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SettingsStore(fileURL: directory.appendingPathComponent("settings.json"))
+        var previous = AppSettings.defaults
+        previous.windowLayout = previousTenModeSettings()
+        previous.windowLayout.isEnabled = false
+        try store.save(previous)
+
+        let loaded = try store.load()
+
+        XCTAssertFalse(loaded.windowLayout.isEnabled)
+        XCTAssertEqual(loaded.windowLayout.enabledModes, WindowLayoutMode.allCases)
+        XCTAssertEqual(loaded.windowLayout.modeShortcuts, WindowLayoutSettings.defaultModeShortcuts)
+        try store.save(loaded)
+        XCTAssertEqual(try store.load(), loaded)
+    }
+
+    func testCustomizedTenModeSettingsKeepVisibilityAndShortcuts() throws {
+        var hiddenMode = previousTenModeSettings()
+        hiddenMode.enabledModes.removeAll { $0 == .rightHalf }
+        let changedShortcut = previousTenModeSettings().replacingPrimaryShortcut(
+            for: .topHalf,
+            with: HotKeyBinding(key: "U", modifiers: ["Control", "Command"])
+        )
+        var customButton = previousTenModeSettings()
+        customButton.customButtons = [WindowLayoutButton(id: "custom.focus", title: "专注", modes: [.centered, .maximize])]
+
+        for customized in [hiddenMode, changedShortcut, customButton] {
+            let loaded = try JSONDecoder().decode(WindowLayoutSettings.self, from: JSONEncoder().encode(customized))
+            XCTAssertEqual(loaded, customized)
+        }
+    }
+
+    func testNewVerticalModesAndCustomShortcutsRoundTrip() throws {
+        let modes: [WindowLayoutMode] = [.topThird, .bottomThird, .topTwoThirds, .bottomTwoThirds]
+        let settings = WindowLayoutSettings(
+            enabledModes: modes,
+            modeShortcuts: [WindowLayoutModeShortcuts(
+                mode: .topThird,
+                shortcuts: [
+                    HotKeyBinding(key: "U", modifiers: ["Control", "Command"]),
+                    HotKeyBinding(key: "Up", modifiers: ["Control", "Option"])
+                ]
+            )]
+        )
+
+        let loaded = try JSONDecoder().decode(WindowLayoutSettings.self, from: JSONEncoder().encode(settings))
+
+        XCTAssertEqual(loaded, settings)
+        XCTAssertEqual(loaded.visibleButtons.map(\.modes), modes.map { [$0] })
+        XCTAssertEqual(loaded.shortcutBindings.count, 2)
+    }
+
+    private func previousTenModeSettings() -> WindowLayoutSettings {
+        let modes: [WindowLayoutMode] = [
+            .leftHalf, .rightHalf, .topHalf, .bottomHalf, .leftThird,
+            .rightThird, .leftTwoThirds, .rightTwoThirds, .centered, .maximize
+        ]
+        return WindowLayoutSettings(
+            enabledModes: modes,
+            modeShortcuts: WindowLayoutSettings.defaultModeShortcuts.filter { modes.contains($0.mode) }
+        )
     }
 
     func testCustomizedLegacyShortcutPreventsWholeDefaultMigration() throws {
@@ -197,7 +274,7 @@ final class SettingsStoreTests: XCTestCase {
             .maximize
         ]
         var shortcuts = WindowLayoutSettings.defaultModeShortcuts.filter {
-            $0.mode != .topHalf && $0.mode != .bottomHalf
+            legacyModes.contains($0.mode)
         }
         shortcuts[0] = WindowLayoutModeShortcuts(
             mode: .leftHalf,

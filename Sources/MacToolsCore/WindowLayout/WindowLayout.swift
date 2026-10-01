@@ -28,8 +28,12 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
     case bottomHalf
     case leftThird
     case rightThird
+    case topThird
+    case bottomThird
     case leftTwoThirds
     case rightTwoThirds
+    case topTwoThirds
+    case bottomTwoThirds
     case centered
     case maximize
 
@@ -49,10 +53,18 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
             return "左 1/3"
         case .rightThird:
             return "右 1/3"
+        case .topThird:
+            return "上 1/3"
+        case .bottomThird:
+            return "下 1/3"
         case .leftTwoThirds:
             return "左 2/3"
         case .rightTwoThirds:
             return "右 2/3"
+        case .topTwoThirds:
+            return "上 2/3"
+        case .bottomTwoThirds:
+            return "下 2/3"
         case .centered:
             return "居中"
         case .maximize:
@@ -66,9 +78,9 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
             return "rectangle.lefthalf.filled"
         case .rightHalf, .rightThird, .rightTwoThirds:
             return "rectangle.righthalf.filled"
-        case .topHalf:
+        case .topHalf, .topThird, .topTwoThirds:
             return "rectangle.tophalf.filled"
-        case .bottomHalf:
+        case .bottomHalf, .bottomThird, .bottomTwoThirds:
             return "rectangle.bottomhalf.filled"
         case .centered:
             return "rectangle.center.inset.filled"
@@ -91,12 +103,20 @@ public enum WindowLayoutMode: String, Codable, CaseIterable, Equatable, Hashable
             return .init(x: 0, y: 0, width: 1.0 / 3.0, height: 1)
         case .rightThird:
             return .init(x: 2.0 / 3.0, y: 0, width: 1.0 / 3.0, height: 1)
+        case .topThird:
+            return .init(x: 0, y: 0, width: 1, height: 1.0 / 3.0)
+        case .bottomThird:
+            return .init(x: 0, y: 2.0 / 3.0, width: 1, height: 1.0 / 3.0)
         case .leftTwoThirds:
             return .init(x: 0, y: 0, width: 2.0 / 3.0, height: 1)
         case .rightTwoThirds:
             return .init(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1)
+        case .topTwoThirds:
+            return .init(x: 0, y: 0, width: 1, height: 2.0 / 3.0)
+        case .bottomTwoThirds:
+            return .init(x: 0, y: 1.0 / 3.0, width: 1, height: 2.0 / 3.0)
         case .centered:
-            return .init(x: 0.2, y: 0.2, width: 0.6, height: 0.6)
+            return .init(x: 0.1, y: 0, width: 0.8, height: 1)
         case .maximize:
             return .init(x: 0, y: 0, width: 1, height: 1)
         }
@@ -191,8 +211,10 @@ enum WindowLayoutSettingsLayout {
     static let modeGroups: [WindowLayoutModeGroup] = [
         WindowLayoutModeGroup(title: "水平半屏", modes: [.leftHalf, .rightHalf]),
         WindowLayoutModeGroup(title: "垂直半屏", modes: [.topHalf, .bottomHalf]),
-        WindowLayoutModeGroup(title: "三分之一", modes: [.leftThird, .rightThird]),
-        WindowLayoutModeGroup(title: "三分之二", modes: [.leftTwoThirds, .rightTwoThirds]),
+        WindowLayoutModeGroup(title: "水平 1/3", modes: [.leftThird, .rightThird]),
+        WindowLayoutModeGroup(title: "垂直 1/3", modes: [.topThird, .bottomThird]),
+        WindowLayoutModeGroup(title: "水平 2/3", modes: [.leftTwoThirds, .rightTwoThirds]),
+        WindowLayoutModeGroup(title: "垂直 2/3", modes: [.topTwoThirds, .bottomTwoThirds]),
         WindowLayoutModeGroup(title: "焦点", modes: [.centered, .maximize])
     ]
 }
@@ -230,12 +252,28 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
             shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Control", "Option"])]
         ),
         WindowLayoutModeShortcuts(
+            mode: .topThird,
+            shortcuts: [HotKeyBinding(key: "Up", modifiers: ["Control", "Option"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .bottomThird,
+            shortcuts: [HotKeyBinding(key: "Down", modifiers: ["Control", "Option"])]
+        ),
+        WindowLayoutModeShortcuts(
             mode: .leftTwoThirds,
             shortcuts: [HotKeyBinding(key: "Left", modifiers: ["Option", "Command"])]
         ),
         WindowLayoutModeShortcuts(
             mode: .rightTwoThirds,
             shortcuts: [HotKeyBinding(key: "Right", modifiers: ["Option", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .topTwoThirds,
+            shortcuts: [HotKeyBinding(key: "Up", modifiers: ["Option", "Command"])]
+        ),
+        WindowLayoutModeShortcuts(
+            mode: .bottomTwoThirds,
+            shortcuts: [HotKeyBinding(key: "Down", modifiers: ["Option", "Command"])]
         ),
         WindowLayoutModeShortcuts(
             mode: .centered,
@@ -347,9 +385,12 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
             [WindowLayoutButton].self,
             forKey: .customButtons
         ) ?? []
-        let shouldMigrateLegacyDefaults = decodedEnabledModes == Self.legacyDefaultModes
-            && Self.normalizedModeShortcuts(decodedModeShortcuts)
-                == Self.legacyDefaultModeShortcuts
+        let normalizedShortcuts = Self.normalizedModeShortcuts(decodedModeShortcuts)
+        let usesLegacyDefaults = decodedEnabledModes == Self.legacyDefaultModes
+            && normalizedShortcuts == Self.legacyDefaultModeShortcuts
+        let usesPreviousDefaults = decodedEnabledModes == Self.previousDefaultModes
+            && normalizedShortcuts == Self.previousDefaultModeShortcuts
+        let shouldMigrateLegacyDefaults = (usesLegacyDefaults || usesPreviousDefaults)
             && decodedCustomButtons.isEmpty
         self.init(
             isEnabled: try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true,
@@ -411,6 +452,23 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
             }
             return WindowLayoutModeShortcuts(mode: mode, shortcuts: shortcuts)
         }
+    }
+
+    private static let previousDefaultModes: [WindowLayoutMode] = [
+        .leftHalf,
+        .rightHalf,
+        .topHalf,
+        .bottomHalf,
+        .leftThird,
+        .rightThird,
+        .leftTwoThirds,
+        .rightTwoThirds,
+        .centered,
+        .maximize
+    ]
+
+    private static let previousDefaultModeShortcuts = defaultModeShortcuts.filter {
+        previousDefaultModes.contains($0.mode)
     }
 
     private static let legacyDefaultModes: [WindowLayoutMode] = [
@@ -479,10 +537,18 @@ public enum WindowLayoutCalculator {
             return leadingFrame(widthFraction: 1.0 / 3.0, in: visibleFrame)
         case .rightThird:
             return trailingFrame(widthFraction: 1.0 / 3.0, in: visibleFrame)
+        case .topThird:
+            return upperFrame(heightFraction: 1.0 / 3.0, in: visibleFrame)
+        case .bottomThird:
+            return lowerFrame(heightFraction: 1.0 / 3.0, in: visibleFrame)
         case .leftTwoThirds:
             return leadingFrame(widthFraction: 2.0 / 3.0, in: visibleFrame)
         case .rightTwoThirds:
             return trailingFrame(widthFraction: 2.0 / 3.0, in: visibleFrame)
+        case .topTwoThirds:
+            return upperFrame(heightFraction: 2.0 / 3.0, in: visibleFrame)
+        case .bottomTwoThirds:
+            return lowerFrame(heightFraction: 2.0 / 3.0, in: visibleFrame)
         case .centered:
             return centeredFrame(in: visibleFrame)
         case .maximize:
@@ -521,12 +587,11 @@ public enum WindowLayoutCalculator {
     /// 计算并返回 `centeredFrame` 对应的窗口布局领域数据或状态结果。
     private static func centeredFrame(in visibleFrame: CGRect) -> CGRect {
         let width = floor(visibleFrame.width * centeredScale)
-        let height = floor(visibleFrame.height * centeredScale)
         return CGRect(
             x: round((visibleFrame.width - width) / 2.0) + visibleFrame.minX,
-            y: round((visibleFrame.height - height) / 2.0) + visibleFrame.minY,
+            y: visibleFrame.minY,
             width: width,
-            height: height
+            height: visibleFrame.height
         )
     }
 }
@@ -731,10 +796,18 @@ private extension WindowLayoutMode {
             return (.left, .rightThird)
         case .rightThird:
             return (.right, .leftThird)
+        case .topThird:
+            return (.up, .bottomThird)
+        case .bottomThird:
+            return (.down, .topThird)
         case .leftTwoThirds:
             return (.left, .rightTwoThirds)
         case .rightTwoThirds:
             return (.right, .leftTwoThirds)
+        case .topTwoThirds:
+            return (.up, .bottomTwoThirds)
+        case .bottomTwoThirds:
+            return (.down, .topTwoThirds)
         case .centered, .maximize:
             return nil
         }
