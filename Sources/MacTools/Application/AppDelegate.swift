@@ -7,9 +7,29 @@ import MacToolsCore
 /// 管理 `AppDelegate` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let environment = AppEnvironment()
+    private lazy var environment = AppEnvironment()
+    private let injectedShutdownCoordinator: ApplicationShutdownCoordinator?
+    private lazy var shutdownCoordinator = injectedShutdownCoordinator ?? ApplicationShutdownCoordinator(
+        stop: { [environment] in await environment.stop() },
+        flush: { [environment] in environment.logger.flush() },
+        reply: { NSApp.reply(toApplicationShouldTerminate: true) }
+    )
     private lazy var menuBarController = MenuBarController(environment: environment)
     private lazy var hotKeyService = HotKeyService(registrar: CarbonHotKeyRegistrar())
+
+    override init() {
+        injectedShutdownCoordinator = nil
+        super.init()
+    }
+
+    init(shutdownCoordinator: ApplicationShutdownCoordinator) {
+        injectedShutdownCoordinator = shutdownCoordinator
+        super.init()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        shutdownCoordinator.requestTermination()
+    }
 
     /// 按外观、菜单栏、环境服务和全局快捷键的顺序完成应用启动装配。
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -22,6 +42,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         NSApp.mainMenu = ApplicationMenu.makeMainMenu()
         menuBarController.install()
+        environment.onValidateHotKeys = { [weak self] settings in
+            guard let self else { return }
+            let failures = hotKeyService.configure(settings: settings) { [weak self] target in
+                self?.handleHotKey(target)
+            }
+            if let failure = failures.first { throw failure }
+        }
         environment.onSettingsChanged = { [weak self] settings in
             self?.configureHotKeys(settings: settings)
             self?.configureAppearance(
@@ -47,16 +74,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         environment.logger.info("application did finish launching")
     }
 
-    /// 响应 `applicationWillTerminate` 对应的应用生命周期事件，并同步运行时服务状态。
+    /// 关闭确认前已等待后台排空；最终退出再确保文件日志完成写入。
     func applicationWillTerminate(_ notification: Notification) {
-        environment.stop()
         environment.logger.flush()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        environment.refreshSystemPermissions()
     }
 
     /// 使用最新设置整体重建全局快捷键注册，并把触发结果路由到运行环境。
     private func configureHotKeys(settings: AppSettings) {
-        hotKeyService.configure(settings: settings) { [weak self] target in
+        let failures = hotKeyService.configure(settings: settings) { [weak self] target in
             self?.handleHotKey(target)
+        }
+        for failure in failures {
+            environment.logger.error("hotkey registration failed: \(failure.hotKey.displayValue)")
         }
     }
 

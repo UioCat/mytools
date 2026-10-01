@@ -24,7 +24,8 @@ final class SystemUpdateService: ObservableObject {
                 ) as? String ?? "—",
                 canCheckForUpdates: false,
                 automaticallyChecksForUpdates: false,
-                automaticallyDownloadsUpdates: false
+                automaticallyDownloadsUpdates: false,
+                isAvailable: false
             )
             return
         }

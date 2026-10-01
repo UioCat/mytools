@@ -101,6 +101,40 @@ final class FileActionServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
     }
 
+    func testCreateNewFilePreservesFileCreatedAfterNameCheck() throws {
+        let folderURL = temporaryFolderURL()
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+        let occupiedURL = folderURL.appendingPathComponent("Untitled.txt")
+        let fileManager = RacingFileManager(occupiedURL: occupiedURL)
+        let service = FileActionService(
+            workspace: FakeWorkspaceOpening(),
+            fileManager: fileManager
+        )
+
+        let fileURL = try service.createNewFile(in: .testItem(kind: .folder, originalPath: folderURL.path))
+
+        XCTAssertEqual(fileURL.lastPathComponent, "Untitled 2.txt")
+        XCTAssertEqual(try Data(contentsOf: occupiedURL), Data("synthetic competing file".utf8))
+        XCTAssertEqual(try Data(contentsOf: fileURL), Data())
+    }
+
+    func testCreateNewFilePreservesSymbolicLinkAndItsTarget() throws {
+        let folderURL = temporaryFolderURL()
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+        let target = folderURL.appendingPathComponent("target.txt")
+        try Data("synthetic target".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: folderURL.appendingPathComponent("Untitled.txt"),
+            withDestinationURL: target
+        )
+        let service = FileActionService(workspace: FakeWorkspaceOpening())
+
+        let fileURL = try service.createNewFile(in: .testItem(kind: .folder, originalPath: folderURL.path))
+
+        XCTAssertEqual(fileURL.lastPathComponent, "Untitled 2.txt")
+        XCTAssertEqual(try Data(contentsOf: target), Data("synthetic target".utf8))
+    }
+
     func testOpenExternalApplicationRunsOpenWithApplicationNameAndPath() throws {
         let processRunner = FakeProcessRunner()
         let service = FileActionService(workspace: FakeWorkspaceOpening(), processRunner: processRunner)
@@ -111,6 +145,24 @@ final class FileActionServiceTests: XCTestCase {
             processRunner.runs,
             [.init(executableURL: URL(fileURLWithPath: "/usr/bin/open"), arguments: ["-a", "Claude", "/Users/example/Project"])]
         )
+    }
+}
+
+private final class RacingFileManager: FileManager, @unchecked Sendable {
+    let occupiedURL: URL
+    private var didRace = false
+
+    init(occupiedURL: URL) {
+        self.occupiedURL = occupiedURL
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        let exists = super.fileExists(atPath: path)
+        if path == occupiedURL.path, !exists, !didRace {
+            didRace = true
+            try! Data("synthetic competing file".utf8).write(to: occupiedURL)
+        }
+        return exists
     }
 }
 

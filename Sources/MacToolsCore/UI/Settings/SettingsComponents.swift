@@ -31,6 +31,9 @@ struct AppearanceSettingsEditor: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(minHeight: 60)
+        .onAppear {
+            selectedMode = currentMode
+        }
         .onChange(of: currentMode) { _, mode in
             selectedMode = mode
         }

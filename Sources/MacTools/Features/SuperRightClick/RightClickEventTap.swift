@@ -2,9 +2,15 @@ import CoreGraphics
 import Foundation
 import MacToolsCore
 
+protocol RightClickEventTapping: AnyObject, Sendable {
+    var isRunning: Bool { get }
+    func start() -> Bool
+    func stop()
+}
+
 /// start/stop 由主 Actor 串行调用；tap、手势和一次性计时器只在专用线程访问。
 /// lock 仅保护跨线程的运行循环句柄，回调不等待主线程，不执行文件或选区 I/O。
-final class RightClickEventTap: @unchecked Sendable {
+final class RightClickEventTap: RightClickEventTapping, @unchecked Sendable {
     typealias TapFactory = @Sendable (CGEventMask, CGEventTapCallBack, UnsafeMutableRawPointer) -> CFMachPort?
     private let lock = NSLock()
     private var runLoop: CFRunLoop?
@@ -15,18 +21,26 @@ final class RightClickEventTap: @unchecked Sendable {
     private let logger: Logger
     private let processor: RightClickEventProcessor
     private let createTap: TapFactory
+    private let enableTap: @Sendable (CFMachPort, Bool) -> Void
+    private let tapIsEnabled: @Sendable (CFMachPort) -> Bool
     private var tap: CFMachPort?
     private var timer: Timer?
     private var scheduledDeadline: Int?
+
+    var isRunning: Bool { lock.withLock { installed && !stopping } }
 
     init(thresholdMilliseconds: Int, logger: Logger,
          createTap: @escaping TapFactory = { mask, callback, info in
              CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                  options: .defaultTap, eventsOfInterest: mask, callback: callback, userInfo: info)
          },
+         enableTap: @escaping @Sendable (CFMachPort, Bool) -> Void = { CGEvent.tapEnable(tap: $0, enable: $1) },
+         tapIsEnabled: @escaping @Sendable (CFMachPort) -> Bool = { CGEvent.tapIsEnabled(tap: $0) },
          output: @escaping @Sendable (RightClickEventProcessor.Output) -> Void) {
         self.logger = logger
         self.createTap = createTap
+        self.enableTap = enableTap
+        self.tapIsEnabled = tapIsEnabled
         processor = RightClickEventProcessor(thresholdMilliseconds: thresholdMilliseconds, output: output)
     }
 
@@ -76,8 +90,17 @@ final class RightClickEventTap: @unchecked Sendable {
         let loop = CFRunLoopGetCurrent()!
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(loop, source, .commonModes)
-        lock.withLock { runLoop = loop; installed = true }
-        CGEvent.tapEnable(tap: tap, enable: true)
+        lock.withLock { runLoop = loop }
+        enableTap(tap, true)
+        guard tapIsEnabled(tap) else {
+            CFMachPortInvalidate(tap)
+            CFRunLoopRemoveSource(loop, source, .commonModes)
+            self.tap = nil
+            lock.withLock { runLoop = nil }
+            ready.signal()
+            return
+        }
+        lock.withLock { installed = true }
         ready.signal()
         CFRunLoopRun()
         timer?.invalidate()
@@ -94,7 +117,11 @@ final class RightClickEventTap: @unchecked Sendable {
             scheduledDeadline = nil
             processor.cancel()
             logger.error("super right click event tap interrupted; cancelled active gesture")
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            if let tap {
+                enableTap(tap, true)
+                let enabled = tapIsEnabled(tap)
+                lock.withLock { installed = enabled }
+            }
             return Unmanaged.passUnretained(event)
         }
         let suppress = processor.process(type: type, event: event) { $0.tapPostEvent(proxy) }

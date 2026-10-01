@@ -69,6 +69,7 @@ struct RuntimeMainWorkspaceView: View {
     @ObservedObject var launchAtLoginService: SystemLaunchAtLoginService
     let speechController: TranslationSpeechController
     let permissionService: PermissionService
+    let onPermissionSummaryChanged: (PermissionSummary) -> Void
     let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> AppSettings
     let onSaveTranslationSettings: (TranslationSettings, Bool) async throws -> AppSettings
@@ -101,6 +102,7 @@ struct RuntimeMainWorkspaceView: View {
         launchAtLoginService: SystemLaunchAtLoginService,
         speechController: TranslationSpeechController,
         permissionService: PermissionService,
+        onPermissionSummaryChanged: @escaping (PermissionSummary) -> Void,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> AppSettings,
         onSaveTranslationSettings: @escaping (TranslationSettings, Bool) async throws -> AppSettings,
@@ -122,6 +124,7 @@ struct RuntimeMainWorkspaceView: View {
         self.model = model
         self.speechController = speechController
         self.permissionService = permissionService
+        self.onPermissionSummaryChanged = onPermissionSummaryChanged
         self.syncModel = syncModel
         self.translationCredentialModel = translationCredentialModel
         self.softwareUpdateService = softwareUpdateService
@@ -161,21 +164,18 @@ struct RuntimeMainWorkspaceView: View {
                 softwareUpdateService: softwareUpdateService,
                 launchAtLoginService: launchAtLoginService,
                 permissionService: permissionService,
+                onPermissionSummaryChanged: onPermissionSummaryChanged,
                 defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
                 onSaveClipboardSettings: { clipboardSettings in
                     currentSettings = try onSaveClipboardSettings(clipboardSettings)
                 },
                 onSaveTranslationSettings: { translationSettings, apiKeyWasEdited in
-                    do {
-                        currentSettings = try await onSaveTranslationSettings(
-                            translationSettings,
-                            apiKeyWasEdited
-                        )
-                        translationCredentialUnavailable = false
-                    } catch {
-                        translationCredentialUnavailable = true
-                        throw error
-                    }
+                    try await RuntimeTranslationSettingsSaveRequest.perform(
+                        save: { try await onSaveTranslationSettings(translationSettings, apiKeyWasEdited) },
+                        onSaved: { currentSettings = $0 },
+                        credentialIsUnavailable: { translationCredentialModel.isUnavailable },
+                        onCredentialUnavailableChanged: { translationCredentialUnavailable = $0 }
+                    )
                 },
                 onSaveSuperRightClickSettings: { superRightClickSettings in
                     currentSettings = try onSaveSuperRightClickSettings(superRightClickSettings)
@@ -253,8 +253,22 @@ struct RuntimeClipboardModuleView: View {
     let onDismiss: () -> Void
 
     var body: some View {
+        VStack(spacing: 0) {
+            if let warning = model.recordingWarning {
+                HStack {
+                    Text(warning).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("重试", action: model.retryRecording)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            }
         MainPanelView(
             items: model.items,
+            catalog: model.catalog,
+            hasMoreItems: model.hasMoreItems,
+            onQueryChange: model.updateQuery,
+            onLoadMore: model.loadMore,
             resetToken: model.presentationToken,
             searchFocusToken: searchFocusToken,
             onSelect: { item, action in
@@ -280,6 +294,7 @@ struct RuntimeClipboardModuleView: View {
             onDismiss: onDismiss,
             presentation: .embedded
         )
+        }
         .onAppear {
             model.refresh()
         }
@@ -295,6 +310,7 @@ struct RuntimeSettingsView: View {
     @ObservedObject var launchAtLoginService: SystemLaunchAtLoginService
     let translationCredentialUnavailable: Bool
     let permissionService: PermissionService
+    let onPermissionSummaryChanged: (PermissionSummary) -> Void
     let defaultClipboardCacheDirectory: URL
     let onSaveClipboardSettings: (ClipboardSettings) throws -> Void
     let onSaveTranslationSettings: (TranslationSettings, Bool) async throws -> Void
@@ -320,6 +336,7 @@ struct RuntimeSettingsView: View {
         softwareUpdateService: SystemUpdateService,
         launchAtLoginService: SystemLaunchAtLoginService,
         permissionService: PermissionService,
+        onPermissionSummaryChanged: @escaping (PermissionSummary) -> Void,
         defaultClipboardCacheDirectory: URL,
         onSaveClipboardSettings: @escaping (ClipboardSettings) throws -> Void,
         onSaveTranslationSettings: @escaping (TranslationSettings, Bool) async throws -> Void,
@@ -338,6 +355,7 @@ struct RuntimeSettingsView: View {
         self._selectedPane = selectedPane
         self.settings = settings
         self.permissionService = permissionService
+        self.onPermissionSummaryChanged = onPermissionSummaryChanged
         self.syncModel = syncModel
         self.softwareUpdateService = softwareUpdateService
         self.launchAtLoginService = launchAtLoginService
@@ -380,7 +398,7 @@ struct RuntimeSettingsView: View {
             openPermissionSettings: permissionService.requestPermissionAndOpenSystemSettings(for:),
             resetPermissionDecisions: {
                 try await permissionService.resetPermissionDecisions()
-                permissionSummary = permissionService.summary()
+                refreshPermissions()
             },
             openClipboardStorageFolder: onOpenClipboardStorageFolder,
             saveClipboardSettings: onSaveClipboardSettings,
@@ -398,27 +416,43 @@ struct RuntimeSettingsView: View {
             presentation: presentation
         )
         .onAppear {
-            permissionSummary = permissionService.summary()
+            refreshPermissions()
             launchAtLoginService.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            permissionSummary = permissionService.summary()
+            refreshPermissions()
             launchAtLoginService.refresh()
         }
+    }
+
+    private func refreshPermissions() {
+        let summary = permissionService.summary()
+        permissionSummary = summary
+        onPermissionSummaryChanged(summary)
     }
 }
 
 /// 封装 `RuntimeTranslationModuleView` 在应用运行时与 AppKit 集成中的值语义和相关操作。
+@MainActor
 struct RuntimeTranslationModuleView: View {
     let settings: AppSettings
     @ObservedObject var speechController: TranslationSpeechController
     @State private var inputText = ""
     @State private var isInputComposingText = false
-    @State private var workspaceState: TranslationWorkspaceState = .idle
-    @State private var translatedOriginalText = ""
+    @StateObject private var requestController: RuntimeTranslationRequestController
+
+    init(
+        settings: AppSettings,
+        speechController: TranslationSpeechController,
+        requestController: RuntimeTranslationRequestController? = nil
+    ) {
+        self.settings = settings
+        self.speechController = speechController
+        _requestController = StateObject(wrappedValue: requestController ?? RuntimeTranslationRequestController())
+    }
 
     private var content: TranslationWorkspaceContent {
-        TranslationWorkspaceContent(settings: settings.translation, state: workspaceState)
+        TranslationWorkspaceContent(settings: settings.translation, state: requestController.state)
     }
 
     private var originalSpeechRequest: TranslationSpeechRequest? {
@@ -426,7 +460,7 @@ struct RuntimeTranslationModuleView: View {
     }
 
     private var translatedSpeechRequest: TranslationSpeechRequest? {
-        content.translatedSpeechRequest(originalText: translatedOriginalText)
+        content.translatedSpeechRequest(originalText: requestController.translatedOriginalText)
     }
 
     private var isSpeakingOriginal: Bool {
@@ -477,6 +511,7 @@ struct RuntimeTranslationModuleView: View {
             speechController.stop(ifSource: .translationWorkspace)
         }
         .onDisappear {
+            requestController.cancel()
             speechController.stop(ifSource: .translationWorkspace)
         }
     }
@@ -543,7 +578,7 @@ struct RuntimeTranslationModuleView: View {
                 .opacity(content.canSubmit(inputText: inputText) ? 1 : 0.45)
                 .disabled(!content.canSubmit(inputText: inputText))
 
-                if workspaceState == .translating {
+                if requestController.state == .translating {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -668,36 +703,7 @@ struct RuntimeTranslationModuleView: View {
         }
 
         speechController.stop(ifSource: .translationWorkspace)
-        workspaceState = .translating
-        Task {
-            // 当前实现未使用请求代际；若允许连续提交，较晚完成的旧请求仍可能覆盖新结果。
-            let service = TranslationService(
-                provider: BailianTranslationProvider(configuration: settings.translation.bailianConfiguration)
-            )
-            let result = await service.translateAutomatically(text)
-
-            await MainActor.run {
-                switch result {
-                case .success(let response):
-                    translatedOriginalText = text
-                    workspaceState = .translated(response.translatedText)
-                case .failure(let error):
-                    workspaceState = .failed(Self.message(for: error))
-                }
-            }
-        }
-    }
-
-    /// 构建并返回 `message` 对应的 SwiftUI 界面内容或展示状态。
-    private static func message(for error: TranslationError) -> String {
-        switch error {
-        case .providerNotConfigured:
-            return "请先在设置里填写 DASHSCOPE_API_KEY。"
-        case .networkUnavailable:
-            return "无法连接到百炼服务，请检查网络后重试。"
-        case .providerFailure(let message):
-            return message
-        }
+        requestController.submit(text, settings: settings.translation)
     }
 }
 
@@ -795,7 +801,7 @@ private struct TranslationTextInputEditor: NSViewRepresentable {
 }
 
 /// 管理 `TranslationInputTextView` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
-private final class TranslationInputTextView: NSTextView {
+final class TranslationInputTextView: NSTextView {
     var onSubmit: () -> Void = {}
     var onMarkedTextStateChange: (Bool) -> Void = { _ in }
     private var editorLayout = TranslationInputEditorLayout.standard
@@ -880,6 +886,10 @@ private final class TranslationInputTextView: NSTextView {
 
     /// 响应 `keyDown` 对应的系统或界面回调，并同步当前交互状态。
     override func keyDown(with event: NSEvent) {
+        if hasMarkedText() {
+            super.keyDown(with: event)
+            return
+        }
         if let command = TranslationInputKeyCommandResolver.command(
             forKeyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,

@@ -2,6 +2,7 @@
 // 负责构建并执行文件动作，不管理 Finder 授权流程。
 
 import AppKit
+import Darwin
 import Foundation
 
 /// 定义 `WorkspaceOpening` 在文件操作领域中需要满足的能力边界。
@@ -80,7 +81,14 @@ public final class FileActionService {
                 continue
             }
 
-            guard fileManager.createFile(atPath: fileURL.path, contents: Data()) else {
+            let descriptor = fileURL.path.withCString {
+                Darwin.open($0, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o666)
+            }
+            guard descriptor >= 0 else {
+                if errno == EEXIST { continue }
+                throw FileActionError.fileCreationFailed(fileURL.path)
+            }
+            guard Darwin.close(descriptor) == 0 else {
                 throw FileActionError.fileCreationFailed(fileURL.path)
             }
 
@@ -141,13 +149,27 @@ public final class SystemWorkspaceOpening: WorkspaceOpening {
     }
 }
 
-/// 封装 `SystemProcessRunner` 在文件操作领域中的值语义和相关操作。
-public struct SystemProcessRunner: ProcessRunning {
+/// 文件动作只交付受控退出状态，不携带进程输出或用户路径。
+public enum FileActionProcessError: Error, Equatable, Sendable {
+    case commandFailed(exitCode: Int32)
+}
+
+/// 在后台文件动作工作器中启动并等待短命令完成。
+public struct SystemProcessRunner: ProcessRunning, Sendable {
     /// 创建 `SystemProcessRunner`，保存传入依赖并建立初始状态。
     public init() {}
 
     /// 运行 `run` 对应的文件操作领域流程，直到完成或进入下一调度点。
     public func run(_ executableURL: URL, arguments: [String]) throws {
-        try Process.run(executableURL, arguments: arguments)
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw FileActionProcessError.commandFailed(exitCode: process.terminationStatus)
+        }
     }
 }

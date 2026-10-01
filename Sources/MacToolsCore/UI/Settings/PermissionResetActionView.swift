@@ -6,7 +6,7 @@ import SwiftUI
 struct PermissionResetActionView: View {
     let resetPermissionDecisions: () async throws -> Void
     let openPermissionSettings: (AppPermission) -> Void
-    @State private var alert: PermissionResetAlert?
+    @StateObject private var model = PermissionResetActionModel()
 
     var body: some View {
         Group {
@@ -15,14 +15,15 @@ struct PermissionResetActionView: View {
             SettingsActionRow(
                 title: "整理旧权限记录",
                 detail: "签名更新后一次性清理 MacTools 的旧授权",
-                actionTitle: "整理",
+                actionTitle: model.isResetting ? "整理中…" : "整理",
                 systemImage: "arrow.counterclockwise",
                 action: {
-                    alert = .confirmation
+                    model.requestConfirmation()
                 }
             )
+            .disabled(model.isResetting)
         }
-        .alert(item: $alert) { alert in
+        .alert(item: $model.alert) { alert in
             systemAlert(for: alert)
         }
     }
@@ -37,12 +38,7 @@ struct PermissionResetActionView: View {
                 ),
                 primaryButton: .destructive(Text("整理")) {
                     Task { @MainActor in
-                        do {
-                            try await resetPermissionDecisions()
-                            self.alert = .success
-                        } catch {
-                            self.alert = .failure(error.localizedDescription)
-                        }
+                        await model.reset(using: resetPermissionDecisions)
                     }
                 },
                 secondaryButton: .cancel(Text("取消"))
@@ -68,7 +64,7 @@ struct PermissionResetActionView: View {
     }
 }
 
-private enum PermissionResetAlert: Identifiable {
+enum PermissionResetAlert: Identifiable, Equatable {
     case confirmation
     case success
     case failure(String)
@@ -81,6 +77,30 @@ private enum PermissionResetAlert: Identifiable {
             return "success"
         case let .failure(message):
             return "failure-\(message)"
+        }
+    }
+}
+
+@MainActor
+final class PermissionResetActionModel: ObservableObject {
+    @Published var alert: PermissionResetAlert?
+    @Published private(set) var isResetting = false
+
+    func requestConfirmation() {
+        guard !isResetting else { return }
+        alert = .confirmation
+    }
+
+    func reset(using resetPermissionDecisions: () async throws -> Void) async {
+        guard !isResetting else { return }
+        isResetting = true
+        alert = nil
+        defer { isResetting = false }
+        do {
+            try await resetPermissionDecisions()
+            alert = .success
+        } catch {
+            alert = .failure(error.localizedDescription)
         }
     }
 }

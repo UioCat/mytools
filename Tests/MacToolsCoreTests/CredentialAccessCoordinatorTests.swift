@@ -12,12 +12,17 @@ final class CredentialAccessCoordinatorTests: XCTestCase {
         try Data("invalid-json".utf8).write(to: url)
         await XCTAssertThrowsErrorAsync(try await fixture.access.redactLegacySettings(at: url))
 
-        var settings = AppSettings.defaults
-        settings.translation.apiKey = "legacy-placeholder"
+        // 直接写旧版 JSON；现版编码器会主动省略 apiKey，不能作为旧格式样本。
+        try Data("{\"translation\":{\"apiKey\":\"legacy-placeholder\",\"model\":\"legacy-model\"},\"appearanceMode\":\"dark\"}".utf8).write(to: url)
         let legacyStore = SettingsStore(fileURL: url)
-        try legacyStore.save(settings)
+        XCTAssertEqual(try legacyStore.load().translation.apiKey, "legacy-placeholder")
         try await fixture.access.redactLegacySettings(at: url)
         XCTAssertTrue(try legacyStore.load().translation.apiKey.isEmpty)
+        XCTAssertEqual(try legacyStore.load().translation.model, "legacy-model")
+        XCTAssertEqual(try legacyStore.load().appearanceMode, .dark)
+        XCTAssertFalse(String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("apiKey"))
+        let permissions = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(permissions?.intValue, 0o600)
 
         // 若重复读取就会抛出解码错误；成功迁移后的云端回声不应再次碰旧文件。
         try Data("invalid-json".utf8).write(to: url)

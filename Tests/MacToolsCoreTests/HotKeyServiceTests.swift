@@ -2,6 +2,64 @@ import XCTest
 @testable import MacToolsCore
 
 final class HotKeyServiceTests: XCTestCase {
+    func testUnsupportedLegacyShortcutDoesNotDisableOtherToolsAtStartup() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        settings.clipboardShortcut = HotKeyBinding(key: "F20", modifiers: ["Option"])
+        var invoked: [HotKeyTarget] = []
+
+        let failures = service.configure(settings: settings) { invoked.append($0) }
+        registrar.handler(for: "Option+2")?()
+
+        XCTAssertEqual(failures.map(\.hotKey.displayValue), ["Option+F20"])
+        XCTAssertEqual(invoked, [.translation])
+        XCTAssertTrue(registrar.registeredHotKeys.contains { $0.displayValue == "Option+Space" })
+    }
+
+    func testInvalidReplacementKeepsExistingBindings() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        service.configure(settings: .defaults)
+        let original = registrar.registeredHotKeys
+        var settings = AppSettings.defaults
+        settings.clipboardShortcut = HotKeyBinding(key: "F20", modifiers: ["Option"])
+
+        XCTAssertEqual(service.configure(settings: settings).count, 1)
+        XCTAssertEqual(registrar.registeredHotKeys, original)
+        XCTAssertEqual(registrar.unregisterAllCallCount, 1)
+    }
+
+    func testUnchangedConfigurationUpdatesHandlerWithoutReregistering() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        service.configure(settings: .defaults) { _ in XCTFail("old handler invoked") }
+        var invoked: [HotKeyTarget] = []
+        service.configure(settings: .defaults) { invoked.append($0) }
+        registrar.handler(for: "Option+2")?()
+
+        XCTAssertEqual(invoked, [.translation])
+        XCTAssertEqual(registrar.unregisterAllCallCount, 1)
+    }
+
+    func testFailedReplacementRestoresPreviousRegistrationsAndHandlers() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        var invokedTargets: [HotKeyTarget] = []
+        service.configure(settings: .defaults) { invokedTargets.append($0) }
+        let original = registrar.registeredHotKeys
+        var updated = AppSettings.defaults
+        updated.clipboardShortcut = HotKeyBinding(key: "C", modifiers: ["Option"])
+        registrar.failingDisplayValue = "Option+C"
+
+        let failures = service.configure(settings: updated) { _ in XCTFail("failed configuration must not replace handlers") }
+        registrar.handler(for: "Option+1")?()
+
+        XCTAssertEqual(registrar.registeredHotKeys, original)
+        XCTAssertEqual(invokedTargets, [.clipboard])
+        XCTAssertEqual(failures.map(\.hotKey.displayValue), ["Option+C"])
+    }
+
     func testDefaultRegistrationsInvokeToolAndWindowLayoutTargets() {
         let registrar = FakeHotKeyRegistrar()
         let service = HotKeyService(registrar: registrar)
@@ -169,8 +227,12 @@ private final class FakeHotKeyRegistrar: HotKeyRegistrar {
     private(set) var registeredHotKeys: [HotKey] = []
     private(set) var unregisterAllCallCount = 0
     private var handlers: [String: () -> Void] = [:]
+    var failingDisplayValue: String?
 
     func register(_ hotKey: HotKey, handler: @escaping () -> Void) throws {
+        if hotKey.displayValue == failingDisplayValue {
+            throw HotKeyRegistrationError.registrationFailed(-9878)
+        }
         registeredHotKeys.append(hotKey)
         handlers[hotKey.displayValue] = handler
     }

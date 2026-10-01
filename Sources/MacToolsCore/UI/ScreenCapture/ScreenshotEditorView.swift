@@ -863,6 +863,8 @@ public struct ScreenshotEditorView: View {
     @State private var previewAnnotation: ScreenshotAnnotation?
     @State private var errorMessage: String?
     @State private var isExporting = false
+    @State private var exportTask: Task<Void, Never>?
+    @State private var exportGeneration = 0
     @State private var mosaicPreviewImage: CGImage?
     @State private var pendingSettings: ScreenCaptureSettings?
     @State private var settingsSaveTask: Task<Void, Never>?
@@ -945,6 +947,7 @@ public struct ScreenshotEditorView: View {
             }.value
         }
         .onDisappear {
+            cancelExport()
             flushPendingSettings()
             clearEscapeHandler()
         }
@@ -2519,7 +2522,9 @@ public struct ScreenshotEditorView: View {
             cancelEditing()
         case .deselect:
             selectedAnnotationID = nil
-        case .forwardToInput, .cancelSession:
+        case .cancelSession:
+            cancelExport()
+        case .forwardToInput:
             break
         }
         return action
@@ -2891,7 +2896,7 @@ public struct ScreenshotEditorView: View {
 
     /// 执行 `copyScreenshot` 对应的屏幕捕获系统集成输入输出操作。
     private func copyScreenshot() {
-        guard commandAction(.complete) == .completeSession else {
+        guard !isExporting, commandAction(.complete) == .completeSession else {
             return
         }
         let annotations = annotationStore.annotations
@@ -2899,7 +2904,9 @@ public struct ScreenshotEditorView: View {
         let textDisplayScale = imageScale(for: CGRect(origin: .zero, size: imageFrame.size))
         isExporting = true
         errorMessage = nil
-        Task {
+        exportGeneration += 1
+        let generation = exportGeneration
+        exportTask = Task {
             do {
                 let data = try await Task.detached(priority: .userInitiated) {
                     try ScreenshotRenderer.pngData(
@@ -2908,12 +2915,23 @@ public struct ScreenshotEditorView: View {
                         textDisplayScale: textDisplayScale
                     )
                 }.value
+                guard !Task.isCancelled, exportGeneration == generation else { return }
+                exportTask = nil
                 onCopy(data)
             } catch {
+                guard !Task.isCancelled, exportGeneration == generation else { return }
+                exportTask = nil
                 errorMessage = "截图合成失败，请重试"
                 isExporting = false
             }
         }
+    }
+
+    private func cancelExport() {
+        exportGeneration += 1
+        exportTask?.cancel()
+        exportTask = nil
+        isExporting = false
     }
 }
 

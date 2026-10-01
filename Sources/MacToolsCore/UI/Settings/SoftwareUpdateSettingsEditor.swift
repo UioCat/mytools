@@ -6,6 +6,7 @@ import SwiftUI
 /// 软件更新服务向通用设置页面提供的只读快照。
 public struct SoftwareUpdateSettingsState: Equatable, Sendable {
     public var version: String
+    public var isAvailable: Bool
     public var canCheckForUpdates: Bool
     public var automaticallyChecksForUpdates: Bool
     public var automaticallyDownloadsUpdates: Bool
@@ -14,9 +15,11 @@ public struct SoftwareUpdateSettingsState: Equatable, Sendable {
         version: String,
         canCheckForUpdates: Bool,
         automaticallyChecksForUpdates: Bool,
-        automaticallyDownloadsUpdates: Bool
+        automaticallyDownloadsUpdates: Bool,
+        isAvailable: Bool = true
     ) {
         self.version = version
+        self.isAvailable = isAvailable
         self.canCheckForUpdates = canCheckForUpdates
         self.automaticallyChecksForUpdates = automaticallyChecksForUpdates
         self.automaticallyDownloadsUpdates = automaticallyDownloadsUpdates
@@ -26,8 +29,11 @@ public struct SoftwareUpdateSettingsState: Equatable, Sendable {
         version: "—",
         canCheckForUpdates: false,
         automaticallyChecksForUpdates: false,
-        automaticallyDownloadsUpdates: false
+        automaticallyDownloadsUpdates: false,
+        isAvailable: false
     )
+
+    public var isCheckingForUpdates: Bool { isAvailable && !canCheckForUpdates }
 }
 
 /// 在通用设置中展示版本、手动检查入口和 Sparkle 设备级偏好。
@@ -64,6 +70,7 @@ struct SoftwareUpdateSettingsEditor: View {
             )
             .disabled(!state.automaticallyChecksForUpdates)
         }
+        .disabled(!state.isAvailable)
     }
 
     private var updateSummaryRow: some View {
@@ -82,12 +89,12 @@ struct SoftwareUpdateSettingsEditor: View {
 
             Button(action: checkForUpdates) {
                 HStack(spacing: 6) {
-                    if !state.canCheckForUpdates {
+                    if state.isCheckingForUpdates {
                         ProgressView()
                             .controlSize(.small)
                     }
 
-                    Text("检查更新…")
+                    Text(state.isAvailable ? "检查更新…" : "更新不可用")
                         .font(.system(size: 12, weight: .semibold))
                 }
                 .padding(.horizontal, 12)

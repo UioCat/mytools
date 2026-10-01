@@ -18,7 +18,7 @@ public enum SuperPanelFileSystemPresentation: Equatable {
 }
 
 /// 描述 `SuperPanelActionID` 在 SwiftUI 展示层中可取的状态、选项或错误。
-public enum SuperPanelActionID: Equatable, Hashable {
+public enum SuperPanelActionID: Equatable, Hashable, Sendable {
     case copyTranslatedText
     case textTransit
     case copyTransitText

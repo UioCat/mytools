@@ -116,7 +116,7 @@ public final class PreferenceRepository: @unchecked Sendable {
                 sql: "SELECT value FROM preferences WHERE domain = ?",
                 arguments: [Self.appDomain]
             ) else { return nil }
-            let root = try Self.jsonObject(data)
+            let root = Self.removingCredentialFields(try Self.jsonObject(data))
             let subset = Dictionary(uniqueKeysWithValues: keys.compactMap { key in
                 root[key].map { (key, $0) }
             })
@@ -132,7 +132,9 @@ public final class PreferenceRepository: @unchecked Sendable {
             var clocks: [String: ClipboardFieldClock] = [:]
             var updatedAt = Date.distantPast
             for row in clockRows {
-                clocks[row["fieldPath"]] = ClipboardFieldClock(
+                let path: String = row["fieldPath"]
+                guard !Self.isCredentialPath(path) else { continue }
+                clocks[path] = ClipboardFieldClock(
                     counter: row["counter"],
                     deviceID: row["deviceID"]
                 )
@@ -163,8 +165,9 @@ public final class PreferenceRepository: @unchecked Sendable {
             ) else {
                 throw PreferenceRepositoryError.missingSettings
             }
-            var root = try Self.jsonObject(currentData)
-            let remoteRoot = try Self.jsonObject(document.value)
+            var root = Self.removingCredentialFields(try Self.jsonObject(currentData))
+            let remoteRoot = Self.removingCredentialFields(try Self.jsonObject(document.value))
+            let remoteClocks = document.clocks.filter { !Self.isCredentialPath($0.key) }
             let localClocks = try fieldClocks(domain: document.domain, in: db)
             let localSubset = Dictionary(uniqueKeysWithValues: keys.compactMap { key in
                 root[key].map { (key, $0) }
@@ -174,7 +177,7 @@ public final class PreferenceRepository: @unchecked Sendable {
                 remote: remoteRoot,
                 path: "",
                 localClocks: localClocks,
-                remoteClocks: document.clocks
+                remoteClocks: remoteClocks
             ) as? [String: Any] ?? localSubset
             for key in keys {
                 if let value = mergedSubset[key] { root[key] = value }
@@ -182,7 +185,8 @@ public final class PreferenceRepository: @unchecked Sendable {
             let mergedData = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
             let settings = try decoder.decode(AppSettings.self, from: mergedData)
             try upsertPreference(data: mergedData, at: date, in: db)
-            for (path, remoteClock) in document.clocks {
+            try removeStoredCredentialClocks(in: db)
+            for (path, remoteClock) in remoteClocks {
                 let localClock = localClocks[path] ?? .zero
                 guard remoteClock.wins(over: localClock) else { continue }
                 try upsertClock(
@@ -222,6 +226,7 @@ public final class PreferenceRepository: @unchecked Sendable {
             arguments: [Self.appDomain]
         )
         try upsertPreference(data: data, at: date, in: db)
+        try removeStoredCredentialClocks(in: db)
         if let deviceSyncEnabled {
             try db.execute(
                 sql: """
@@ -232,8 +237,9 @@ public final class PreferenceRepository: @unchecked Sendable {
                 arguments: [try encoder.encode(deviceSyncEnabled), date]
             )
         }
-        let oldRoot = try previousData.map(Self.jsonObject)
-            ?? Self.jsonObject(encodedSanitized(.defaults))
+        let oldRoot = Self.removingCredentialFields(
+            try previousData.map(Self.jsonObject) ?? Self.jsonObject(encodedSanitized(.defaults))
+        )
         let newRoot = try Self.jsonObject(data)
         var deviceID: String?
         for mapping in Self.domainKeys {
@@ -255,10 +261,14 @@ public final class PreferenceRepository: @unchecked Sendable {
                     """,
                     arguments: [mapping.domain, path]
                 ) ?? 0
+                let (nextCounter, overflow) = current.addingReportingOverflow(1)
+                guard !overflow else {
+                    throw PreferenceRepositoryError.clockExhausted(domain: mapping.domain, fieldPath: path)
+                }
                 try upsertClock(
                     domain: mapping.domain,
                     path: path,
-                    clock: ClipboardFieldClock(counter: current + 1, deviceID: deviceID ?? ""),
+                    clock: ClipboardFieldClock(counter: nextCounter, deviceID: deviceID ?? ""),
                     at: date,
                     in: db
                 )
@@ -304,11 +314,31 @@ public final class PreferenceRepository: @unchecked Sendable {
             sql: "SELECT fieldPath, counter, deviceID FROM preference_field_clocks WHERE domain = ?",
             arguments: [domain]
         ).reduce(into: [:]) { result, row in
-            result[row["fieldPath"]] = ClipboardFieldClock(
+            let path: String = row["fieldPath"]
+            guard !Self.isCredentialPath(path) else { return }
+            result[path] = ClipboardFieldClock(
                 counter: row["counter"],
                 deviceID: row["deviceID"]
             )
         }
+    }
+
+    /// 旧远端偏好中的凭据字段和时钟不能成为新的普通同步副本。
+    private static func isCredentialPath(_ path: String) -> Bool {
+        path == "translation.apiKey" || path.hasPrefix("translation.apiKey.")
+    }
+
+    private static func removingCredentialFields(_ root: [String: Any]) -> [String: Any] {
+        var root = root
+        if var translation = root["translation"] as? [String: Any] {
+            translation.removeValue(forKey: "apiKey")
+            root["translation"] = translation
+        }
+        return root
+    }
+
+    private func removeStoredCredentialClocks(in db: Database) throws {
+        try db.execute(sql: "DELETE FROM preference_field_clocks WHERE fieldPath = 'translation.apiKey' OR fieldPath LIKE 'translation.apiKey.%'")
     }
 
     /// 覆盖写入单个设置叶子字段的逻辑时钟和值摘要。
@@ -433,4 +463,5 @@ public enum PreferenceRepositoryError: Error, Equatable {
     case unknownDomain(String)
     case missingSettings
     case invalidJSON
+    case clockExhausted(domain: String, fieldPath: String)
 }

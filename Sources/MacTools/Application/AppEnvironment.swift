@@ -5,16 +5,11 @@ import AppKit
 import Foundation
 import MacToolsCore
 
-/// 描述 `AppEnvironmentError` 在应用运行时与 AppKit 集成中可取的状态、选项或错误。
-private enum AppEnvironmentError: Error {
-    case unavailable
-    case syncFolderUnavailable
-}
 
 /// 管理 `AppEnvironment` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class AppEnvironment {
-    let logger = Logger()
+    let logger: Logger
     private let preferenceRepository: PreferenceRepository
     private let deviceOverrideRepository: DeviceOverrideRepository
     private let encryptedCredentialStore: EncryptedCredentialStore
@@ -31,7 +26,7 @@ final class AppEnvironment {
     var syncFolderURL: URL?
     private let defaultClipboardCacheDirectory: URL
     private let pasteActionService: PasteActionService
-    private let softwareUpdateService = SystemUpdateService()
+    let softwareUpdateService = SystemUpdateService()
     private let launchAtLoginService = SystemLaunchAtLoginService()
     private let permissionService = PermissionService(
         decisionResetter: TCCPermissionDecisionResetter()
@@ -41,7 +36,7 @@ final class AppEnvironment {
     private let finderFolderResolutionCoordinator = FinderFolderResolutionCoordinator()
     private let mainPanelRouter = MainPanelRouter()
     private let mainPanelDismissHandler = PanelDismissHandler()
-    private let syncModel = SyncViewModel()
+    let syncModel = SyncViewModel()
     lazy var syncCoordinator = ICloudDriveSyncCoordinator(
         localRepository: syncLocalRepository,
         deviceOverrideRepository: deviceOverrideRepository,
@@ -88,10 +83,13 @@ final class AppEnvironment {
     private var superRightClickMonitor: SuperRightClickMonitor?
     private var appBeforePanel: NSRunningApplication?
     private var pasteActivationAttempt: PasteActivationAttempt?
+    private var clipboardStartTask: Task<Void, Never>?
+    private var shutdownTask: Task<Void, Never>?
     var credentialLoadGeneration = 0
     var credentialLoadFinished = false
     var credentialLegacyLoadStarted = false
     var legacySettingsURL: URL?
+    private let translationSettingsSaver = TranslationSettingsSaveCoordinator()
     private var syncFolderSelectionGeneration = 0
 
     private lazy var clipboardModel = ClipboardPanelModel(
@@ -124,6 +122,9 @@ final class AppEnvironment {
             launchAtLoginService: launchAtLoginService,
             speechController: translationSpeechController,
             permissionService: permissionService,
+            onPermissionSummaryChanged: { [weak self] summary in
+                self?.configureSuperRightClick(permissionSummary: summary)
+            },
             defaultClipboardCacheDirectory: defaultClipboardCacheDirectory,
             onSaveClipboardSettings: { [weak self] clipboardSettings in
                 guard let self else {
@@ -203,9 +204,19 @@ final class AppEnvironment {
         logger: logger
     )
     var onSettingsChanged: (AppSettings) -> Void = { _ in }
+    var onValidateHotKeys: (AppSettings) throws -> Void = { _ in }
     /// 创建 `AppEnvironment`，保存传入依赖并建立初始状态。
     init() {
-        let supportDirectory = Self.applicationSupportDirectory()
+        let storeConfiguration = AppEnvironmentStoreConfiguration.make(
+            defaultDirectory: Self.applicationSupportDirectory(),
+            arguments: ProcessInfo.processInfo.arguments,
+            environment: ProcessInfo.processInfo.environment
+        )
+        let supportDirectory = storeConfiguration.supportDirectory
+        let logger = Logger(
+            debugLogDirectory: storeConfiguration.isUIVerification ? supportDirectory : nil
+        )
+        self.logger = logger
         let storePaths = MacToolsStorePaths(supportDirectory: supportDirectory)
         let legacySettingsStore = SettingsStore(fileURL: storePaths.legacySettingsURL)
         let legacySettings = (try? legacySettingsStore.load()) ?? .defaults
@@ -213,7 +224,9 @@ final class AppEnvironment {
             envelopeURL: storePaths.bailianCredentialURL,
             migrationMarkerURL: storePaths.credentialMigrationMarkerURL
         )
-        let legacyCredentialReader = LegacyKeychainCredentialReader()
+        let legacyCredentialReader: any LegacyCredentialReading = storeConfiguration.isUIVerification
+            ? UIVerificationLegacyCredentialReader()
+            : LegacyKeychainCredentialReader()
 
         let database: ClipboardDatabase
         let usesPersistentDatabase: Bool
@@ -243,7 +256,8 @@ final class AppEnvironment {
         let deviceOverrideRepository = DeviceOverrideRepository(database: database)
         var loadedSettings = (try? preferenceRepository.load()) ?? legacySettings
         loadedSettings.sync.isEnabled = (try? deviceOverrideRepository.isSyncEnabled()) ?? false
-        let syncFolderURL = Self.resolveSyncFolderBookmark(
+        loadedSettings = storeConfiguration.initialSettings(loadedSettings)
+        let syncFolderURL = storeConfiguration.isUIVerification ? nil : Self.resolveSyncFolderBookmark(
             (try? deviceOverrideRepository.syncFolderBookmark()) ?? nil
         )
         let legacyCredential = legacySettings.translation.apiKey
@@ -277,6 +291,7 @@ final class AppEnvironment {
         )
         let payloadStore = PayloadStore(rootDirectory: payloadDirectory)
         let repository = ClipboardRepository(database: database, payloadStore: payloadStore)
+        repository.configureCacheLimit(megabytes: loadedSettings.clipboard.maxCacheMegabytes)
         self.repository = repository
         self.payloadStore = payloadStore
         self.maintenanceWorker = AppMaintenanceWorker(
@@ -332,15 +347,28 @@ final class AppEnvironment {
         syncCoordinator.setEnabled(settings.sync.isEnabled, syncImmediately: false)
         loadTranslationCredentialIfNeeded()
         let maintenanceWorker = maintenanceWorker
-        Task {
+        Task { [weak self] in
             await maintenanceWorker.run()
+            self?.clipboardModel.refresh()
         }
     }
 
-    /// 停止进程级采样和待处理重试，供应用退出时释放运行时资源。
-    func stop() {
-        clipboardSamplingWorker.stop()
-        Task { await clipboardPollingWorker.stop() }
+    /// 关闭采样准入并等待有限重试结束；重复请求共用同一个排空任务。
+    func stop() async {
+        if let shutdownTask { await shutdownTask.value; return }
+        clipboardStartTask?.cancel()
+        pasteActivationAttempt?.cancel()
+        let samplingWorker = clipboardSamplingWorker
+        let pollingWorker = clipboardPollingWorker
+        let startTask = clipboardStartTask
+        samplingWorker.stop()
+        let task = Task {
+            await startTask?.value
+            await samplingWorker.waitUntilIdle()
+            await pollingWorker.stop()
+        }
+        shutdownTask = task
+        await task.value
     }
 
     /// 记住原前台应用并把主工作台切到设置页，供稍后的自动粘贴恢复目标。
@@ -370,50 +398,6 @@ final class AppEnvironment {
         openMainPanel()
     }
 
-    /// 注入不含真实账户数据的确定性预览状态，并打开设置页供 UI 验证。
-    func openSettingsForUIVerification() {
-        var previewSettings = settings
-        previewSettings.sync = SyncSettings(
-            isEnabled: true,
-            clipboardScope: .allHistory,
-            storageLimit: .megabytes512
-        )
-        syncModel.folderPath = "/Users/example/iCloud Drive/MacTools Sync"
-        syncModel.folderIsUbiquitous = true
-        syncModel.status = .synced(
-            lastSyncAt: Date(),
-            usage: SyncStorageUsage(
-                usedBytes: 187 * 1_024 * 1_024,
-                capacityBytes: SyncStorageLimit.megabytes512.byteLimit,
-                ordinaryHistoryCount: 328,
-                imageBytes: 180 * 1_024 * 1_024,
-                textBytes: 2 * 1_024 * 1_024,
-                metadataBytes: 5 * 1_024 * 1_024
-            )
-        )
-        syncModel.devices = [
-            SyncDeviceSummary(
-                id: "verification-current",
-                name: "MacBook Pro",
-                isCurrentDevice: true,
-                lastUpdatedAt: Date()
-            ),
-            SyncDeviceSummary(
-                id: "verification-peer",
-                name: "Mac Studio",
-                isCurrentDevice: false,
-                lastUpdatedAt: Date().addingTimeInterval(-3_600)
-            )
-        ]
-        syncModel.remoteSettings = previewSettings
-        openSettings()
-        mainPanel.resize(to: NSSize(width: 980, height: 900))
-    }
-
-    /// 供发布验收从较低构建号启动一次真实的 Sparkle 更新检查。
-    func checkForUpdatesForUIVerification() {
-        softwareUpdateService.checkForUpdates()
-    }
 
     /// 将截图录屏请求交给会话协调器；协调器负责权限和重复会话防护。
     func openScreenCapture() {
@@ -434,41 +418,44 @@ final class AppEnvironment {
         _ translationSettings: TranslationSettings,
         apiKeyWasEdited: Bool
     ) async throws -> AppSettings {
-        var updated = settings
-        var normalizedTranslationSettings = translationSettings
-        normalizedTranslationSettings.providerID = TranslationSettings.defaultProviderID
-        normalizedTranslationSettings = normalizedTranslationSettings.resolvingAPIKey(
-            currentAPIKey: settings.translation.apiKey,
-            wasEdited: apiKeyWasEdited
+        return try await translationSettingsSaver.save(
+            translationSettings,
+            apiKeyWasEdited: apiKeyWasEdited,
+            dependencies: .init(
+                currentSettings: { self.settings },
+                saveCredential: { apiKey in
+                    _ = try await self.credentialAccess.save(apiKey, for: .bailianAPIKey)
+                },
+                persistSettings: { try self.preferenceRepository.save($0) },
+                publishSettings: { updated in
+                    self.settings = updated
+                    self.onSettingsChanged(updated)
+                    self.startSuperRightClickMonitor()
+                    self.scheduleSync()
+                },
+                credentialSaveBegan: {
+                    self.credentialLoadGeneration += 1
+                    self.credentialLoadFinished = true
+                },
+                credentialSaveSucceeded: { apiKey in
+                    let valueChanged = self.settings.translation.apiKey != apiKey
+                    self.settings.translation.apiKey = apiKey
+                    self.translationCredentialModel.apiKey = apiKey
+                    self.translationCredentialModel.isUnavailable = false
+                    if let legacySettingsURL = self.legacySettingsURL {
+                        self.redactLegacyCredential(at: legacySettingsURL)
+                    }
+                    if valueChanged {
+                        self.startSuperRightClickMonitor()
+                        self.scheduleSync()
+                    }
+                },
+                credentialSaveFailed: { self.translationCredentialModel.isUnavailable = true },
+                reloadCredentialAfterFailure: {
+                    try await self.credentialAccess.loadLocal(.bailianAPIKey, fallback: "")?.value
+                }
+            )
         )
-        updated.translation = normalizedTranslationSettings
-
-        let apiKey = normalizedTranslationSettings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if apiKeyWasEdited {
-            // 凭据存储与偏好存储不是同一事务：后续偏好写入失败时，加密凭据可能已更新。
-            credentialLoadGeneration += 1
-            credentialLoadFinished = true
-            do {
-                try await credentialAccess.save(apiKey, for: .bailianAPIKey)
-            } catch {
-                translationCredentialModel.isUnavailable = true
-                throw error
-            }
-            if let legacySettingsURL {
-                redactLegacyCredential(at: legacySettingsURL)
-            }
-        }
-        try preferenceRepository.save(updated)
-        settings = updated
-        if apiKeyWasEdited {
-            translationCredentialModel.apiKey = apiKey
-            translationCredentialModel.isUnavailable = false
-        }
-        onSettingsChanged(updated)
-        startSuperRightClickMonitor()
-        scheduleSync()
-
-        return updated
     }
 
     /// 持久化剪贴板设置并热更新轮询、面板查询和同步容量配置。
@@ -479,11 +466,17 @@ final class AppEnvironment {
         try preferenceRepository.save(updated)
         settings = updated
         onSettingsChanged(updated)
+        repository.configureCacheLimit(megabytes: updated.clipboard.maxCacheMegabytes)
         clipboardSamplingWorker.updateRecordingEnabled(
             updated.clipboard.isRecordingEnabled
         )
-        Task { await clipboardPollingWorker.updateSettings(updated) }
-        clipboardModel.refresh()
+        let clipboardPollingWorker = clipboardPollingWorker
+        let maintenanceWorker = maintenanceWorker
+        Task { [weak self] in
+            await clipboardPollingWorker.updateSettings(updated)
+            await maintenanceWorker.enforceCacheLimit()
+            self?.clipboardModel.refresh()
+        }
         syncCoordinator.updateConfiguration(
             historyLimit: updated.clipboard.maxHistoryCount,
             clipboardScope: updated.sync.clipboardScope,
@@ -513,13 +506,19 @@ final class AppEnvironment {
         var updated = settings
         updated.windowLayout = windowLayoutSettings
 
-        try preferenceRepository.save(updated)
+        try Self.persistSettings(
+            updated,
+            restoring: settings,
+            validateHotKeys: onValidateHotKeys,
+            persist: { try self.preferenceRepository.save($0) }
+        )
         settings = updated
         onSettingsChanged(updated)
         scheduleSync()
 
         return updated
     }
+
 
     /// 持久化外观模式并立即通知 AppDelegate 更新 NSApplication 外观。
     private func saveAppearanceMode(_ appearanceMode: AppAppearanceMode) throws -> AppSettings {
@@ -600,6 +599,7 @@ final class AppEnvironment {
                 merged.superRightClick != settings.superRightClick
                 || merged.translation != settings.translation
             settings = merged
+            repository.configureCacheLimit(megabytes: merged.clipboard.maxCacheMegabytes)
             syncModel.remoteSettings = merged
             clipboardSamplingWorker.updateRecordingEnabled(
                 merged.clipboard.isRecordingEnabled
@@ -674,31 +674,47 @@ final class AppEnvironment {
                 self?.handleSuperRightClickResult(result, gestureID: id)
             }
         )
-        guard monitor.start() else {
-            return
-        }
-
         superRightClickMonitor = monitor
+        _ = monitor.start()
         contextPanel.onDismiss = { [weak self] in
             self?.superRightClickMonitor?.cancelCapture()
             self?.finderFolderResolutionCoordinator.cancel()
         }
     }
 
+    /// 权限刷新只补装缺失的监听；普通激活不会打断有效 tap 和正在进行的手势。
+    func configureSuperRightClick(permissionSummary: PermissionSummary) {
+        guard settings.superRightClick.isEnabled else { return }
+        superRightClickMonitor?.refreshPermissions(permissionSummary)
+    }
+
+    func refreshSystemPermissions() {
+        configureSuperRightClick(permissionSummary: permissionService.summary())
+    }
+
     /// 配置持久化回调后启动独立采样队列；快照立即送往后台 Actor 顺序消费。
     private func startClipboardPolling() {
         let samplingWorker = clipboardSamplingWorker
         let pollingWorker = clipboardPollingWorker
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await pollingWorker.start { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    clipboardModel.refresh()
-                    scheduleSync()
-                }
+        let recorded = MainActorChangeNotification { [weak self] in
+            guard let self, shutdownTask == nil else { return }
+            clipboardModel.refresh()
+            scheduleSync()
+        }
+        let statusChanged = MainActorChangeNotification { [weak self] in
+            let status = pollingWorker.status
+            self?.clipboardModel.recordingWarning = status.warning
+        }
+        clipboardModel.retryRecording = { pollingWorker.retryPending() }
+        clipboardStartTask = Task { @MainActor in
+            await pollingWorker.start(onStatusChange: {
+                samplingWorker.setAdmissionPaused(pollingWorker.status.isPaused)
+                statusChanged.signal()
+            }) { _ in
+                recorded.signal()
             }
-            samplingWorker.start { snapshot in
+            guard !Task.isCancelled else { return }
+            samplingWorker.start(canSample: { !pollingWorker.status.isPaused }) { snapshot in
                 pollingWorker.enqueue(snapshot)
             }
         }
@@ -706,6 +722,7 @@ final class AppEnvironment {
 
     /// 在面板抢占交互前记住原前台应用，供稍后的自动粘贴恢复目标。
     private func captureFrontmostApplicationBeforePanel() {
+        pasteActivationAttempt?.cancel()
         let frontmostApplication = NSWorkspace.shared.frontmostApplication
         let ownProcessIdentifier = ProcessInfo.processInfo.processIdentifier
         guard frontmostApplication?.processIdentifier != ownProcessIdentifier else {
@@ -719,6 +736,7 @@ final class AppEnvironment {
 
     /// 将面板选中记录恢复到系统剪贴板，失败只记录错误并保持面板打开。
     private func copyFromPanel(_ item: ClipboardItem) {
+        pasteActivationAttempt?.cancel()
         do {
             try clipboardModel.copy(item)
         } catch {
@@ -728,6 +746,7 @@ final class AppEnvironment {
 
     /// 先恢复记录并检查事件发送权限，再关闭面板并激活原前台应用执行粘贴。
     private func pasteFromPanel(_ item: ClipboardItem) {
+        pasteActivationAttempt?.cancel()
         do {
             try clipboardModel.copy(item)
         } catch {
@@ -746,15 +765,12 @@ final class AppEnvironment {
         pasteAfterActivatingTarget(targetApplication)
     }
 
-    /// 激活原前台应用后发送一次粘贴；无目标时使用短延迟兜底。
+    /// 激活原前台应用后发送一次粘贴；缺少目标时仅保留复制结果。
     private func pasteAfterActivatingTarget(_ targetApplication: NSRunningApplication?) {
         pasteActivationAttempt?.cancel()
         pasteActivationAttempt = nil
         guard let targetApplication else {
-            logger.error("paste target missing; sending paste after fallback delay")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.clipboardModel.paste()
-            }
+            logger.error("paste target missing; automatic paste cancelled")
             return
         }
 
@@ -968,27 +984,4 @@ final class AppEnvironment {
         NSWorkspace.shared.open(defaultClipboardCacheDirectory)
     }
 
-    /// 解析并返回 `resolveSyncFolderBookmark` 对应的应用运行时与 AppKit 集成结果。
-    private static func resolveSyncFolderBookmark(_ bookmark: Data?) -> URL? {
-        guard let bookmark else { return nil }
-        var isStale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: bookmark,
-            options: [.withSecurityScope, .withoutUI],
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        ), !isStale else {
-            return nil
-        }
-        return url
-    }
-
-    /// 返回 MacTools 应用支持目录；系统目录不可用时使用临时目录作为隔离降级。
-    private static func applicationSupportDirectory() -> URL {
-        let baseURL = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return baseURL.appendingPathComponent("MacTools", isDirectory: true)
-    }
 }

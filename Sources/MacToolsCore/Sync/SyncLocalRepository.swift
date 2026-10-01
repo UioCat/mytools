@@ -527,7 +527,10 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 importIsComplete = false
                 continue
             }
-            let payload: PayloadObjectDescriptor?
+            guard let id = UUID(uuidString: record.recordName) else {
+                importIsComplete = false
+                continue
+            }
             let text: String?
             switch record.kind {
             case .text, .url:
@@ -540,21 +543,14 @@ public final class SyncLocalRepository: @unchecked Sendable {
                     importIsComplete = false
                     continue
                 }
-                payload = nil
                 text = object.text
             case .imageData:
-                // 当前图片先写 PayloadStore，再由 repository 建立数据库引用；两步之间不是同一原子操作。
                 guard ClipboardContentHasher.sha256String(for: data) == record.contentID else {
                     importIsComplete = false
                     continue
                 }
-                payload = try payloadStore.storePNG(data)
                 text = nil
             default:
-                importIsComplete = false
-                continue
-            }
-            guard let id = UUID(uuidString: record.recordName) else {
                 importIsComplete = false
                 continue
             }
@@ -577,19 +573,21 @@ public final class SyncLocalRepository: @unchecked Sendable {
                 tags: record.tags,
                 lastCapturedAt: record.lastCapturedAt,
                 retentionAt: record.retentionAt,
-                payloadID: payload?.id,
+                payloadID: nil,
                 syncGeneration: snapshot.generation,
                 favoriteClock: record.favoriteClock,
                 tagsClock: record.tagsClock,
                 pinnedClock: record.pinnedClock
             )
-            _ = try clipboardRepository.upsert(
-                item,
-                payload: payload,
-                historyLimit: nil,
-                enqueuesSyncChange: false,
-                deterministicallyMergesRecordNames: true
-            )
+            if record.kind == .imageData {
+                _ = try payloadStore.withStoredPNG(data) { payload in
+                    try clipboardRepository.upsert(item, payload: payload, historyLimit: nil,
+                        enqueuesSyncChange: false, deterministicallyMergesRecordNames: true)
+                }
+            } else {
+                _ = try clipboardRepository.upsert(item, historyLimit: nil,
+                    enqueuesSyncChange: false, deterministicallyMergesRecordNames: true)
+            }
         }
         // 完整快照合并后才裁剪；缺失/损坏内容和抛错路径保留原行供下一次重试。
         if pruneHistory && importIsComplete { try completeClipboardImport(historyLimit: historyLimit) }

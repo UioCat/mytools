@@ -489,6 +489,23 @@ final class WindowLayoutCalculatorTests: XCTestCase {
         XCTAssertTrue(cleared.modeShortcuts.isEmpty)
     }
 
+    func testEditingPrimaryShortcutPreservesAdditionalBindings() {
+        let settings = WindowLayoutSettings(modeShortcuts: [
+            .init(mode: .leftHalf, shortcuts: [
+                .init(key: "A", modifiers: ["Option"]),
+                .init(key: "B", modifiers: ["Option"])
+            ])
+        ])
+
+        let replaced = settings.replacingPrimaryShortcut(
+            for: .leftHalf, with: .init(key: "C", modifiers: ["Option"])
+        )
+        let cleared = settings.replacingPrimaryShortcut(for: .leftHalf, with: nil)
+
+        XCTAssertEqual(replaced.shortcuts(for: .leftHalf).map(\.displayValue), ["Option+C", "Option+B"])
+        XCTAssertEqual(cleared.shortcuts(for: .leftHalf).map(\.displayValue), ["Option+B"])
+    }
+
     func testWindowLayoutSettingsEditorGroupsModesByMeaning() {
         XCTAssertEqual(
             WindowLayoutSettingsLayout.modeGroups.map(\.title),

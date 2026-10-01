@@ -67,9 +67,56 @@ final class ICloudSyncSchedulingTests: XCTestCase {
         wait(for: [fixture.scheduler.scheduled], timeout: 3)
     }
 
+    func testResetRetryCannotResetReplacementDirectory() throws {
+        try assertStaleRetryCannotMutateReplacement(removesDevice: false)
+    }
+
+    func testRemoveRetryCannotRemoveDeviceInReplacementDirectory() throws {
+        try assertStaleRetryCannotMutateReplacement(removesDevice: true)
+    }
+
+    func testResetRetryStillRunsInOriginalDirectoryWhenLeaseIsCurrent() throws {
+        let fixture = try makeFixture()
+        defer { fixture.coordinator.setEnabled(false) }
+        fixture.coordinator.setEnabled(true)
+        wait(for: [fixture.scheduler.scheduled], timeout: 3)
+        _ = try SyncStoreProcessLock().withLock(for: fixture.root) {
+            fixture.coordinator.resetSyncData()
+            wait(for: [fixture.retries.scheduled], timeout: 3)
+        }
+        fixture.scheduler.scheduled = expectation(description: "retry reset and sync completed")
+        fixture.retries.fire()
+        wait(for: [fixture.scheduler.scheduled], timeout: 3)
+        XCTAssertEqual(try DriveSyncStore(rootURL: fixture.root).highestResetGeneration(), 2)
+    }
+
+    private func assertStaleRetryCannotMutateReplacement(removesDevice: Bool) throws {
+        let fixture = try makeFixture()
+        defer { fixture.coordinator.setEnabled(false) }
+        fixture.coordinator.setEnabled(true)
+        wait(for: [fixture.scheduler.scheduled], timeout: 3)
+        let replacement = fixture.root.deletingLastPathComponent().appendingPathComponent("replacement")
+        _ = try DriveSyncStore(rootURL: replacement).prepare()
+        let removedID = UUID().uuidString
+        _ = try SyncStoreProcessLock().withLock(for: fixture.root) {
+            if removesDevice { fixture.coordinator.removeDevice(removedID) }
+            else { fixture.coordinator.resetSyncData() }
+            wait(for: [fixture.retries.scheduled], timeout: 3)
+            fixture.scheduler.scheduled = expectation(description: "replacement cycle")
+            fixture.coordinator.setRootURL(replacement)
+            wait(for: [fixture.scheduler.scheduled], timeout: 3)
+        }
+        let drained = expectation(description: "stale retry drained")
+        fixture.retries.fire(onIdle: { drained.fulfill() })
+        wait(for: [drained], timeout: 3)
+        let replacementStore = DriveSyncStore(rootURL: replacement)
+        XCTAssertEqual(try replacementStore.highestResetGeneration(), 1)
+        XCTAssertFalse(try replacementStore.removedDeviceIDs(generation: 1).contains(removedID))
+    }
+
     private func makeFixture() throws -> (
         coordinator: ICloudDriveSyncCoordinator, scheduler: ManualSyncScheduler,
-        root: URL, repository: SyncLocalRepository
+        root: URL, repository: SyncLocalRepository, retries: ManualSyncScheduler
     ) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SyncScheduling-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
@@ -84,6 +131,7 @@ final class ICloudSyncSchedulingTests: XCTestCase {
             preferenceRepository: preferences
         )
         let scheduler = ManualSyncScheduler(scheduled: expectation(description: "initial periodic schedule"))
+        let retries = ManualSyncScheduler(scheduled: XCTestExpectation(description: "retry scheduled"))
         let coordinator = ICloudDriveSyncCoordinator(
             localRepository: repository, deviceOverrideRepository: DeviceOverrideRepository(database: database),
             payloadStore: payloads,
@@ -93,9 +141,10 @@ final class ICloudSyncSchedulingTests: XCTestCase {
             ),
             historyLimit: 500, clipboardScope: .allHistory, storageLimit: .megabytes512, rootURL: root,
             statusHandler: { _ in }, remoteSettingsHandler: { _ in }, devicesHandler: { _ in }, credentialStateHandler: { _ in },
-            periodicScheduler: { queue, work in scheduler.schedule(queue: queue, work: work) }
+            periodicScheduler: { queue, work in scheduler.schedule(queue: queue, work: work) },
+            retryScheduler: { queue, work in retries.schedule(queue: queue, work: work) }
         )
-        return (coordinator, scheduler, root, repository)
+        return (coordinator, scheduler, root, repository, retries)
     }
 }
 

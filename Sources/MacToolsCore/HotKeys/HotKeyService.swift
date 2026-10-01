@@ -14,9 +14,20 @@ public enum HotKeyRegistrationError: Error, Equatable {
     case registrationFailed(OSStatus)
 }
 
+public struct HotKeyConfigurationFailure: Error, LocalizedError {
+    public let hotKey: HotKey
+    public let underlyingError: Error
+
+    public var errorDescription: String? {
+        "快捷键 \(hotKey.displayValue) 无法注册，请检查按键是否受支持或被其他应用占用。"
+    }
+}
+
 /// 管理 `HotKeyService` 在全局快捷键领域中的生命周期、依赖和可变状态。
 public final class HotKeyService {
     private let registrar: HotKeyRegistrar
+    private var configuredHotKeys: [(HotKey, HotKeyTarget)] = []
+    private var configuredHandler: (HotKeyTarget) -> Void = { _ in }
 
     /// 创建 `HotKeyService`，保存传入依赖并建立初始状态。
     public init(registrar: HotKeyRegistrar) {
@@ -24,17 +35,61 @@ public final class HotKeyService {
     }
 
     /// 清除旧注册并按当前设置重新登记工具和窗口布局快捷键。
+    @discardableResult
     public func configure(
         settings: AppSettings,
         handler: @escaping (HotKeyTarget) -> Void = { _ in }
-    ) {
-        registrar.unregisterAll()
+    ) -> [HotKeyConfigurationFailure] {
+        let requested = uniqueHotKeys(from: settings)
+        let invalid = requested.compactMap { hotKey, _ -> HotKeyConfigurationFailure? in
+            guard HotKeyKeyCatalog.keyCode(for: hotKey.key) != nil else {
+                return .init(hotKey: hotKey, underlyingError: HotKeyRegistrationError.unsupportedKey(hotKey.key))
+            }
+            guard hotKey.modifiers.allSatisfy({ ["Control", "Option", "Shift", "Command"].contains($0) }) else {
+                return .init(hotKey: hotKey, underlyingError: HotKeyRegistrationError.unsupportedModifiers(hotKey.modifiers))
+            }
+            return nil
+        }
+        guard invalid.isEmpty || configuredHotKeys.isEmpty else { return invalid }
+        if !configuredHotKeys.isEmpty, requested.count == configuredHotKeys.count,
+           zip(requested, configuredHotKeys).allSatisfy({ $0.0.0 == $0.1.0 && $0.0.1 == $0.1.1 }) {
+            configuredHandler = handler
+            return []
+        }
 
-        for (hotKey, target) in uniqueHotKeys(from: settings) {
-            try? registrar.register(hotKey) {
-                handler(target)
+        let previous = configuredHotKeys
+        registrar.unregisterAll()
+        let invalidValues = Set(invalid.map { $0.hotKey.displayValue })
+        let (accepted, registrationFailures) = register(requested.filter {
+            !invalidValues.contains($0.0.displayValue)
+        })
+        let failures = invalid + registrationFailures
+        guard !failures.isEmpty, !previous.isEmpty else {
+            configuredHotKeys = accepted
+            configuredHandler = handler
+            return failures
+        }
+        registrar.unregisterAll()
+        let (restored, restorationFailures) = register(previous)
+        configuredHotKeys = restored
+        return failures + restorationFailures
+    }
+
+    private func register(_ entries: [(HotKey, HotKeyTarget)])
+        -> ([(HotKey, HotKeyTarget)], [HotKeyConfigurationFailure]) {
+        var accepted: [(HotKey, HotKeyTarget)] = []
+        var failures: [HotKeyConfigurationFailure] = []
+        for (hotKey, target) in entries {
+            do {
+                try registrar.register(hotKey) { [weak self] in
+                    self?.configuredHandler(target)
+                }
+                accepted.append((hotKey, target))
+            } catch {
+                failures.append(.init(hotKey: hotKey, underlyingError: error))
             }
         }
+        return (accepted, failures)
     }
 
     /// 计算并返回 `hotKeys` 对应的全局快捷键领域数据或状态结果。
@@ -74,65 +129,6 @@ private extension HotKeyBinding {
 #if canImport(Carbon)
 /// 管理 `CarbonHotKeyRegistrar` 在全局快捷键领域中的生命周期、依赖和可变状态。
 public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
-    private let keyCodes: [String: UInt32] = [
-        "A": 0,
-        "S": 1,
-        "D": 2,
-        "F": 3,
-        "H": 4,
-        "G": 5,
-        "Z": 6,
-        "X": 7,
-        "C": 8,
-        "V": 9,
-        "B": 11,
-        "Q": 12,
-        "W": 13,
-        "E": 14,
-        "R": 15,
-        "Y": 16,
-        "T": 17,
-        "1": 18,
-        "2": 19,
-        "3": 20,
-        "4": 21,
-        "6": 22,
-        "5": 23,
-        "7": 26,
-        "8": 28,
-        "9": 25,
-        "0": 29,
-        "O": 31,
-        "U": 32,
-        "I": 34,
-        "P": 35,
-        "Return": 36,
-        "L": 37,
-        "J": 38,
-        "K": 40,
-        "N": 45,
-        "M": 46,
-        "Tab": 48,
-        "Space": 49,
-        "Delete": 51,
-        "Escape": 53,
-        "F5": 96,
-        "F6": 97,
-        "F7": 98,
-        "F3": 99,
-        "F8": 100,
-        "F9": 101,
-        "F11": 103,
-        "F10": 109,
-        "F12": 111,
-        "F4": 118,
-        "F2": 120,
-        "F1": 122,
-        "Left": 123,
-        "Right": 124,
-        "Down": 125,
-        "Up": 126
-    ]
     private let modifierValues: [String: UInt32] = [
         "Control": UInt32(controlKey),
         "Option": UInt32(optionKey),
@@ -161,7 +157,7 @@ public final class CarbonHotKeyRegistrar: HotKeyRegistrar {
 
     /// 启动 `register` 对应的全局快捷键领域流程，并建立所需资源。
     public func register(_ hotKey: HotKey, handler: @escaping () -> Void) throws {
-        guard let keyCode = keyCodes[hotKey.key] else {
+        guard let keyCode = HotKeyKeyCatalog.keyCode(for: hotKey.key) else {
             throw HotKeyRegistrationError.unsupportedKey(hotKey.key)
         }
         let modifiers = try carbonModifiers(for: hotKey.modifiers)

@@ -9,6 +9,11 @@ import MacToolsCore
 final class ClipboardPanelModel: ObservableObject {
     @Published private(set) var items: [ClipboardItem] = []
     @Published private(set) var presentationToken = 0
+    @Published private(set) var catalog = ClipboardCatalog()
+    @Published private(set) var hasMoreItems = false
+    @Published var recordingWarning: String?
+    var retryRecording: () -> Void = {}
+    private var query = ClipboardQuery()
 
     private let repository: ClipboardRepository
     private let pasteActionService: PasteActionService
@@ -30,21 +35,49 @@ final class ClipboardPanelModel: ObservableObject {
         self.pasteActionService = pasteActionService
         self.logger = logger
         self.historyLimit = historyLimit
-        self.pageSize = pageSize
+        self.pageSize = max(1, pageSize)
         self.onLocalChange = onLocalChange
     }
 
     /// 安排或刷新 `refresh` 对应的应用运行时与 AppKit 集成工作。
     func refresh() {
         do {
-            items = try repository.search("", limit: pageSize)
+            let count = max(pageSize, items.count)
+            let page = try repository.queryPage(query, limit: count + 1)
+            let catalog = try repository.catalog()
+            items = Array(page.prefix(count))
+            hasMoreItems = page.count > count
+            self.catalog = catalog
         } catch {
             logger.error("clipboard refresh failed: \(error)")
         }
     }
 
+    func updateQuery(_ query: ClipboardQuery) {
+        guard self.query != query else { return }
+        self.query = query
+        items = []
+        refresh()
+    }
+
+    func loadMore() {
+        guard hasMoreItems else { return }
+        do {
+            // 重新读取有界前缀，避免两页之间新增/删除导致 OFFSET 重复或漏项。
+            let count = items.count + pageSize
+            let page = try repository.queryPage(query, limit: count + 1)
+            items = Array(page.prefix(count))
+            hasMoreItems = page.count > count
+            catalog = try repository.catalog()
+        } catch {
+            logger.error("clipboard pagination failed: \(error)")
+        }
+    }
+
     /// 安排或刷新 `prepareForPresentation` 对应的应用运行时与 AppKit 集成工作。
     func prepareForPresentation() {
+        query = ClipboardQuery()
+        items = []
         refresh()
         presentationToken += 1
     }

@@ -27,7 +27,12 @@
 | 同步协议、同步持久化或后台调度 | 下列同步回归；单机自动化覆盖主要故障，不依赖人工双机配合 |
 | 同步范围、同步空间统计或同步设置展示 | `SYNC-FAVORITES-001`、`SYNC-STORAGE-001`，以及关联同步回归 |
 | 登录项服务或自动启动设置 | `LOGIN-ITEM-001`，以及通用设置的明暗背景、缩放、焦点和键盘检查 |
-| 剪贴板轮询、暂停恢复或来源应用查询 | `CLIPBOARD-IDLE-001`；同步联动时增加 `SYNC-IDLE-PERF-001` |
+| 剪贴板轮询、暂停恢复或来源应用查询 | `CLIPBOARD-IDLE-001`、`CLIPBOARD-QUEUE-001`；同步联动时增加 `SYNC-IDLE-PERF-001` |
+| 剪贴板查询、分页、缓存或自动粘贴 | `CLIPBOARD-PAGING-001`、`CLIPBOARD-CACHE-001`、`PASTE-FOCUS-001`，按直接影响选择 |
+| 设置异步保存、外观或快捷键注册 | `SETTINGS-SAVE-001`、`APPEARANCE-DRAFT-001`、`SHORTCUT-SAVE-001`，按直接影响选择 |
+| 截图导出或录制资源生命周期 | `CAPTURE-EXPORT-001`、`CAPTURE-SESSION-001` 及现有截图回归 |
+| 翻译输入或请求生命周期 | `TRANSLATION-IME-001`、`TRANSLATION-REQUEST-001`、`TEXT-EDIT-001` |
+| 权限监听恢复、权限整理或文件动作 | `PERMISSION-RECOVERY-001`、`PERMISSION-RESET-001`、`RIGHT-CLICK-FILE-001`，按直接影响选择 |
 
 每个新修复的用户 Bug 都应关联已有场景 ID；无法覆盖时新增稳定 ID，并保留复现步骤、通过标准与相邻负例。自动化回归测试应能在修复前失败、修复后通过；无法自动化的操作保留可重复实测步骤。
 
@@ -98,6 +103,43 @@
 | `CLIPBOARD-IDLE-001` 采样与暂停 | 合成剪贴板未变化时连续采样不查询前台应用，新复制只查询一次。暂停后定时器停止；暂停期间复制、恢复后内容不补录，恢复后的新复制可正常记录。相同且可用的云端凭据回声跳过本地解密；凭据变化、删除及不可用状态仍加载。旧设置擦除失败后可重试，成功后同进程不再读取旧文件；调用栈不得在 MainActor 上执行该文件 I/O。 |
 
 以上场景的测试入口、故障注入和真实 iCloud 验证边界见 [同步可靠性与自动化验证](sync-reliability.md)。
+
+### 剪贴板查询、预算与粘贴回归
+
+使用独立临时 Store 和合成内容。缓存预算仅约束本机；收藏、置顶及与其共用的载荷继续保留，受保护内容超额时允许超额，iCloud 同步无应用容量上限。
+
+| 场景 ID | 操作与通过标准 |
+| --- | --- |
+| `CLIPBOARD-PAGING-001` 全库检索 | 准备 501 条旧收藏和 500 条较新普通记录，最旧收藏带唯一文本和标签。分别切换收藏、搜索唯一文本、选择标签，均能找到最旧项；分类数量、标签和清除状态来自全库。加载更多保持顺序和当前选中项，键盘能进入新增记录；更换查询重置分页，清除非收藏后收藏仍可访问。 |
+| `CLIPBOARD-CACHE-001` 本机容量 | 临时仓储写入合成 PNG，降低本机缓存预算；后台维护优先回收最旧普通项，收藏和置顶仍保留。重复引用同一 PNG 只计一次；取消保护后可回收。预算仅更新内存，磁盘维护失败保留重试证据；受保护字节超额不能靠删除受保护项消除。 |
+| `CLIPBOARD-QUEUE-001` 故障积压 | 注入持续存储失败和慢消费，连续提交合成载荷。数量、字节预算包含处理中队首；拒绝新准入时面板显示暂停原因，已接受内容不丢弃。恢复存储后按原顺序落盘，停止能取消重试，恢复录制不能补录暂停期间的复制。正常退出须先等待已接受记录处理，再刷新日志和答复终止；持续失败时保留未写入边界。通过工作器行为测试验证，不修改真实数据库权限制造故障。 |
+| `PASTE-FOCUS-001` 延迟粘贴 | 在合成文本窗口打开剪贴板并选择记录。有效目标只粘贴一次；激活失败、目标退出、焦点切到另一应用、取消或重开面板后，旧延迟不能向其他窗口发送 Command+V。覆盖有目标和无目标的等待路径；拒绝自动粘贴权限时不得发送按键。 |
+
+自动化命令：`swift test --filter 'ClipboardStorageRegressionTests|ClipboardPanelModelTests|ApplicationWorkerRegressionTests|ApplicationShutdownCoordinatorTests|ClipboardServiceTests|PasteActionServiceTests'`，随后运行完整测试与严格并发构建。面板查询、分页按钮、键盘、提示和实际粘贴使用打包应用核验。
+
+### 设置、输入与权限回归
+
+| 场景 ID | 操作与通过标准 |
+| --- | --- |
+| `SETTINGS-SAVE-001` 保存交错 | 暂停合成凭据保存，期间改变其他类别或合并远端设置，再恢复保存。只提交本次翻译字段，其他类别保留最新值；同类别较旧完成不覆盖较新保存，旧加载错误不清除新凭据状态。较早密钥写入成功、较新写入失败时保留已提交密钥；旧保存取消和偏好失败不能把可用密钥标成不可用，未编辑密钥保存不能掩盖真实不可用状态。窗口布局注册失败不持久化，持久化失败恢复原快捷键。使用临时加密信封与可控 continuation，不调用真实 Keychain。 |
+| `APPEARANCE-DRAFT-001` 隐藏外观草稿 | 打开通用设置后切换分类，隐藏期间更新外观，再返回通用。选择器显示最新外观，刷新本身不保存；保存失败恢复当前值，其他类别草稿不被重建清空。原生 SwiftUI 宿主测试补充实际明暗背景检查。 |
+| `SHORTCUT-SAVE-001` 快捷键一致性 | 一个布局有 A、B 两个绑定时编辑主绑定为 C，保留 C、B；清除主绑定保留 B。不支持的按键不能被捕获保存，注册失败给出提示并保留旧快捷键。旧配置包含不支持项时其他有效工具仍可启动；正常重复应用配置不重复注销注册。 |
+| `TRANSLATION-IME-001` 组合态确认 | 中文输入法拼音组合期间按 Return，只确认候选，不提交翻译；非组合态 Return 提交一次，Shift+Return 换行。重复关闭重开、撤销和选区编辑，保持 `TEXT-EDIT-001`；记录实际输入法，原生 `setMarkedText` 测试不替代输入法实测。 |
+| `TRANSLATION-REQUEST-001` 请求取消 | 提交合成文本后离开翻译页，再打开并发起新请求。取消不显示网络错误，旧请求迟到不得更新新请求结果；正常成功、网络失败、非 JSON HTTP 错误、空译文和损坏 JSON 都有明确结果。测试使用注入 HTTP，不传真实凭据或用户文本。 |
+| `PERMISSION-RECOVERY-001` 监听恢复 | 打包应用初次缺权限安装监听失败，授权后回到应用刷新；仅在监听缺失时重试，有效监听不因普通激活重启。补充撤销期间应用不激活、重新授权后首次激活的路径，核验已有 tap 被系统停用的情况。撤销、失败重试和系统要求重启分别记录；短按仍开系统菜单。自动化使用注入 checker/tap，不依赖当前 TCC。 |
+| `PERMISSION-RESET-001` 整理互斥 | 在受控应用身份下确认整理后，执行期间入口不可重复触发；运行时多个调用共用一次操作，完成或失败后允许重试。不得自动发起整理或清理其他应用身份；常规测试只注入 resetter，不清理生产授权。 |
+| `RIGHT-CLICK-FILE-001` 文件动作 | 临时文件夹在名称检查后创建同名合成文件，竞争内容保持不变，新文件选择下一个名称；符号链接目标不被覆盖。慢文件操作不阻塞面板，错误可见且不输出用户路径；取消或重开面板后旧结果不影响新面板。 |
+
+自动化命令：`swift test --filter 'SettingsSafetyRegressionTests|TranslationSettingsSaveTests|RuntimeTranslation|WindowLayoutSettingsSaveTests|AppearanceSettingsInteractionTests|HotKeyServiceTests|ShortcutCaptureTests|TranslationInputInteractionTests|TranslationWorkspace|TranslationServiceTests|TranslationHTTPFailureTests|Permission|ContextPanel|FileAction'`，随后运行完整测试与严格并发构建。
+
+### 截图导出与录制会话回归
+
+| 场景 ID | 操作与通过标准 |
+| --- | --- |
+| `CAPTURE-EXPORT-001` 迟到 PNG | 暂停 A 的 PNG 导出，Escape 取消并打开 B，再完成 A。A 不写剪贴板、不关闭 B；重复完成只写一次。正常标注截图写入可解码 PNG，导出取消后持有资源直到实际结束，保持 `CAPTURE-POPUP-001`。 |
+| `CAPTURE-SESSION-001` 录制互斥 | 在采集源准备、stream 启动、停止和 writer 收尾分别暂停，取消并重开。任意交错最多一个活跃资源；旧 stream 帧不进入新视频，旧清理不删同名已有文件，取消只删除自己创建的输出。正常区域录制生成仅视频 H.264 MP4，可播放且包含后续变化。 |
+
+自动化命令：`swift test --filter 'ScreenCaptureCoordinatorTests|MP4ScreenRecorderTests|ScreenshotEditorInteractionTests|ScreenshotRendererTests'`，随后运行完整测试与严格并发构建。可控 stream 与真实 AVAssetWriter 回归不能代替屏幕录制权限、拖动选区、取消重开和可播放 MP4 的打包应用实测。
 
 ### 自动化与证据
 

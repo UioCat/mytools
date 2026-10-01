@@ -335,8 +335,12 @@ public struct WindowLayoutSettings: Codable, Equatable, Sendable {
         with shortcut: HotKeyBinding?
     ) -> WindowLayoutSettings {
         var updatedModeShortcuts = modeShortcuts.filter { $0.mode != mode }
+        var shortcuts = Array(shortcuts(for: mode).dropFirst())
         if let shortcut, shortcut.isUsableGlobalShortcut {
-            updatedModeShortcuts.append(WindowLayoutModeShortcuts(mode: mode, shortcuts: [shortcut]))
+            shortcuts.insert(shortcut, at: 0)
+        }
+        if !shortcuts.isEmpty {
+            updatedModeShortcuts.append(WindowLayoutModeShortcuts(mode: mode, shortcuts: shortcuts))
         }
 
         return WindowLayoutSettings(

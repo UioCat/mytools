@@ -9,6 +9,7 @@ public enum EncryptedCredentialStoreError: Error, Equatable, Sendable {
     case unsupportedMigrationMarker(String)
     case fileVerificationFailed
     case atomicReplaceFailed(Int32)
+    case clockExhausted
 }
 
 /// 在进程锁内原子读写本地凭据信封，并维护一次性迁移完成标记。
@@ -71,8 +72,9 @@ public final class EncryptedCredentialStore: @unchecked Sendable {
             let current = try readEnvelopeUnlocked(for: credential).map {
                 try codec.open($0, for: credential)
             }
-            // 当前协议直接对最大计数加一，尚未对恶意 Int64.max 输入提供上界保护。
-            let nextCounter = max(current?.clock.counter ?? 0, minimumCounter) + 1
+            let (nextCounter, overflow) = max(current?.clock.counter ?? 0, minimumCounter)
+                .addingReportingOverflow(1)
+            guard !overflow else { throw EncryptedCredentialStoreError.clockExhausted }
             let envelope = try codec.seal(
                 value: value,
                 for: credential,

@@ -29,7 +29,7 @@ final class ApplicationLifecycleSourceTests: XCTestCase {
         )
         let environmentSource = try String(
             contentsOf: repositoryRoot
-                .appendingPathComponent("Sources/MacTools/Application/AppEnvironment.swift"),
+                .appendingPathComponent("Sources/MacTools/Application/AppEnvironment+UIVerification.swift"),
             encoding: .utf8
         )
 

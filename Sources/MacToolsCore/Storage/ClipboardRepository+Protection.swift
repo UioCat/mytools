@@ -37,6 +37,7 @@ extension ClipboardRepository {
                 _ = try pruneNormalHistory(in: db, limit: historyLimit)
             }
             try enqueueSyncChangeIfSyncable(recordName: id.uuidString, operation: "save", in: db)
+            if !isFavorite { _ = try pruneCache(in: db) }
         }
         collectPayloadGarbageAfterCommit()
     }
@@ -74,6 +75,7 @@ extension ClipboardRepository {
                 _ = try pruneNormalHistory(in: db, limit: historyLimit)
             }
             try enqueueSyncChangeIfSyncable(recordName: id.uuidString, operation: "save", in: db)
+            if !isPinned { _ = try pruneCache(in: db) }
         }
         collectPayloadGarbageAfterCommit()
     }

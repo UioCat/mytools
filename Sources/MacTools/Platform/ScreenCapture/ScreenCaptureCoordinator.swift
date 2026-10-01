@@ -11,18 +11,25 @@ import MacToolsCore
 final class ScreenCaptureCoordinator {
     private let permissionService: PermissionService
     private let logger: Logger
-    private let overlay = ScreenSelectionOverlayController()
+    private let overlay: ScreenSelectionPresenting
     private let stillCapture: ScreenStillCapturing
     private let recorder: ScreenRecording
     private let settingsProvider: () -> ScreenCaptureSettings
     private let onSettingsChange: (ScreenCaptureSettings) -> Bool
-    private let editor = ScreenshotEditorPanelController()
-    private let recordingControl = RecordingControlPanelController()
+    private let editor: ScreenshotEditing
+    private let recordingControl: RecordingControlPresenting
+    private let displaySelections: () -> [ScreenCaptureSelection]
+    private let destinationProvider: (() throws -> URL)?
+    private let revealRecording: (URL) -> Void
+    private let failurePresenter: ((String) -> Void)?
+    private let discardRecording: @Sendable (URL) async -> Void
     private let pasteboard: WritablePasteboard
     private var state: ScreenCaptureSessionState = .idle
     private var sessionGeneration = 0
     private var snapshots: [ScreenCaptureSnapshot] = []
     private var preparationTask: Task<Void, Never>?
+    private var recordingTask: Task<Void, Never>?
+    private var recordingStopTask: Task<Void, Never>?
 
     /// 创建 `ScreenCaptureCoordinator`，保存传入依赖并建立初始状态。
     init(
@@ -33,7 +40,17 @@ final class ScreenCaptureCoordinator {
         recorder: ScreenRecording? = nil,
         pasteboard: WritablePasteboard = SystemWritablePasteboard(),
         settingsProvider: @escaping () -> ScreenCaptureSettings = { .defaults },
-        onSettingsChange: @escaping (ScreenCaptureSettings) -> Bool = { _ in true }
+        onSettingsChange: @escaping (ScreenCaptureSettings) -> Bool = { _ in true },
+        overlay: ScreenSelectionPresenting? = nil,
+        editor: ScreenshotEditing? = nil,
+        recordingControl: RecordingControlPresenting? = nil,
+        displaySelections: (() -> [ScreenCaptureSelection])? = nil,
+        destinationProvider: (() throws -> URL)? = nil,
+        revealRecording: @escaping (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) },
+        failurePresenter: ((String) -> Void)? = nil,
+        discardRecording: @escaping @Sendable (URL) async -> Void = { destination in
+            await Task.detached { try? FileManager.default.removeItem(at: destination) }.value
+        }
     ) {
         let captureService = captureService ?? SystemScreenCaptureService(logger: logger)
         self.permissionService = permissionService
@@ -43,6 +60,14 @@ final class ScreenCaptureCoordinator {
         self.pasteboard = pasteboard
         self.settingsProvider = settingsProvider
         self.onSettingsChange = onSettingsChange
+        self.overlay = overlay ?? ScreenSelectionOverlayController()
+        self.editor = editor ?? ScreenshotEditorPanelController()
+        self.recordingControl = recordingControl ?? RecordingControlPanelController()
+        self.displaySelections = displaySelections ?? Self.currentDisplaySelections
+        self.destinationProvider = destinationProvider
+        self.revealRecording = revealRecording
+        self.failurePresenter = failurePresenter
+        self.discardRecording = discardRecording
     }
 
     /// 校验权限与会话互斥状态，先冻结屏幕再展示区域选择层。
@@ -60,14 +85,7 @@ final class ScreenCaptureCoordinator {
         sessionGeneration += 1
         let sessionGeneration = sessionGeneration
         state.beginSelection()
-        let displays = NSScreen.screens.compactMap { screen -> ScreenCaptureSelection? in
-            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-                return nil
-            }
-            return ScreenCaptureSelection(
-                displayID: id.uint32Value, displayFrame: screen.frame, rawSelectionFrame: screen.frame
-            )
-        }
+        let displays = displaySelections()
         overlay.prepareForCapture { [weak self] in
             self?.cancelSession(sessionGeneration: sessionGeneration)
         }
@@ -111,6 +129,10 @@ final class ScreenCaptureCoordinator {
     }
 
     private var isCaptureInProgress: Bool {
+        // Escape 使界面代际失效，但底层启动或封口完成前仍拥有录屏资源。
+        if recordingTask != nil || recordingStopTask != nil {
+            return true
+        }
         switch state {
         case .selecting, .selectionReady, .capturingScreenshot, .editingScreenshot, .recording:
             return true
@@ -190,10 +212,10 @@ final class ScreenCaptureCoordinator {
                     settings: settingsProvider(),
                     onSettingsChange: onSettingsChange,
                     onCopy: { [weak self] data in
-                        self?.completeScreenshot(with: data)
+                        self?.completeScreenshot(with: data, sessionGeneration: sessionGeneration)
                     },
                     onCancel: { [weak self] in
-                        self?.cancelCurrentSession()
+                        self?.cancelSession(sessionGeneration: sessionGeneration)
                     }
                 )
                 logger.info(
@@ -227,7 +249,12 @@ final class ScreenCaptureCoordinator {
     }
 
     /// 把编辑后的 PNG 写入剪贴板并结束截图会话，保留短期预热缓存。
-    private func completeScreenshot(with data: Data) {
+    private func completeScreenshot(with data: Data, sessionGeneration: Int) {
+        guard self.sessionGeneration == sessionGeneration,
+              case .editingScreenshot = state else {
+            return
+        }
+        state.finish()
         overlay.dismiss()
         snapshots.removeAll()
         preparationTask?.cancel()
@@ -235,7 +262,6 @@ final class ScreenCaptureCoordinator {
         editor.dismiss()
         do {
             try pasteboard.writeImageData(data)
-            state.finish()
             logger.info("annotated screenshot copied to pasteboard")
         } catch {
             fail(message: "截图复制失败，请重试", error: error)
@@ -248,22 +274,24 @@ final class ScreenCaptureCoordinator {
             return
         }
 
-        Task { [weak self] in
+        recordingTask = Task { [weak self] in
             guard let self else {
                 return
             }
+            defer { recordingTask = nil }
             do {
+                try Task.checkCancellation()
                 let destination = try recordingDestination()
                 try await recorder.start(selection: selection, destination: destination)
-                guard self.sessionGeneration == sessionGeneration, !isCancelled else {
+                guard self.sessionGeneration == sessionGeneration, !isCancelled, !Task.isCancelled else {
                     _ = try? await recorder.stop()
-                    try? FileManager.default.removeItem(at: destination)
+                    await discardRecording(destination)
                     return
                 }
                 overlay.dismiss()
                 snapshots.removeAll()
                 recordingControl.show(selection: selection, onStop: { [weak self] in
-                    self?.stopRecording()
+                    self?.stopRecording(sessionGeneration: sessionGeneration)
                 })
                 logger.info("screen recording started: \(destination.lastPathComponent)")
             } catch {
@@ -276,18 +304,26 @@ final class ScreenCaptureCoordinator {
     }
 
     /// 先关闭录制控制面板，再封口 MP4 并在 Finder 中定位成品。
-    private func stopRecording() {
+    private func stopRecording(sessionGeneration: Int) {
+        guard self.sessionGeneration == sessionGeneration,
+              case .recording = state,
+              recordingStopTask == nil else {
+            return
+        }
         recordingControl.hide()
-        Task { [weak self] in
+        recordingStopTask = Task { [weak self] in
             guard let self else {
                 return
             }
+            defer { recordingStopTask = nil }
             do {
                 let destination = try await recorder.stop()
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else { return }
                 state.finish()
-                NSWorkspace.shared.activateFileViewerSelecting([destination])
+                revealRecording(destination)
                 logger.info("screen recording saved: \(destination.path)")
             } catch {
+                guard self.sessionGeneration == sessionGeneration, !isCancelled else { return }
                 fail(message: "录屏保存失败，请重试", error: error)
             }
         }
@@ -295,6 +331,9 @@ final class ScreenCaptureCoordinator {
 
     /// 保存 `recordingDestination` 接收的屏幕捕获系统集成数据，并保持既有持久化约束。
     private func recordingDestination() throws -> URL {
+        if let destinationProvider {
+            return try destinationProvider()
+        }
         guard let downloadsDirectory = FileManager.default.urls(
             for: .downloadsDirectory,
             in: .userDomainMask
@@ -316,6 +355,10 @@ final class ScreenCaptureCoordinator {
         sessionGeneration += 1
         stillCapture.invalidatePreparation()
         logger.error("screen capture failed: \(error)")
+        if let failurePresenter {
+            failurePresenter(message)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "屏幕采集失败"
         alert.informativeText = message
@@ -341,12 +384,24 @@ final class ScreenCaptureCoordinator {
         editor.dismiss()
         state.cancel()
         sessionGeneration += 1
+        recordingTask?.cancel()
     }
 
     /// 使用单调时钟计算阶段耗时，避免系统时间调整影响性能日志。
     private func elapsedMilliseconds(since startedAt: UInt64) -> Int {
         let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - startedAt
         return Int(elapsedNanoseconds / 1_000_000)
+    }
+
+    private static func currentDisplaySelections() -> [ScreenCaptureSelection] {
+        NSScreen.screens.compactMap { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return nil
+            }
+            return ScreenCaptureSelection(
+                displayID: id.uint32Value, displayFrame: screen.frame, rawSelectionFrame: screen.frame
+            )
+        }
     }
 
     /// 展示 `showScreenRecordingPermissionAlert` 对应的屏幕捕获系统集成界面或系统位置。

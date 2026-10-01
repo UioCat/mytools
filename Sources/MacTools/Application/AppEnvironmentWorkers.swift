@@ -96,6 +96,7 @@ final class SyncFolderPreparationWorker: @unchecked Sendable {
 final class ClipboardSamplingWorker: @unchecked Sendable {
     private let sampler: ClipboardSnapshotSampler
     private let notificationCenter: NotificationCenter
+    private let frontmostApplicationName: @Sendable () -> String?
     private let queue = DispatchQueue(
         label: "com.mactools.clipboard-sampling",
         qos: .userInitiated
@@ -103,20 +104,30 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var pasteboardWriteObserver: NSObjectProtocol?
     private var onSnapshot: (@Sendable (ClipboardSnapshot) -> Void)?
+    private var canSample: @Sendable () -> Bool = { true }
+    private var admissionPaused = false
+    private let captureLock = NSLock()
+    private var captureScheduled = false
 
     init(
         sampler: ClipboardSnapshotSampler,
-        notificationCenter: NotificationCenter = .default
+        notificationCenter: NotificationCenter = .default,
+        frontmostApplicationName: @escaping @Sendable () -> String? = { NSWorkspace.shared.frontmostApplication?.localizedName }
     ) {
         self.sampler = sampler
         self.notificationCenter = notificationCenter
+        self.frontmostApplicationName = frontmostApplicationName
     }
 
     /// 启动独立于主 RunLoop 的高频采样，并监听应用自身的剪贴板写入作为即时触发信号。
-    func start(onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void) {
+    func start(
+        canSample: @escaping @Sendable () -> Bool = { true },
+        onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void
+    ) {
         queue.async { [weak self] in
             guard let self, self.onSnapshot == nil else { return }
             self.onSnapshot = onSnapshot
+            self.canSample = canSample
 
             pasteboardWriteObserver = notificationCenter.addObserver(
                 forName: .macToolsPasteboardDidWrite,
@@ -127,6 +138,30 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
             }
 
             startTimerIfNeeded()
+        }
+    }
+
+    /// 保留用户开关；恢复时跳过暂停期间的复制，下一次新复制才进入历史。
+    func setAdmissionPaused(_ paused: Bool) {
+        queue.async { [weak self] in
+            guard let self, admissionPaused != paused else { return }
+            admissionPaused = paused
+            if paused {
+                cancelTimer()
+            } else {
+                if sampler.isRecordingEnabled {
+                    sampler.updateRecordingEnabled(false)
+                    sampler.updateRecordingEnabled(true)
+                }
+                startTimerIfNeeded()
+            }
+        }
+    }
+
+    /// 等待已经提交的采样操作结束，不阻塞调用线程。
+    func waitUntilIdle() async {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume() }
         }
     }
 
@@ -157,12 +192,12 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
     }
 
     private func startTimerIfNeeded() {
-        guard timer == nil, sampler.isRecordingEnabled, let onSnapshot else { return }
+        guard timer == nil, !admissionPaused, sampler.isRecordingEnabled, let onSnapshot else { return }
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(100), leeway: .milliseconds(10))
         timer.setEventHandler { [weak self] in
             self?.capture(
-                sourceApp: NSWorkspace.shared.frontmostApplication?.localizedName,
+                sourceApp: self?.frontmostApplicationName(),
                 onSnapshot: onSnapshot
             )
         }
@@ -180,8 +215,17 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
         sourceApp: String?,
         onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void
     ) {
+        let shouldSchedule = captureLock.withLock {
+            guard !captureScheduled else { return false }
+            captureScheduled = true
+            return true
+        }
+        guard shouldSchedule else { return }
         queue.async { [weak self] in
-            self?.capture(sourceApp: sourceApp, onSnapshot: onSnapshot)
+            guard let self else { return }
+            captureLock.withLock { self.captureScheduled = false }
+            guard self.onSnapshot != nil else { return }
+            capture(sourceApp: sourceApp, onSnapshot: onSnapshot)
         }
     }
 
@@ -189,6 +233,7 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
         sourceApp: @autoclosure () -> String?,
         onSnapshot: @escaping @Sendable (ClipboardSnapshot) -> Void
     ) {
+        guard !admissionPaused, canSample() else { return }
         guard let snapshot = sampler.captureOnce(sourceApp: sourceApp()) else {
             return
         }
@@ -196,81 +241,232 @@ final class ClipboardSamplingWorker: @unchecked Sendable {
     }
 }
 
-/// 串行消费不可变剪贴板快照；持久化失败时保留队首并延迟重试。
+/// 计入正在写入的队首，容量用尽时拒绝新快照，不删除已接受内容。
+final class ClipboardSnapshotInbox: @unchecked Sendable {
+    struct Status: Equatable, Sendable {
+        var count = 0
+        var bytes = 0
+        var rejected = 0
+        var capacityPaused = false
+        var storagePaused = false
+        var oversized = false
+        var closed = false
+        var isPaused: Bool { capacityPaused || storagePaused || closed }
+        var warning: String? {
+            if storagePaused { return "剪贴板历史写入失败，已暂停记录；待写内容仍保留，请检查存储后重试。" }
+            if capacityPaused { return "剪贴板历史待写内容已达上限，已暂停记录；写入完成后自动恢复。" }
+            if oversized { return "本次剪贴板内容超过记录容量，未加入历史。" }
+            return nil
+        }
+    }
+    private let lock = NSLock()
+    private let maximumCount: Int
+    private let maximumBytes: Int
+    private var entries: [(ClipboardSnapshot, Int)] = []
+    private var current = Status()
+    private var retryRevision = 0
+    private var onChange: (@Sendable () -> Void)?
+
+    init(maximumCount: Int, maximumBytes: Int) {
+        self.maximumCount = max(1, maximumCount)
+        self.maximumBytes = max(1, maximumBytes)
+    }
+    var status: Status { lock.withLock { current } }
+    var currentRetryRevision: Int { lock.withLock { retryRevision } }
+    func requestRetry() {
+        let callback = lock.withLock {
+            retryRevision += 1
+            current.oversized = false
+            return onChange
+        }
+        callback?()
+    }
+    func setOnChange(_ callback: @escaping @Sendable () -> Void) {
+        lock.withLock { onChange = callback }
+    }
+    @discardableResult
+    func enqueue(_ snapshot: ClipboardSnapshot) -> Bool {
+        // 数量同时限制对象开销；字节覆盖文本、图片、URL 和来源字符串。
+        let bytes = max(1, (snapshot.payload.text?.utf8.count ?? 0)
+            + (snapshot.payload.imageData?.count ?? 0)
+            + snapshot.payload.fileURLs.reduce(0) { $0 + $1.absoluteString.utf8.count }
+            + (snapshot.sourceApp?.utf8.count ?? 0))
+        var callback: (@Sendable () -> Void)?
+        let accepted = lock.withLock {
+            guard !current.isPaused else { return false }
+            if bytes > maximumBytes {
+                current.rejected += 1
+                current.oversized = true
+                callback = onChange
+                return false
+            }
+            guard entries.count < maximumCount, bytes <= maximumBytes - current.bytes else {
+                current.rejected += 1
+                current.capacityPaused = true
+                callback = onChange
+                return false
+            }
+            entries.append((snapshot, bytes))
+            current.count = entries.count
+            current.bytes += bytes
+            if current.count == maximumCount || current.bytes == maximumBytes {
+                current.capacityPaused = true
+                callback = onChange
+            }
+            return true
+        }
+        callback?()
+        return accepted
+    }
+    func first() -> ClipboardSnapshot? { lock.withLock { entries.first?.0 } }
+    func completeFirst() {
+        let callback = lock.withLock {
+            let previous = current
+            guard !entries.isEmpty else { return onChange }
+            current.bytes -= entries.removeFirst().1
+            current.count = entries.count
+            current.storagePaused = false
+            current.capacityPaused = current.count >= maximumCount || current.bytes >= maximumBytes
+            return previous.isPaused != current.isPaused ? onChange : nil
+        }
+        callback?()
+    }
+    func markFailure() {
+        let callback = lock.withLock {
+            guard !current.storagePaused else { return Optional<@Sendable () -> Void>.none }
+            current.storagePaused = true
+            return onChange
+        }
+        callback?()
+    }
+    func close() {
+        lock.withLock {
+            current.closed = true
+            onChange = nil
+        }
+    }
+}
+
+/// 串行落盘；流中只有一个唤醒信号，快照在同步入队处受数量和字节预算约束。
 actor ClipboardPollingWorker {
+    typealias Status = ClipboardSnapshotInbox.Status
     private let service: ClipboardService
     private let logger: Logger
-    private let snapshots: AsyncStream<ClipboardSnapshot>
-    nonisolated private let snapshotContinuation: AsyncStream<ClipboardSnapshot>.Continuation
+    nonisolated private let inbox: ClipboardSnapshotInbox
+    private let wakeups: AsyncStream<Void>
+    nonisolated private let continuation: AsyncStream<Void>.Continuation
+    private let retryDelay: @Sendable (Int) async throws -> Void
+    private let maximumAttempts: Int
     private var consumptionTask: Task<Void, Never>?
     private var onRecorded: (@Sendable (ClipboardSnapshot) -> Void)?
+    private var exhaustedRevision: Int?
 
-    /// 创建 `ClipboardPollingWorker`，保存传入依赖并建立初始状态。
-    init(service: ClipboardService, logger: Logger) {
-        let (snapshots, snapshotContinuation) = AsyncStream<ClipboardSnapshot>.makeStream(
-            bufferingPolicy: .unbounded
-        )
+    init(
+        service: ClipboardService, logger: Logger,
+        maximumCount: Int = 64, maximumBytes: Int = 64 * 1_024 * 1_024,
+        maximumAttempts: Int = 3,
+        retryDelay: @escaping @Sendable (Int) async throws -> Void = { attempt in
+            try await Task.sleep(for: .milliseconds(500 * (1 << min(attempt - 1, 5))))
+        }
+    ) {
+        let (wakeups, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         self.service = service
         self.logger = logger
-        self.snapshots = snapshots
-        self.snapshotContinuation = snapshotContinuation
+        self.inbox = ClipboardSnapshotInbox(maximumCount: maximumCount, maximumBytes: maximumBytes)
+        self.wakeups = wakeups
+        self.continuation = continuation
+        self.maximumAttempts = max(1, maximumAttempts)
+        self.retryDelay = retryDelay
     }
-
-    /// 配置成功持久化通知并启动唯一消费任务，保证快照严格按采样顺序落盘。
-    func start(onRecorded: @escaping @Sendable (ClipboardSnapshot) -> Void) {
+    nonisolated var status: Status { inbox.status }
+    func start(
+        onStatusChange: @escaping @Sendable () -> Void = {},
+        onRecorded: @escaping @Sendable (ClipboardSnapshot) -> Void
+    ) {
+        inbox.setOnChange(onStatusChange)
         self.onRecorded = onRecorded
-        guard consumptionTask == nil else { return }
-        consumptionTask = Task { [weak self] in
-            await self?.consumeSnapshots()
-        }
+        guard consumptionTask == nil, !status.closed else { return }
+        consumptionTask = Task { [weak self] in await self?.consumeSnapshots() }
+        continuation.yield(())
     }
-
-    /// `AsyncStream.Continuation` 可跨线程同步入队，采样队列无需等待 Actor 或持久化。
-    nonisolated func enqueue(_ snapshot: ClipboardSnapshot) {
-        snapshotContinuation.yield(snapshot)
+    @discardableResult
+    nonisolated func enqueue(_ snapshot: ClipboardSnapshot) -> Bool {
+        guard inbox.enqueue(snapshot) else { return false }
+        continuation.yield(())
+        return true
     }
-
-    /// 应用 `updateSettings` 接收的新值，并更新相关应用运行时与 AppKit 集成状态。
-    func updateSettings(_ settings: AppSettings) {
-        service.updateSettings(settings)
+    nonisolated func retryPending() {
+        inbox.requestRetry()
+        continuation.yield(())
     }
+    func updateSettings(_ settings: AppSettings) { service.updateSettings(settings) }
 
-    /// 结束快照流并取消当前消费或重试等待。
-    func stop() {
-        snapshotContinuation.finish()
-        consumptionTask?.cancel()
+    /// 正常停止会尝试排空已接受内容；快速取消保留失败队首并报告待写数量。
+    func stop(cancelPendingRetries: Bool = false) async {
+        inbox.close()
+        continuation.finish()
+        if cancelPendingRetries { consumptionTask?.cancel() }
+        await consumptionTask?.value
         consumptionTask = nil
+        onRecorded = nil
+        if status.count > 0 { logger.error("clipboard stopped with pending snapshots: count=\(status.count)") }
     }
-
     private func consumeSnapshots() async {
-        for await snapshot in snapshots {
-            guard !Task.isCancelled else { return }
-            if snapshot.skippedChangeCount > 0 {
-                logger.error(
-                    "clipboard sampler observed skipped changes: count="
-                        + "\(snapshot.skippedChangeCount), changeCount=\(snapshot.changeCount)"
-                )
+        for await _ in wakeups {
+            while !Task.isCancelled, let snapshot = inbox.first() {
+                guard exhaustedRevision != inbox.currentRetryRevision else { break }
+                guard await persistWithRetry(snapshot) else {
+                    exhaustedRevision = inbox.currentRetryRevision
+                    break
+                }
+                exhaustedRevision = nil
+                inbox.completeFirst()
             }
-            await persistWithRetry(snapshot)
         }
     }
-
-    private func persistWithRetry(_ snapshot: ClipboardSnapshot) async {
-        while !Task.isCancelled {
+    private func persistWithRetry(_ snapshot: ClipboardSnapshot) async -> Bool {
+        for attempt in 1...maximumAttempts {
+            guard !Task.isCancelled else { return false }
             do {
-                let recorded = try service.record(snapshot)
-                if recorded {
-                    onRecorded?(snapshot)
-                }
-                return
+                if try service.record(snapshot) { onRecorded?(snapshot) }
+                return true
             } catch {
-                logger.error(
-                    "clipboard snapshot persistence failed; retrying: changeCount="
-                        + "\(snapshot.changeCount), error="
-                        + String(reflecting: type(of: error))
-                )
-                try? await Task.sleep(for: .milliseconds(500))
+                inbox.markFailure()
+                logger.error("clipboard persistence failed: attempt=\(attempt), error=\(String(reflecting: type(of: error)))")
+                // 解码和参数错误不会因等待而恢复，保留队首等待明确重试。
+                if !Self.shouldRetry(error) || attempt == maximumAttempts { return false }
+                do { try await retryDelay(attempt) } catch { return false }
             }
+        }
+        return false
+    }
+    private static func shouldRetry(_ error: Error) -> Bool {
+        if error is DecodingError { return false }
+        let error = error as NSError
+        if error.domain == NSCocoaErrorDomain {
+            return ![CocoaError.fileWriteOutOfSpace.rawValue, CocoaError.fileWriteNoPermission.rawValue,
+                     CocoaError.fileReadNoPermission.rawValue, CocoaError.fileWriteInvalidFileName.rawValue].contains(error.code)
+        }
+        if error.domain == NSPOSIXErrorDomain { return ![Int(ENOSPC), Int(EACCES), Int(EROFS)].contains(error.code) }
+        return true
+    }
+}
+
+/// 合并后台通知，主 Actor 至多保留一个待执行任务。
+final class MainActorChangeNotification: @unchecked Sendable {
+    private let lock = NSLock()
+    private var scheduled = false
+    private let action: @MainActor @Sendable () -> Void
+    init(action: @escaping @MainActor @Sendable () -> Void) { self.action = action }
+    func signal() {
+        guard lock.withLock({
+            if scheduled { return false }
+            scheduled = true
+            return true
+        }) else { return }
+        Task { @MainActor [self] in
+            lock.withLock { scheduled = false }
+            action()
         }
     }
 }
@@ -331,89 +527,118 @@ actor AppMaintenanceWorker {
                 "local retention marker cleanup failed: \(String(reflecting: type(of: error)))"
             )
         }
+        enforceCacheLimit()
+    }
+
+    /// 读取仓储的最新内存预算，在后台裁剪普通项并回收无引用载荷。
+    func enforceCacheLimit() {
+        do {
+            try repository.enforceCacheLimit()
+        } catch {
+            logger.error("clipboard cache limit enforcement failed: \(String(reflecting: type(of: error)))")
+        }
     }
 }
 
-/// 管理 `PasteActivationAttempt` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
+/// 激活期间保留可取消的延迟任务，发送事件前重新检查原进程身份与焦点。
 @MainActor
 final class PasteActivationAttempt {
     private let targetApplication: NSRunningApplication
+    private let targetProcessIdentifier: pid_t
     private let notificationCenter: NotificationCenter
     private let logger: Logger
     private let paste: () -> Void
     private let onFinish: (PasteActivationAttempt) -> Void
+    private let frontmostApplication: () -> NSRunningApplication?
+    private let delay: @Sendable (Duration) async throws -> Void
     private var observer: NSObjectProtocol?
-    private var didPaste = false
+    private var notificationTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var isFinished = false
 
-    /// 创建 `PasteActivationAttempt`，保存传入依赖并建立初始状态。
     init(
         targetApplication: NSRunningApplication,
         notificationCenter: NotificationCenter,
         logger: Logger,
         paste: @escaping () -> Void,
-        onFinish: @escaping (PasteActivationAttempt) -> Void
+        onFinish: @escaping (PasteActivationAttempt) -> Void,
+        frontmostApplication: @escaping () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication },
+        delay: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.targetApplication = targetApplication
+        self.targetProcessIdentifier = targetApplication.processIdentifier
         self.notificationCenter = notificationCenter
         self.logger = logger
         self.paste = paste
         self.onFinish = onFinish
+        self.frontmostApplication = frontmostApplication
+        self.delay = delay
     }
 
-    /// 激活原前台应用，并以激活通知优先、超时兜底的方式仅发送一次粘贴。
-    func start() {
-        let targetProcessIdentifier = targetApplication.processIdentifier
-        observer = notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            let activatedProcessIdentifier = (
-                notification.userInfo?[NSWorkspace.applicationUserInfoKey]
-                    as? NSRunningApplication
-            )?.processIdentifier
-            guard activatedProcessIdentifier == targetProcessIdentifier else { return }
+    deinit {
+        notificationTask?.cancel()
+        timeoutTask?.cancel()
+        if let observer { notificationCenter.removeObserver(observer) }
+    }
 
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(80))
-                self?.pasteOnce(reason: "activation notification")
+    func start() {
+        guard !isFinished, timeoutTask == nil else { return }
+        guard targetIsAlive else { finish(); return }
+        observer = notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let activated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      activated.isEqual(self.targetApplication), self.targetIsAlive, !self.isFinished else { return }
+                self.notificationTask?.cancel()
+                let delay = self.delay
+                self.notificationTask = Task { @MainActor [weak self] in
+                    do { try await delay(.milliseconds(80)) } catch { return }
+                    guard !Task.isCancelled else { return }
+                    self?.pasteOnce()
+                }
             }
         }
-
         targetApplication.unhide()
-        targetApplication.activate(options: [.activateAllWindows])
-
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(800))
-            self?.pasteOnce(reason: "activation timeout fallback")
+        guard targetApplication.activate(options: [.activateAllWindows]) else {
+            logger.error("paste target activation failed; automatic paste cancelled")
+            finish()
+            return
+        }
+        let delay = self.delay
+        timeoutTask = Task { @MainActor [weak self] in
+            do { try await delay(.milliseconds(800)) } catch { return }
+            guard !Task.isCancelled else { return }
+            self?.pasteOnce()
         }
     }
 
-    /// 取消尚未发送的粘贴，并移除应用激活观察者。
-    func cancel() {
-        guard !didPaste else { return }
-        didPaste = true
-        removeObserver()
-        onFinish(self)
+    func cancel() { finish() }
+    private var targetIsAlive: Bool {
+        targetProcessIdentifier > 0 && !targetApplication.isTerminated
+            && targetApplication.processIdentifier == targetProcessIdentifier
     }
-
-    /// 原子地标记本次尝试已完成，确保通知路径和超时路径不会重复粘贴。
-    private func pasteOnce(reason: String) {
-        guard !didPaste else { return }
-        didPaste = true
-        removeObserver()
-
-        logger.info(
-            "sending paste to \(targetApplication.localizedName ?? "unknown") via \(reason)"
-        )
-        paste()
-        onFinish(self)
+    private func pasteOnce() {
+        guard !isFinished else { return }
+        guard targetIsAlive, let frontmost = frontmostApplication(),
+              frontmost.isEqual(targetApplication), frontmost.isActive else {
+            logger.error("paste target lost focus or terminated; automatic paste cancelled")
+            finish()
+            return
+        }
+        finish(sendPaste: true)
     }
-
-    /// 移除 `removeObserver` 指定的应用运行时与 AppKit 集成数据，并维护关联状态。
-    private func removeObserver() {
-        guard let observer else { return }
-        notificationCenter.removeObserver(observer)
-        self.observer = nil
+    private func finish(sendPaste: Bool = false) {
+        guard !isFinished else { return }
+        isFinished = true
+        notificationTask?.cancel()
+        timeoutTask?.cancel()
+        notificationTask = nil
+        timeoutTask = nil
+        if let observer { notificationCenter.removeObserver(observer) }
+        observer = nil
+        if sendPaste { paste() }
+        onFinish(self)
     }
 }

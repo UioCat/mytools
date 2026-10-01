@@ -13,6 +13,8 @@ public struct ClipboardListView: View {
     public let onFavoriteToggle: (ClipboardItem) -> Void
     public let onTagsChange: (ClipboardItem, [String]) -> Void
     public let onDelete: (ClipboardItem) -> Void
+    public let hasMoreItems: Bool
+    public let onLoadMore: (() -> Void)?
 
     /// 创建 `ClipboardListView`，保存传入依赖并建立初始状态。
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
@@ -24,6 +26,8 @@ public struct ClipboardListView: View {
         self.onFavoriteToggle = { _ in }
         self.onTagsChange = { _, _ in }
         self.onDelete = { _ in }
+        self.hasMoreItems = false
+        self.onLoadMore = nil
     }
 
     /// 创建 `ClipboardListView`，保存传入依赖并建立初始状态。
@@ -35,7 +39,9 @@ public struct ClipboardListView: View {
         onSelect: @escaping (ClipboardItem) -> Void,
         onFavoriteToggle: @escaping (ClipboardItem) -> Void,
         onTagsChange: @escaping (ClipboardItem, [String]) -> Void = { _, _ in },
-        onDelete: @escaping (ClipboardItem) -> Void
+        onDelete: @escaping (ClipboardItem) -> Void,
+        hasMoreItems: Bool = false,
+        onLoadMore: (() -> Void)? = nil
     ) {
         self.items = items
         self.selectedItemID = selectedItemID
@@ -45,6 +51,8 @@ public struct ClipboardListView: View {
         self.onFavoriteToggle = onFavoriteToggle
         self.onTagsChange = onTagsChange
         self.onDelete = onDelete
+        self.hasMoreItems = hasMoreItems
+        self.onLoadMore = onLoadMore
     }
 
     public var body: some View {
@@ -94,6 +102,12 @@ public struct ClipboardListView: View {
                                 }
                             }
                         }
+                    }
+                    if hasMoreItems, let onLoadMore {
+                        Button("加载更多", action: onLoadMore)
+                            .buttonStyle(.plain)
+                            .padding(12)
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.vertical, 4)

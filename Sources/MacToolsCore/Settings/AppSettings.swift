@@ -215,9 +215,10 @@ public enum ClipboardCacheLimit {
 
     /// 转换 `normalizedMegabytes` 接收的设置与凭据领域数据，并返回规范化结果。
     public static func normalizedMegabytes(_ megabytes: Int) -> Int {
-        allowedMegabytes.min { lhs, rhs in
-            let lhsDistance = abs(lhs - megabytes)
-            let rhsDistance = abs(rhs - megabytes)
+        let boundedMegabytes = min(max(megabytes, 200), 2048)
+        return allowedMegabytes.min { lhs, rhs in
+            let lhsDistance = abs(lhs - boundedMegabytes)
+            let rhsDistance = abs(rhs - boundedMegabytes)
             if lhsDistance == rhsDistance {
                 return lhs < rhs
             }

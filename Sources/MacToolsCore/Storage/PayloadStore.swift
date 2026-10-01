@@ -67,6 +67,15 @@ public final class PayloadStore: @unchecked Sendable {
         }
     }
 
+    /// 保存 PNG 并在引用建立失败时回滚本轮新对象。
+    public func withStoredPNG<Value>(_ data: Data, referencing operation: (PayloadObjectDescriptor) throws -> Value) throws -> Value {
+        try withExclusiveAccess {
+            let payload = try storePNG(data)
+            do { return try operation(payload) }
+            catch { discardIfCreated(payload); throw error }
+        }
+    }
+
     /// 规范化并按 SHA-256 内容寻址写入载荷，使用 staging 和原子替换避免半文件。
     public func store(_ data: Data, format: String) throws -> PayloadObjectDescriptor {
         try withExclusiveAccess {

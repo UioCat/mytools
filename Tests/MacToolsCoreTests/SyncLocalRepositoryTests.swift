@@ -729,6 +729,65 @@ final class SyncLocalRepositoryTests: XCTestCase {
         var workingDirectory: URL
     }
 
+    func testPNGImportRejectsInvalidRecordNameWithoutCreatingOrphanObject() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        let data = Self.pngData()
+        let contentID = ClipboardContentHasher.sha256String(for: data)
+        let record = SyncClipboardRecord(recordName: "invalid-record", contentID: contentID,
+            kind: .imageData, displayTitle: "Synthetic", searchableText: "Synthetic", sourceApp: nil,
+            createdAt: Date(timeIntervalSince1970: 1), lastCapturedAt: Date(timeIntervalSince1970: 1),
+            lastUsedAt: nil, retentionAt: Date(timeIntervalSince1970: 1), useCount: 0,
+            isPinned: false, isFavorite: true, favoriteClock: .zero, pinnedClock: .zero)
+        try replica.sync.apply(clipboard: .init(deviceID: "peer", generation: 1, revision: 1, records: [record]),
+            contents: [contentID: data], payloadStore: replica.payloadStore, historyLimit: 500)
+        XCTAssertTrue(try replica.payloadStore.objectRelativePaths().isEmpty)
+        XCTAssertTrue(try replica.clipboard.search("", limit: 10).isEmpty)
+    }
+
+    func testPNGImportDatabaseFailureRollsBackNewObjectAndLeavesReceiptsUntouched() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        try replica.database.writer.write { db in
+            try db.execute(sql: "CREATE TRIGGER reject_import BEFORE INSERT ON clipboard_items BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END")
+        }
+        let data = Self.pngData()
+        let contentID = ClipboardContentHasher.sha256String(for: data)
+        let record = SyncClipboardRecord(recordName: UUID().uuidString, contentID: contentID,
+            kind: .imageData, displayTitle: "Synthetic", searchableText: "Synthetic", sourceApp: nil,
+            createdAt: Date(timeIntervalSince1970: 1), lastCapturedAt: Date(timeIntervalSince1970: 1),
+            lastUsedAt: nil, retentionAt: Date(timeIntervalSince1970: 1), useCount: 0,
+            isPinned: false, isFavorite: true, favoriteClock: .zero, pinnedClock: .zero)
+        XCTAssertThrowsError(try replica.sync.apply(clipboard: .init(deviceID: "peer", generation: 1, revision: 1, records: [record]),
+            contents: [contentID: data], payloadStore: replica.payloadStore, historyLimit: 500))
+        XCTAssertTrue(try replica.payloadStore.objectRelativePaths().isEmpty)
+        XCTAssertTrue(try replica.sync.receipts().isEmpty)
+        XCTAssertTrue(try replica.clipboard.search("", limit: 10).isEmpty)
+    }
+
+    func testPNGImportPreservesDeterministicIdentityAndProtectedBytes() throws {
+        let replica = try makeReplica(deviceID: "device-a")
+        defer { try? FileManager.default.removeItem(at: replica.workingDirectory) }
+        replica.clipboard.configureCacheLimit(megabytes: 0)
+        let data = Self.pngData()
+        let contentID = ClipboardContentHasher.sha256String(for: data)
+        var record = SyncClipboardRecord(recordName: "F0000000-0000-0000-0000-000000000001", contentID: contentID,
+            kind: .imageData, displayTitle: "Synthetic", searchableText: "Synthetic", sourceApp: nil,
+            createdAt: Date(timeIntervalSince1970: 1), lastCapturedAt: Date(timeIntervalSince1970: 1),
+            lastUsedAt: nil, retentionAt: Date(timeIntervalSince1970: 1), useCount: 0,
+            isPinned: false, isFavorite: true, favoriteClock: .zero, pinnedClock: .zero)
+        try replica.sync.apply(clipboard: .init(deviceID: "peer", generation: 1, revision: 1, records: [record]),
+            contents: [contentID: data], payloadStore: replica.payloadStore, historyLimit: 500)
+        record.recordName = "00000000-0000-0000-0000-000000000001"
+        try replica.sync.apply(clipboard: .init(deviceID: "peer", generation: 1, revision: 2, records: [record]),
+            contents: [contentID: data], payloadStore: replica.payloadStore, historyLimit: 500)
+        let image = try XCTUnwrap(replica.clipboard.search("", limit: 10).first)
+        XCTAssertEqual(image.id.uuidString, record.recordName)
+        XCTAssertTrue(image.isFavorite)
+        XCTAssertNotNil(image.payloadID)
+        XCTAssertEqual(try replica.payloadStore.objectRelativePaths().count, 1)
+    }
+
     private func makeReplica(deviceID: String) throws -> Replica {
         let database = try MacToolsDatabase.inMemory()
         let workingDirectory = temporaryDirectory()

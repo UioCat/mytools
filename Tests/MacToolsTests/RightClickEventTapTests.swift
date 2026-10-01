@@ -4,6 +4,23 @@ import XCTest
 @testable import MacTools
 
 final class RightClickEventTapTests: XCTestCase {
+    func testRejectedTapEnablementFailsCleanlyAndInvalidatesLocalPort() throws {
+        let port = RecordedLocalTapPort()
+        let tap = RightClickEventTap(thresholdMilliseconds: 250,
+            logger: Logger(debugLogDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            createTap: { _, _, _ in
+                let created = CFMachPortCreate(nil, { _, _, _, _ in }, nil, nil)
+                port.store(created)
+                return created
+            }, enableTap: { _, _ in }, tapIsEnabled: { _ in false }) { _ in
+                XCTFail("Rejected tap cannot produce gestures")
+            }
+        defer { tap.stop() }
+        XCTAssertFalse(tap.start())
+        XCTAssertFalse(tap.isRunning)
+        XCTAssertFalse(CFMachPortIsValid(try XCTUnwrap(port.value)))
+    }
+
     func testUnavailableTapFailsCleanlyAndStopIsIdempotent() {
         let tap = RightClickEventTap(thresholdMilliseconds: 250, logger: Logger(), createTap: { _, _, _ in nil }) { _ in
             XCTFail("Unavailable tap must not produce gestures")
@@ -45,6 +62,13 @@ final class RightClickEventTapTests: XCTestCase {
             tap.stop()
         }
     }
+}
+
+private final class RecordedLocalTapPort: @unchecked Sendable {
+    private let lock = NSLock()
+    private var port: CFMachPort?
+    var value: CFMachPort? { lock.withLock { port } }
+    func store(_ port: CFMachPort?) { lock.withLock { self.port = port } }
 }
 
 private final class ObservedTapOutput: @unchecked Sendable {

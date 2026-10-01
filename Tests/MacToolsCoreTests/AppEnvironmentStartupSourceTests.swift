@@ -29,7 +29,7 @@ final class AppEnvironmentStartupSourceTests: XCTestCase {
         XCTAssertTrue(workersSource.contains("final class ClipboardSamplingWorker"))
         XCTAssertTrue(workersSource.contains("DispatchSource.makeTimerSource"))
         XCTAssertTrue(workersSource.contains("repeating: .milliseconds(100)"))
-        XCTAssertTrue(workersSource.contains("AsyncStream<ClipboardSnapshot>"))
+        XCTAssertFalse(workersSource.contains("bufferingPolicy: .unbounded"))
         XCTAssertTrue(workersSource.contains("service.record(snapshot)"))
         XCTAssertFalse(environmentSource.contains("Timer.scheduledTimer"))
         XCTAssertFalse(environmentSource.contains("withTimeInterval: 0.75"))

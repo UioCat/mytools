@@ -185,6 +185,7 @@ public final class PermissionService {
     private let decisionResetter: any PermissionDecisionResetting
     private let bundleIdentifierProvider: () -> String?
     private let openSystemSettingsURL: (URL) -> Void
+    private let resetCoordinator = PermissionDecisionResetCoordinator()
 
     /// 创建 `PermissionService`，保存传入依赖并建立初始状态。
     public init(
@@ -232,7 +233,7 @@ public final class PermissionService {
             throw PermissionDecisionResetError.missingBundleIdentifier
         }
 
-        try await decisionResetter.resetAllDecisions(for: bundleIdentifier)
+        try await resetCoordinator.reset(bundleIdentifier: bundleIdentifier, resetter: decisionResetter)
     }
 
     /// 为兼容旧调用默认打开辅助功能隐私设置。
@@ -285,6 +286,23 @@ public final class PermissionService {
                 string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
             )
         }
+    }
+}
+
+/// 同一次用户整理操作由所有等待者共享；取消单个等待者不撤回已经确认的系统操作。
+private actor PermissionDecisionResetCoordinator {
+    private var pending: (id: UUID, task: Task<Void, Error>)?
+
+    func reset(bundleIdentifier: String, resetter: any PermissionDecisionResetting) async throws {
+        let request: (id: UUID, task: Task<Void, Error>)
+        if let pending {
+            request = pending
+        } else {
+            request = (UUID(), Task { try await resetter.resetAllDecisions(for: bundleIdentifier) })
+            pending = request
+        }
+        defer { if pending?.id == request.id { pending = nil } }
+        try await request.task.value
     }
 }
 

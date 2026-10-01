@@ -2,6 +2,7 @@ import Foundation
 
 /// 将面板、延迟点击和异步结果绑定到同一手势；时间与 NSEvent.timestamp 同源。
 public struct SuperRightClickPresentationSession {
+    public var currentID: UUID? { id }
     private var id: UUID?
     private var startedAt: TimeInterval = 0
 

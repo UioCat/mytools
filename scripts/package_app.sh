@@ -138,6 +138,7 @@ ditto "$BUILD_DIR/release/Sparkle.framework" "$FRAMEWORKS_DIR/Sparkle.framework"
 install_name_tool -add_rpath '@executable_path/../Frameworks' "$MACOS_DIR/MacTools"
 cp "$ROOT_DIR/Sources/MacTools/Resources/MenuBarIcon.png" "$RESOURCES_DIR/MenuBarIcon.png"
 cp "$ROOT_DIR/Sources/MacTools/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+bash "$ROOT_DIR/scripts/package_dependency_licenses.sh" "$BUILD_DIR" "$RESOURCES_DIR"
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

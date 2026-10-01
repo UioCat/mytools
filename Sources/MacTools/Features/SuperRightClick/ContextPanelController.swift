@@ -6,7 +6,7 @@ import MacToolsCore
 import SwiftUI
 
 /// 描述 `ContextPanelActionResult` 在应用运行时与 AppKit 集成中可取的状态、选项或错误。
-private enum ContextPanelActionResult {
+enum ContextPanelActionResult {
     case close
     case keepVisible
 }
@@ -14,7 +14,12 @@ private enum ContextPanelActionResult {
 /// 管理 `ContextPanelController` 在应用运行时与 AppKit 集成中的生命周期、依赖和可变状态。
 @MainActor
 final class ContextPanelController {
-    private let fileActionService: FileActionService
+    private let executeFileAction: (SuperPanelActionID, ClipboardItem) async throws -> ContextPanelFileActionEffect
+    private let presentFileEffect: (ContextPanelFileActionEffect) -> Void
+    private let outsideClickMonitoringEnabled: Bool
+    let fileActionModel = ContextPanelFileActionModel()
+    private(set) var fileActionTask: Task<Void, Never>?
+    private var fileActionRequestID: UUID?
     private let pasteboard: WritablePasteboard
     private let windowLayoutService: SystemWindowLayoutService
     private let windowLayoutButtons: () -> [WindowLayoutButton]
@@ -27,6 +32,9 @@ final class ContextPanelController {
     var onDismiss: () -> Void = {}
 
     func beginInteraction(id: UUID, at timestamp: TimeInterval) {
+        fileActionTask?.cancel()
+        fileActionRequestID = nil
+        fileActionModel.reset()
         panel?.orderOut(nil)
         interaction.begin(id: id, at: timestamp)
         startOutsideClickDismissMonitors()
@@ -43,9 +51,21 @@ final class ContextPanelController {
         windowLayoutService: SystemWindowLayoutService,
         windowLayoutButtons: @escaping () -> [WindowLayoutButton],
         speechController: TranslationSpeechController,
-        logger: Logger
+        logger: Logger,
+        executeFileAction: ((SuperPanelActionID, ClipboardItem) async throws -> ContextPanelFileActionEffect)? = nil,
+        presentFileEffect: ((ContextPanelFileActionEffect) -> Void)? = nil,
+        outsideClickMonitoringEnabled: Bool = true
     ) {
-        self.fileActionService = fileActionService
+        let worker = ContextPanelFileActionWorker(service: fileActionService)
+        self.executeFileAction = executeFileAction ?? { try await worker.perform($0, item: $1) }
+        self.presentFileEffect = presentFileEffect ?? { effect in
+            switch effect {
+            case .none: break
+            case .copyPath(let path): pasteboard.writeText(path)
+            case .reveal(let url): NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+        }
+        self.outsideClickMonitoringEnabled = outsideClickMonitoringEnabled
         self.pasteboard = pasteboard
         self.windowLayoutService = windowLayoutService
         self.windowLayoutButtons = windowLayoutButtons
@@ -56,6 +76,7 @@ final class ContextPanelController {
     /// 释放当前实例持有的观察者、任务或系统资源。
     deinit {
         MainActor.assumeIsolated {
+            fileActionTask?.cancel()
             stopOutsideClickDismissMonitors()
         }
     }
@@ -129,6 +150,7 @@ final class ContextPanelController {
         let view = RuntimeContextActionView(
             content: content,
             speechController: speechController,
+            fileActionModel: fileActionModel,
             performAction: { [weak self] actionID in
                 let result = performAction(actionID)
                 if result == .close {
@@ -229,6 +251,9 @@ final class ContextPanelController {
 
     /// 取消或关闭 `hide` 对应的应用运行时与 AppKit 集成流程，并清理临时状态。
     private func hide() {
+        fileActionTask?.cancel()
+        fileActionRequestID = nil
+        fileActionModel.reset()
         interaction.dismiss()
         panel?.orderOut(nil)
         stopOutsideClickDismissMonitors()
@@ -250,6 +275,7 @@ final class ContextPanelController {
 
     /// 同时监听应用内外鼠标按下事件，确保非激活面板也能在外部点击时关闭。
     private func startOutsideClickDismissMonitors() {
+        guard outsideClickMonitoringEnabled else { return }
         if localDismissMonitor == nil {
             localDismissMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -334,22 +360,38 @@ final class ContextPanelController {
     }
 
     /// 执行 `performFileAction` 指定的应用运行时与 AppKit 集成动作，并返回执行结果。
-    private func performFileAction(
+    func performFileAction(
         _ actionID: SuperPanelActionID,
         item: ClipboardItem,
         windowLayoutButtons: [WindowLayoutButton]
     ) -> ContextPanelActionResult {
+        guard fileActionRequestID == nil else { return .keepVisible }
         switch actionID {
-        case .copyPath:
-            copyPath(item)
-        case .createNewFile:
-            createNewFile(item)
-        case .openTerminal:
-            openTerminal(item)
-        case .revealInFinder:
-            reveal(item)
-        case .openClaudeCode, .openClaudeCodeSkipConfirmation:
-            openClaudeCode(item, skipConfirmation: actionID == .openClaudeCodeSkipConfirmation)
+        case .copyPath, .createNewFile, .openTerminal, .revealInFinder,
+             .openClaudeCode, .openClaudeCodeSkipConfirmation:
+            guard let sessionID = interaction.currentID else { return .close }
+            let requestID = UUID()
+            fileActionRequestID = requestID
+            let execute = executeFileAction
+            fileActionTask = Task { [weak self] in
+                defer {
+                    if self?.fileActionRequestID == requestID { self?.fileActionRequestID = nil }
+                }
+                guard let model = self?.fileActionModel else { return }
+                await model.perform(actionID,
+                    execute: { try await execute(actionID, item) },
+                    isCurrent: { [weak self] in self?.interaction.accepts(sessionID) == true },
+                    onSuccess: { [weak self] effect in
+                        guard let self else { return }
+                        presentFileEffect(effect)
+                        logger.info("super panel file action completed: \(actionID.rawValue)")
+                        hide()
+                    },
+                    logFailure: { [weak self] errorType in
+                        self?.logger.error("super panel file action failed: \(actionID.rawValue); \(errorType)")
+                    })
+            }
+            return .keepVisible
         case .windowLayoutButton(let id):
             return performWindowLayoutAction(id, buttons: windowLayoutButtons)
         case .copyTranslatedText, .textTransit, .copyTransitText:
@@ -378,60 +420,6 @@ final class ContextPanelController {
         return .close
     }
 
-    /// 执行 `copyPath` 对应的应用运行时与 AppKit 集成输入输出操作。
-    private func copyPath(_ item: ClipboardItem) {
-        do {
-            try fileActionService.copyPath(item: item, pasteboard: pasteboard)
-        } catch {
-            logger.error("copy path failed: \(error)")
-        }
-    }
-
-    /// 展示 `openTerminal` 对应的应用运行时与 AppKit 集成界面或系统位置。
-    private func openTerminal(_ item: ClipboardItem) {
-        do {
-            guard let path = item.originalPath else {
-                throw FileActionError.missingPath
-            }
-            try fileActionService.openTerminal(at: path)
-        } catch {
-            logger.error("open terminal failed: \(error)")
-        }
-    }
-
-    /// 构造并返回 `createNewFile` 所描述的应用运行时与 AppKit 集成对象。
-    private func createNewFile(_ item: ClipboardItem) {
-        do {
-            let fileURL = try fileActionService.createNewFile(in: item)
-            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
-            logger.info("created file from super panel: \(fileURL.path)")
-        } catch {
-            logger.error("create file failed: \(error)")
-        }
-    }
-
-    /// 展示 `openClaudeCode` 对应的应用运行时与 AppKit 集成界面或系统位置。
-    private func openClaudeCode(_ item: ClipboardItem, skipConfirmation: Bool) {
-        do {
-            guard let path = item.originalPath else {
-                throw FileActionError.missingPath
-            }
-            try fileActionService.openExternalApplication(named: "Claude", at: path)
-            logger.info("opened Claude from super panel; skipConfirmation=\(skipConfirmation)")
-        } catch {
-            logger.error("open Claude Code failed: \(error)")
-        }
-    }
-
-    /// 展示 `reveal` 对应的应用运行时与 AppKit 集成界面或系统位置。
-    private func reveal(_ item: ClipboardItem) {
-        do {
-            try fileActionService.revealInFinder(item)
-        } catch {
-            logger.error("reveal in finder failed: \(error)")
-        }
-    }
-
     /// 转换 `normalizedText` 接收的应用运行时与 AppKit 集成数据，并返回规范化结果。
     private static func normalizedText(_ text: String) -> String {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -443,12 +431,15 @@ final class ContextPanelController {
 private struct RuntimeContextActionView: View {
     let content: SuperPanelContent
     @ObservedObject var speechController: TranslationSpeechController
+    @ObservedObject var fileActionModel: ContextPanelFileActionModel
     let performAction: (SuperPanelActionID) -> Void
 
     var body: some View {
         ContextActionView(
             content: content,
             speechState: speechController.state,
+            isPerformingAction: fileActionModel.isExecuting,
+            actionFailureMessage: fileActionModel.failureMessage,
             performSpeech: { request in
                 speechController.toggle(request)
             },

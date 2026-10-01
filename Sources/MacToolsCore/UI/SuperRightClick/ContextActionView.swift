@@ -7,6 +7,8 @@ import SwiftUI
 public struct ContextActionView: View {
     public let content: SuperPanelContent
     private let speechState: TranslationSpeechState
+    private let isPerformingAction: Bool
+    private let actionFailureMessage: String?
     private let performSpeech: (TranslationSpeechRequest) -> Void
     private let performAction: (SuperPanelActionID) -> Void
 
@@ -14,11 +16,15 @@ public struct ContextActionView: View {
     public init(
         content: SuperPanelContent,
         speechState: TranslationSpeechState = .idle,
+        isPerformingAction: Bool = false,
+        actionFailureMessage: String? = nil,
         performSpeech: @escaping (TranslationSpeechRequest) -> Void = { _ in },
         performAction: @escaping (SuperPanelActionID) -> Void
     ) {
         self.content = content
         self.speechState = speechState
+        self.isPerformingAction = isPerformingAction
+        self.actionFailureMessage = actionFailureMessage
         self.performSpeech = performSpeech
         self.performAction = performAction
     }
@@ -34,10 +40,29 @@ public struct ContextActionView: View {
                 .opacity(0.9)
 
             scrollableBody
+            actionStatus
         }
         .frame(width: panelSize.width, height: panelSize.height)
         .liquidGlassPanel(cornerRadius: LiquidGlassCornerGeometry.compactPanelRadius)
         .liquidGlassGroup(spacing: 12)
+    }
+
+    @ViewBuilder
+    private var actionStatus: some View {
+        if isPerformingAction {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("正在执行…")
+            }
+            .font(.system(size: 12))
+            .padding(12)
+        } else if let actionFailureMessage {
+            Text(actionFailureMessage)
+                .font(.system(size: 12))
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+        }
     }
 
     private var header: some View {
@@ -100,6 +125,7 @@ public struct ContextActionView: View {
                 }
 
                 actionSection
+                    .disabled(isPerformingAction)
             }
         }
     }

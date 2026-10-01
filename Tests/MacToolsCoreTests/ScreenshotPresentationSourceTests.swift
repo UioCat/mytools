@@ -233,17 +233,6 @@ final class ScreenshotPresentationSourceTests: XCTestCase {
         XCTAssertTrue(source.contains("guard retryAfterRefresh"))
     }
 
-    func testPendingCaptureCancellationDiscardsLateScreenshotAndRecordingResults() throws {
-        let source = try sourceFile(
-            "Sources/MacTools/Platform/ScreenCapture/ScreenCaptureCoordinator.swift"
-        )
-
-        XCTAssertTrue(source.contains("!isCancelled else"))
-        XCTAssertTrue(source.contains("self.sessionGeneration == sessionGeneration"))
-        XCTAssertTrue(source.contains("_ = try? await recorder.stop()"))
-        XCTAssertTrue(source.contains("try? FileManager.default.removeItem(at: destination)"))
-    }
-
     private func sourceFile(_ path: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

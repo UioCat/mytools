@@ -68,6 +68,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     private let credentialStateHandler: CredentialStateHandler
     private let queue = DispatchQueue(label: "com.mactools.icloud-drive-sync", qos: .utility)
     private let periodicScheduler: PeriodicScheduler
+    private let retryScheduler: PeriodicScheduler
     private let lock = NSLock()
     private var configuration: Configuration
     private var isSyncing = false
@@ -90,6 +91,9 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         credentialStateHandler: @escaping CredentialStateHandler,
         periodicScheduler: @escaping PeriodicScheduler = { queue, operation in
             queue.asyncAfter(deadline: .now() + 30, execute: operation)
+        },
+        retryScheduler: @escaping PeriodicScheduler = { queue, operation in
+            queue.asyncAfter(deadline: .now() + 1, execute: operation)
         }
     ) {
         self.localRepository = localRepository
@@ -119,6 +123,7 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
         self.devicesHandler = devicesHandler
         self.credentialStateHandler = credentialStateHandler
         self.periodicScheduler = periodicScheduler
+        self.retryScheduler = retryScheduler
         self.configuration = Configuration(
             rootURL: rootURL,
             historyLimit: historyLimit,
@@ -215,6 +220,11 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     func resetSyncData() {
         let snapshot = lock.withLock { configuration }
         guard let lease = cycleLease(for: snapshot) else { return }
+        resetSyncData(snapshot: snapshot, lease: lease)
+    }
+
+    private func resetSyncData(snapshot: Configuration, lease: CycleLease) {
+        guard isCurrent(lease) else { return }
         let cancellation = cancellation(for: lease)
         queue.async { [weak self] in
             guard let self else { return }
@@ -250,8 +260,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                     return true
                 }
                 guard acquired != nil else {
-                    self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-                        self?.resetSyncData()
+                    self.retryScheduler(self.queue) { [weak self] in
+                        self?.resetSyncData(snapshot: snapshot, lease: lease)
                     }
                     return
                 }
@@ -270,6 +280,11 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
     func removeDevice(_ removedDeviceID: String) {
         let snapshot = lock.withLock { configuration }
         guard let lease = cycleLease(for: snapshot) else { return }
+        removeDevice(removedDeviceID, snapshot: snapshot, lease: lease)
+    }
+
+    private func removeDevice(_ removedDeviceID: String, snapshot: Configuration, lease: CycleLease) {
+        guard isCurrent(lease) else { return }
         let cancellation = cancellation(for: lease)
         queue.async { [weak self] in
             guard let self else { return }
@@ -337,8 +352,8 @@ final class ICloudDriveSyncCoordinator: @unchecked Sendable {
                     return true
                 }
                 guard acquired != nil else {
-                    self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-                        self?.removeDevice(removedDeviceID)
+                    self.retryScheduler(self.queue) { [weak self] in
+                        self?.removeDevice(removedDeviceID, snapshot: snapshot, lease: lease)
                     }
                     return
                 }

@@ -1,193 +1,113 @@
-// 基于 ScreenCaptureKit 和 AVAssetWriter 的区域 MP4 录制器。
-// 负责视频帧缩放、时间线和文件封口，不管理选区或录制控制面板。
+// 每次录屏拥有独立的采集和写入资源；协调器只接触启动与停止边界。
 
-import AVFoundation
 import CoreMedia
 import Foundation
 import MacToolsCore
-import ScreenCaptureKit
 
-/// 定义 `ScreenRecording` 在屏幕捕获系统集成中需要满足的能力边界。
-protocol ScreenRecording: AnyObject, Sendable {
+@MainActor
+protocol ScreenRecording: AnyObject {
     var isRecording: Bool { get }
-    /// 建立只含 H.264 视频轨道的 MP4 写入器，并把 ScreenCaptureKit 帧交给串行输出队列。
     func start(selection: ScreenCaptureSelection, destination: URL) async throws
-    /// 停止采集、封口视频轨道并检查采集与写入错误；失败时删除不完整文件。
     func stop() async throws -> URL
 }
 
-/// 可变采集状态只通过 `outputQueue` 交接，并在文件收尾前停止写入。
-final class MP4ScreenRecorder: NSObject, ScreenRecording, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    private let captureService: SystemScreenCaptureService
-    private let outputQueue = DispatchQueue(label: "com.mactools.screen-recording")
-    private let outputQueueKey = DispatchSpecificKey<Void>()
-    private var stream: SCStream?
-    private var writer: AVAssetWriter?
-    private var input: AVAssetWriterInput?
-    private var destination: URL?
-    private var startedSession = false
-    private var streamFailure: Error?
+/// 资源适配器负责串行帧写入和封口，不拥有用户界面会话。
+protocol ScreenRecordingResource: AnyObject, Sendable {
+    func start() async throws
+    func finish() async throws -> URL
+    func cancel() async
+}
 
-    /// 创建 `MP4ScreenRecorder`，保存传入依赖并建立初始状态。
-    init(captureService: SystemScreenCaptureService) {
-        self.captureService = captureService
-        super.init()
-        outputQueue.setSpecific(key: outputQueueKey, value: ())
+@MainActor
+final class MP4ScreenRecorder: ScreenRecording {
+    private enum Phase { case starting, recording, stopping }
+
+    @MainActor
+    private final class Session {
+        var phase: Phase = .starting
+        var resource: (any ScreenRecordingResource)?
+        var startTask: Task<Void, Error>?
+        var finishTask: Task<URL, Error>?
     }
 
-    var isRecording: Bool {
-        stream != nil
+    private let makeResource: @Sendable (ScreenCaptureSelection, URL) async throws -> any ScreenRecordingResource
+    private var session: Session?
+
+    convenience init(captureService: SystemScreenCaptureService) {
+        self.init { selection, destination in
+            let source = try await captureService.source(for: selection, purpose: .recording)
+            source.configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+            return MP4RecordingResource(source: source, destination: destination)
+        }
     }
 
-    /// 异步启动 `start` 对应的屏幕捕获系统集成流程，并建立所需资源。
+    init(makeResource: @escaping @Sendable (ScreenCaptureSelection, URL) async throws -> any ScreenRecordingResource) {
+        self.makeResource = makeResource
+    }
+
+    // 来源查询、启动、写入及清理都占用同一会话，不能在 await 期间插入新启动。
+    var isRecording: Bool { session != nil }
+
     func start(selection: ScreenCaptureSelection, destination: URL) async throws {
-        guard !isRecording else {
-            throw ScreenCaptureError.captureAlreadyRunning
+        guard session == nil else { throw ScreenCaptureError.captureAlreadyRunning }
+        let session = Session()
+        self.session = session
+        let startTask = Task {
+            try Task.checkCancellation()
+            let resource = try await makeResource(selection, destination)
+            session.resource = resource
+            try Task.checkCancellation()
+            try await resource.start()
+            try Task.checkCancellation()
         }
-
-        let source = try await captureService.source(for: selection, purpose: .recording)
-        source.configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-
-        let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
-        let input = AVAssetWriterInput(
-            mediaType: .video,
-            outputSettings: [
-                AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: source.configuration.width,
-                AVVideoHeightKey: source.configuration.height
-            ]
-        )
-        input.expectsMediaDataInRealTime = true
-        guard writer.canAdd(input) else {
-            throw ScreenCaptureError.writerCreationFailed
-        }
-        writer.add(input)
-        guard writer.startWriting() else {
-            throw ScreenCaptureError.writerCreationFailed
-        }
-
-        let stream = SCStream(filter: source.filter, configuration: source.configuration, delegate: self)
-        self.stream = stream
-        self.writer = writer
-        self.input = input
-        self.destination = destination
-        self.startedSession = false
-        self.streamFailure = nil
-
+        session.startTask = startTask
         do {
-            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
-            try await stream.startCapture()
+            try await withTaskCancellationHandler {
+                try await startTask.value
+                try Task.checkCancellation()
+            } onCancel: {
+                startTask.cancel()
+            }
+            guard self.session === session, session.phase == .starting else { throw CancellationError() }
+            session.phase = .recording
         } catch {
-            writer.cancelWriting()
-            try? FileManager.default.removeItem(at: destination)
-            resetState()
+            if self.session === session {
+                _ = await finishTask(for: session, cancelStart: true).result
+            }
             throw error
         }
     }
 
-    /// 异步结束 `stop` 对应的屏幕捕获系统集成流程，并释放或重置相关资源。
     func stop() async throws -> URL {
-        guard let stream, let writer, let input, let destination else {
-            throw ScreenCaptureError.recorderNotRunning
-        }
-
-        var captureStopError: Error?
-        do {
-            try await stream.stopCapture()
-        } catch {
-            captureStopError = error
-        }
-
-        let recordedStreamFailure = outputQueue.sync { () -> Error? in
-            if writer.status == .writing {
-                input.markAsFinished()
-            }
-            return streamFailure
-        }
-
-        if writer.status == .writing {
-            await withCheckedContinuation { continuation in
-                writer.finishWriting {
-                    continuation.resume()
-                }
-            }
-        }
-
-        let writingError = writer.error ?? recordedStreamFailure ?? captureStopError
-        let completedSuccessfully = ScreenRecordingCompletionPolicy.isSuccessful(
-            writerCompleted: writer.status == .completed,
-            hasRecordedFailure: recordedStreamFailure != nil,
-            hasCaptureStopError: captureStopError != nil
-        )
-        resetState()
-
-        guard completedSuccessfully else {
-            try? FileManager.default.removeItem(at: destination)
-            throw writingError ?? ScreenCaptureError.writerFailed
-        }
-
-        return destination
+        guard let session else { throw ScreenCaptureError.recorderNotRunning }
+        return try await finishTask(for: session, cancelStart: session.phase == .starting).value
     }
 
-    /// 记录系统主动终止采集的错误，留待显式 `stop()` 时统一完成写入与清理。
-    func stream(
-        _ stream: SCStream,
-        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-        of type: SCStreamOutputType
-    ) {
-        guard type == .screen,
-              sampleBuffer.isValid,
-              CMSampleBufferDataIsReady(sampleBuffer),
-              let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(
-                  sampleBuffer,
-                  createIfNecessary: false
-              ) as? [[SCStreamFrameInfo: Any]],
-              let attachments = attachmentsArray.first,
-              let frameStatusRawValue = attachments[.status] as? Int,
-              let frameStatus = SCFrameStatus(rawValue: frameStatusRawValue),
-              ScreenRecordingFramePolicy.shouldAppend(
-                  frameStatus: frameStatus,
-                  hasImageBuffer: CMSampleBufferGetImageBuffer(sampleBuffer) != nil
-              ),
-              let writer,
-              let input,
-              input.isReadyForMoreMediaData else {
-            return
-        }
-
-        if !startedSession {
-            writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
-            startedSession = true
-        }
-        guard input.append(sampleBuffer) else {
-            streamFailure = writer.error ?? ScreenCaptureError.writerFailed
-            return
-        }
-    }
-
-    /// 响应 `stream` 对应的系统或界面回调，并同步当前交互状态。
-    func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        let recordFailure = { [weak self] in
-            guard let self, self.stream === stream else {
-                return
+    private func finishTask(for session: Session, cancelStart: Bool) -> Task<URL, Error> {
+        if let finishTask = session.finishTask { return finishTask }
+        session.phase = .stopping
+        if cancelStart { session.startTask?.cancel() }
+        let finishTask = Task { [self] in
+            defer {
+                // 只有该会话自己的收尾可以释放互斥；旧等待者不能清除下一次会话。
+                if self.session === session { self.session = nil }
+                session.startTask = nil
+                session.finishTask = nil
             }
-            self.streamFailure = error
+            if cancelStart {
+                _ = await session.startTask?.result
+                await session.resource?.cancel()
+                throw CancellationError()
+            }
+            guard let resource = session.resource else { throw ScreenCaptureError.recorderNotRunning }
+            do {
+                return try await resource.finish()
+            } catch {
+                await resource.cancel()
+                throw error
+            }
         }
-
-        if DispatchQueue.getSpecific(key: outputQueueKey) != nil {
-            recordFailure()
-        } else {
-            outputQueue.sync(execute: recordFailure)
-        }
-    }
-
-    /// 调整 `resetState` 涉及的屏幕捕获系统集成状态，并保持迁移或恢复语义。
-    private func resetState() {
-        stream = nil
-        writer = nil
-        input = nil
-        destination = nil
-        startedSession = false
-        streamFailure = nil
+        session.finishTask = finishTask
+        return finishTask
     }
 }

@@ -3,6 +3,15 @@ import XCTest
 @testable import MacToolsCore
 
 final class SoftwareUpdateSettingsTests: XCTestCase {
+    func testProgressIsReservedForAnAvailableBusyUpdater() {
+        XCTAssertFalse(SoftwareUpdateSettingsState.unavailable.isCheckingForUpdates)
+        var state = SoftwareUpdateSettingsState(version: "1.2.3", canCheckForUpdates: false,
+            automaticallyChecksForUpdates: true, automaticallyDownloadsUpdates: false)
+        XCTAssertTrue(state.isCheckingForUpdates)
+        state.canCheckForUpdates = true
+        XCTAssertFalse(state.isCheckingForUpdates)
+    }
+
     func testPresentationStateContainsOnlyUserFacingVersion() {
         let state = SoftwareUpdateSettingsState(
             version: "0.2.0",

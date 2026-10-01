@@ -126,6 +126,12 @@ struct ClipboardPanelItemSummary: Equatable {
             }
     }
 
+    init(catalog: ClipboardCatalog) {
+        favoriteCount = catalog.favoriteCount
+        hasClearableItems = catalog.hasClearableItems
+        tagCounts = catalog.tags.map { ClipboardTagCount(name: $0.name, count: $0.count) }
+    }
+
     /// 判断当前收藏记录是否仍使用指定标签。
     func containsTag(_ tag: String) -> Bool {
         let key = ClipboardTagPolicy.comparisonKey(for: tag)
@@ -145,9 +151,10 @@ struct ClipboardPanelRenderState {
         mode: ClipboardPanelMode,
         query: String,
         selectedTag: String? = nil,
-        selectedItemID: ClipboardItem.ID?
+        selectedItemID: ClipboardItem.ID?,
+        catalog: ClipboardCatalog? = nil
     ) {
-        self.itemSummary = ClipboardPanelItemSummary(items: items)
+        self.itemSummary = catalog.map(ClipboardPanelItemSummary.init(catalog:)) ?? ClipboardPanelItemSummary(items: items)
         self.filteredItems = Self.filteredItems(
             items: items,
             mode: mode,
@@ -247,6 +254,10 @@ public struct MainPanelView: View {
     @FocusState private var isSearchFocused: Bool
 
     public let items: [ClipboardItem]
+    public let catalog: ClipboardCatalog?
+    public let hasMoreItems: Bool
+    public let onQueryChange: ((ClipboardQuery) -> Void)?
+    public let onLoadMore: (() -> Void)?
     public let resetToken: Int
     public let searchFocusToken: Int
     public let onSelect: (ClipboardItem, ClipboardSelectionAction) -> Void
@@ -260,6 +271,10 @@ public struct MainPanelView: View {
     /// 创建 `MainPanelView`，保存传入依赖并建立初始状态。
     public init(items: [ClipboardItem], onSelect: @escaping (ClipboardItem) -> Void) {
         self.items = items
+        self.catalog = nil
+        self.hasMoreItems = false
+        self.onQueryChange = nil
+        self.onLoadMore = nil
         self.resetToken = 0
         self.searchFocusToken = 0
         self.onSelect = { item, _ in onSelect(item) }
@@ -274,6 +289,10 @@ public struct MainPanelView: View {
     /// 创建 `MainPanelView`，保存传入依赖并建立初始状态。
     public init(
         items: [ClipboardItem],
+        catalog: ClipboardCatalog? = nil,
+        hasMoreItems: Bool = false,
+        onQueryChange: ((ClipboardQuery) -> Void)? = nil,
+        onLoadMore: (() -> Void)? = nil,
         resetToken: Int = 0,
         searchFocusToken: Int = 0,
         onSelect: @escaping (ClipboardItem, ClipboardSelectionAction) -> Void,
@@ -285,6 +304,10 @@ public struct MainPanelView: View {
         presentation: ToolModulePresentation = .window
     ) {
         self.items = items
+        self.catalog = catalog
+        self.hasMoreItems = hasMoreItems
+        self.onQueryChange = onQueryChange
+        self.onLoadMore = onLoadMore
         self.resetToken = resetToken
         self.searchFocusToken = searchFocusToken
         self.onSelect = onSelect
@@ -329,10 +352,15 @@ public struct MainPanelView: View {
         .padding(presentation == .window ? MacToolsControlMetrics.pagePadding : 0)
         .background(KeyboardEventMonitorView(onKeyDown: handleKeyDown))
         .onAppear {
+            publishQuery()
             focusSearchField()
         }
         .onChange(of: items) {
             resetMouseClickConfirmation()
+            normalizeTagSelection()
+            normalizeSelection()
+        }
+        .onChange(of: catalog) {
             normalizeTagSelection()
             normalizeSelection()
         }
@@ -341,18 +369,22 @@ public struct MainPanelView: View {
             if mode != .favorites {
                 selectedTag = nil
             }
+            publishQuery()
             normalizeSelection()
         }
         .onChange(of: selectedTag) {
+            publishQuery()
             resetMouseClickConfirmation()
             normalizeSelection()
         }
         .onChange(of: query) {
+            publishQuery()
             resetMouseClickConfirmation()
             normalizeSelection()
         }
         .onChange(of: resetToken) {
             resetPanelState()
+            publishQuery()
             focusSearchField()
         }
         .onChange(of: searchFocusToken) {
@@ -370,7 +402,9 @@ public struct MainPanelView: View {
             onSelect: handleItemClick,
             onFavoriteToggle: onFavoriteToggle,
             onTagsChange: onTagsChange,
-            onDelete: onDelete
+            onDelete: onDelete,
+            hasMoreItems: hasMoreItems,
+            onLoadMore: onLoadMore
         )
         .overlay(alignment: .bottomTrailing) {
             keyboardActions
@@ -587,8 +621,21 @@ public struct MainPanelView: View {
             mode: mode,
             query: query,
             selectedTag: selectedTag,
-            selectedItemID: selectedItemID
+            selectedItemID: selectedItemID,
+            catalog: catalog
         )
+    }
+
+    private func publishQuery() {
+        let category: ClipboardQuery.Category
+        switch mode {
+        case .all: category = .all
+        case .text: category = .text
+        case .images: category = .images
+        case .favorites: category = .favorites
+        }
+        onQueryChange?(ClipboardQuery(text: query, category: category,
+                                     tag: mode == .favorites ? selectedTag : nil))
     }
 
     /// 生成分类标签标题；收藏分类额外展示收藏数量。
@@ -646,6 +693,7 @@ public struct MainPanelView: View {
         let currentIndex = selectedItemID.flatMap { selectedItemID in
             visibleItems.firstIndex(where: { $0.id == selectedItemID })
         } ?? 0
+        if offset > 0, currentIndex == visibleItems.count - 1, hasMoreItems { onLoadMore?() }
         let nextIndex = min(max(currentIndex + offset, 0), visibleItems.count - 1)
         selectedItemID = visibleItems[nextIndex].id
     }

@@ -422,46 +422,9 @@ final class WindowLayoutShortcutCaptureTextField: NSTextField {
 
     /// 构建并返回 `keyName` 对应的 SwiftUI 界面内容或展示状态。
     private static func keyName(from event: NSEvent) -> String? {
-        if let keyName = keyNamesByCode[event.keyCode] {
-            return keyName
-        }
-
-        guard let character = event.charactersIgnoringModifiers?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !character.isEmpty
-        else {
-            return nil
-        }
-
-        if character == " " {
-            return "Space"
-        }
-
-        return character.count == 1 ? character.uppercased() : nil
+        HotKeyKeyCatalog.keyName(for: event.keyCode)
     }
 
-    private static let keyNamesByCode: [UInt16: String] = [
-        36: "Return",
-        48: "Tab",
-        49: "Space",
-        51: "Delete",
-        53: "Escape",
-        96: "F5",
-        97: "F6",
-        98: "F7",
-        99: "F3",
-        100: "F8",
-        101: "F9",
-        103: "F11",
-        109: "F10",
-        111: "F12",
-        118: "F4",
-        120: "F2",
-        122: "F1",
-        123: "Left",
-        124: "Right",
-        125: "Down",
-        126: "Up"
-    ]
 }
 
 /// 管理 `VerticallyCenteredTextFieldCell` 在 SwiftUI 展示层中的生命周期、依赖和可变状态。

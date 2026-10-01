@@ -7,11 +7,14 @@ import GRDB
 /// 管理 `ClipboardRepository` 在本地存储领域中的生命周期、依赖和可变状态。
 public final class ClipboardRepository: @unchecked Sendable {
     let database: MacToolsDatabase
-    private let payloadStore: PayloadStore?
+    let payloadStore: PayloadStore?
     private let garbageCollector: PayloadGarbageCollector?
+    private let cacheConfigurationLock = NSLock()
+    private var cacheLimitBytes: Int64
 
     /// 创建 `ClipboardRepository`，保存传入依赖并建立初始状态。
-    public init(database: MacToolsDatabase, payloadStore: PayloadStore? = nil) {
+    public init(database: MacToolsDatabase, payloadStore: PayloadStore? = nil, cacheLimitBytes: Int64 = 1024 * 1024 * 1024) {
+        self.cacheLimitBytes = max(0, cacheLimitBytes)
         self.database = database
         self.payloadStore = payloadStore
         self.garbageCollector = payloadStore.map {
@@ -236,12 +239,12 @@ public final class ClipboardRepository: @unchecked Sendable {
                 )
             }
 
-            let prunedItemIDs: [UUID]
+            var prunedItemIDs: [UUID] = []
             if inserted, let historyLimit {
                 prunedItemIDs = try self.pruneNormalHistory(in: db, limit: historyLimit)
-            } else {
-                prunedItemIDs = []
             }
+            // 导入按完整快照统一收敛，避免半个远端快照中较晚出现的保护字段丢失。
+            if enqueuesSyncChange { prunedItemIDs += try self.pruneCache(in: db) }
 
             return ClipboardUpsertResult(
                 itemID: persistedID,
@@ -267,69 +270,32 @@ public final class ClipboardRepository: @unchecked Sendable {
         _ item: ClipboardItem,
         data: Data,
         historyLimit: Int? = nil,
-        enqueuesSyncChange: Bool = true
+        enqueuesSyncChange: Bool = true,
+        deterministicallyMergesRecordNames: Bool = false
     ) throws -> ClipboardUpsertResult {
         guard let payloadStore else {
             throw PayloadStoreError.missingObject
         }
-        // 锁覆盖文件创建和数据库 upsert，避免本进程 GC 在引用建立前删除新载荷。
-        return try payloadStore.withExclusiveAccess {
-            let payload = try payloadStore.storePNG(data)
-            do {
-                return try upsert(
-                    item,
-                    payload: payload,
-                    historyLimit: historyLimit,
-                    enqueuesSyncChange: enqueuesSyncChange
-                )
-            } catch {
-                payloadStore.discardIfCreated(payload)
-                throw error
-            }
+        return try payloadStore.withStoredPNG(data) { payload in
+            try upsert(item, payload: payload, historyLimit: historyLimit,
+                       enqueuesSyncChange: enqueuesSyncChange,
+                       deterministicallyMergesRecordNames: deterministicallyMergesRecordNames)
         }
     }
 
-    /// 解析并返回 `search` 对应的本地存储领域结果。
-    public func search(_ query: String, limit: Int) throws -> [ClipboardItem] {
-        try search(query, limit: limit, favoritesOnly: false)
+
+
+    /// 只更新内存配置；磁盘收敛由后台维护或下一次本地写入执行。
+    public func configureCacheLimit(megabytes: Int) {
+        let (bytes, overflow) = Int64(max(0, megabytes)).multipliedReportingOverflow(by: 1024 * 1024)
+        cacheConfigurationLock.withLock { cacheLimitBytes = overflow ? Int64.max : bytes }
     }
 
-    /// 解析并返回 `search` 对应的本地存储领域结果。
-    public func search(_ query: String, limit: Int, favoritesOnly: Bool) throws -> [ClipboardItem] {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let boundedLimit = max(limit, 0)
-        let payloadRootPath = payloadStore?.rootDirectory.path
-
-        return try database.writer.read { db in
-            let favoriteClause = favoritesOnly ? "WHERE ci.isFavorite = 1" : ""
-            if trimmedQuery.isEmpty {
-                return try ClipboardItem.fetchAll(
-                    db,
-                    sql: """
-                    \(Self.selectClipboardItemsSQL)
-                    \(favoriteClause)
-                    ORDER BY ci.isPinned DESC, ci.lastCapturedAt DESC, ci.createdAt DESC
-                    LIMIT ?
-                    """,
-                    arguments: [payloadRootPath, payloadRootPath, boundedLimit]
-                )
-            }
-
-            let pattern = Self.likePattern(for: trimmedQuery)
-            let prefix = favoritesOnly ? "WHERE ci.isFavorite = 1 AND" : "WHERE"
-            return try ClipboardItem.fetchAll(
-                db,
-                sql: """
-                \(Self.selectClipboardItemsSQL)
-                \(prefix) (ci.searchableText LIKE ? ESCAPE '\\'
-                   OR ci.displayTitle LIKE ? ESCAPE '\\'
-                )
-                ORDER BY ci.isPinned DESC, ci.lastCapturedAt DESC, ci.createdAt DESC
-                LIMIT ?
-                """,
-                arguments: [payloadRootPath, payloadRootPath, pattern, pattern, boundedLimit]
-            )
-        }
+    @discardableResult
+    public func enforceCacheLimit() throws -> [UUID] {
+        let removed = try database.writer.write { try pruneCache(in: $0) }
+        collectPayloadGarbageAfterCommit()
+        return removed
     }
 
     /// 读取同步所需记录与 payload 元数据，在 SQL 层完成类型和范围过滤。
@@ -475,7 +441,7 @@ public final class ClipboardRepository: @unchecked Sendable {
     @discardableResult
     public func enforceHistoryLimit(_ historyLimit: Int) throws -> [UUID] {
         let prunedItemIDs = try database.writer.write { db in
-            try pruneNormalHistory(in: db, limit: historyLimit)
+            try pruneNormalHistory(in: db, limit: historyLimit) + pruneCache(in: db)
         }
         collectPayloadGarbageAfterCommit()
         return prunedItemIDs
@@ -605,6 +571,42 @@ public final class ClipboardRepository: @unchecked Sendable {
             """,
             arguments: [overflow]
         )
+        return try removeRetentionVictims(victims, in: db)
+    }
+
+    /// 唯一对象字节预算；共享受保护引用的对象不能回收，超额保护项继续保留。
+    func pruneCache(in db: Database) throws -> [UUID] {
+        let limit = cacheConfigurationLock.withLock { cacheLimitBytes }
+        var bytes = try Int64.fetchOne(db, sql: """
+            SELECT COALESCE(SUM(po.byteCount), 0) FROM payload_objects po
+            WHERE po.localState = 'available'
+              AND EXISTS(SELECT 1 FROM clipboard_items ci WHERE ci.payloadID = po.id)
+            """) ?? 0
+        guard bytes > limit else { return [] }
+        let candidates = try Row.fetchAll(db, sql: """
+            SELECT po.id, po.byteCount FROM payload_objects po
+            JOIN clipboard_items ci ON ci.payloadID = po.id
+            WHERE po.localState = 'available' AND po.byteCount > 0
+              AND NOT EXISTS(SELECT 1 FROM clipboard_items protected
+                WHERE protected.payloadID = po.id AND (protected.isFavorite = 1 OR protected.isPinned = 1))
+            GROUP BY po.id
+            ORDER BY MIN(ci.retentionAt), MIN(ci.createdAt), po.id
+            """)
+        var removed: [UUID] = []
+        for candidate in candidates where bytes > limit {
+            let payloadID: String = candidate["id"]
+            let victims = try Row.fetchAll(db, sql: """
+                SELECT id, payloadID, kind FROM clipboard_items
+                WHERE payloadID = ? AND isFavorite = 0 AND isPinned = 0 ORDER BY id
+                """, arguments: [payloadID])
+            removed += try removeRetentionVictims(victims, in: db)
+            bytes -= candidate["byteCount"] as Int64
+        }
+        return removed
+    }
+
+    private func removeRetentionVictims(_ victims: [Row], in db: Database) throws -> [UUID] {
+        guard !victims.isEmpty else { return [] }
         let itemIDs = try victims.map { try Self.uuid(from: $0["id"] as String) }
         let payloadIDs: [String] = victims.compactMap { row in row["payloadID"] }
 
@@ -975,7 +977,7 @@ public final class ClipboardRepository: @unchecked Sendable {
         return "%\(escaped)%"
     }
 
-    private static let selectClipboardItemsSQL = """
+    static let selectClipboardItemsSQL = """
         SELECT ci.*,
                CASE
                    WHEN po.relativePath IS NULL THEN NULL
