@@ -414,9 +414,11 @@ actor ClipboardPollingWorker {
     private func consumeSnapshots() async {
         for await _ in wakeups {
             while !Task.isCancelled, let snapshot = inbox.first() {
-                guard exhaustedRevision != inbox.currentRetryRevision else { break }
+                let retryRevision = inbox.currentRetryRevision
+                guard exhaustedRevision != retryRevision else { break }
                 guard await persistWithRetry(snapshot) else {
-                    exhaustedRevision = inbox.currentRetryRevision
+                    // 只耗尽开始本轮时的请求；写入期间的新重试仍由缓冲唤醒处理。
+                    exhaustedRevision = retryRevision
                     break
                 }
                 exhaustedRevision = nil

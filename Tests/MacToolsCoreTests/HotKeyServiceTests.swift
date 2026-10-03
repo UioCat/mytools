@@ -2,6 +2,179 @@ import XCTest
 @testable import MacToolsCore
 
 final class HotKeyServiceTests: XCTestCase {
+    func testRestorationFailureIsRetriedWhenReapplyingOriginalSettings() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        service.configure(settings: .defaults)
+        let original = registrar.registeredHotKeys
+        var draft = AppSettings.defaults
+        draft.windowLayout = draft.windowLayout.replacingPrimaryShortcut(
+            for: .maximize, with: HotKeyBinding(key: "8", modifiers: ["Option"])
+        )
+        registrar.failuresByRegistrationPass = [2: ["Option+8"], 3: ["Option+1"]]
+        XCTAssertEqual(service.configure(settings: draft).map(\.hotKey.displayValue), ["Option+8", "Option+1"])
+        XCTAssertNil(registrar.handler(for: "Option+1"))
+        registrar.failuresByRegistrationPass = [:]
+
+        XCTAssertTrue(service.configure(settings: .defaults).isEmpty)
+
+        XCTAssertEqual(registrar.registeredHotKeys, original)
+        XCTAssertNotNil(registrar.handler(for: "Option+1"))
+    }
+
+    func testRestorationFailureDoesNotBecomeToleratedLegacyFailure() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        service.configure(settings: .defaults)
+        var draft = AppSettings.defaults
+        draft.windowLayout = draft.windowLayout.replacingPrimaryShortcut(
+            for: .maximize, with: HotKeyBinding(key: "8", modifiers: ["Option"])
+        )
+        registrar.failuresByRegistrationPass = [2: ["Option+8"], 3: ["Option+1"]]
+        XCTAssertFalse(service.configure(settings: draft).isEmpty)
+        registrar.failuresByRegistrationPass = [:]
+        registrar.failingDisplayValue = "Option+1"
+
+        let failures = service.configure(settings: draft)
+
+        XCTAssertTrue(failures.contains { $0.hotKey.displayValue == "Option+1" })
+        XCTAssertNil(registrar.handler(for: "Option+8"))
+    }
+
+    func testConfigureForSaveRejectsInitialPartialConfigurationWithoutLeavingBindings() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        settings.clipboardShortcut = HotKeyBinding(key: "F20", modifiers: ["Option"])
+
+        XCTAssertThrowsError(try service.configureForSave(settings: settings))
+
+        XCTAssertTrue(registrar.registeredHotKeys.isEmpty)
+        XCTAssertTrue(service.configure(settings: .defaults).isEmpty)
+    }
+
+    func testSaveRollbackRestoresHandlerAfterUnchangedConfiguration() throws {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        var invoked: [HotKeyTarget] = []
+        service.configure(settings: .defaults) { invoked.append($0) }
+
+        let restore = try service.configureForSave(settings: .defaults) { _ in XCTFail("Rejected handler invoked") }
+        XCTAssertTrue(restore().isEmpty)
+        registrar.handler(for: "Option+2")?()
+
+        XCTAssertEqual(invoked, [.translation])
+    }
+
+    func testLegacyUnsupportedShortcutDoesNotBlockLayoutChanges() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        settings.clipboardShortcut = HotKeyBinding(key: "F20", modifiers: ["Option"])
+        XCTAssertEqual(service.configure(settings: settings).count, 1)
+        settings.windowLayout = settings.windowLayout.replacingPrimaryShortcut(
+            for: .maximize, with: HotKeyBinding(key: "8", modifiers: ["Option"])
+        )
+        var invoked: [HotKeyTarget] = []
+
+        XCTAssertTrue(service.configure(settings: settings) { invoked.append($0) }.isEmpty)
+        registrar.handler(for: "Option+8")?()
+        registrar.handler(for: "Option+2")?()
+
+        XCTAssertEqual(invoked, [.windowLayout(.maximize), .translation])
+        XCTAssertNil(registrar.handler(for: "Option+F20"))
+    }
+
+    func testLegacyOccupiedShortcutDoesNotBlockLayoutChanges() {
+        let registrar = FakeHotKeyRegistrar()
+        registrar.failingDisplayValue = "Option+1"
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        XCTAssertEqual(service.configure(settings: settings).count, 1)
+        settings.windowLayout = settings.windowLayout.replacingPrimaryShortcut(
+            for: .maximize, with: HotKeyBinding(key: "8", modifiers: ["Option"])
+        )
+
+        XCTAssertTrue(service.configure(settings: settings).isEmpty)
+        XCTAssertNotNil(registrar.handler(for: "Option+8"))
+        XCTAssertNil(registrar.handler(for: "Option+1"))
+    }
+
+    func testUnchangedPartialConfigurationUpdatesHandlerWithoutReregistering() {
+        let registrar = FakeHotKeyRegistrar()
+        registrar.failingDisplayValue = "Option+1"
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        XCTAssertEqual(service.configure(settings: settings).count, 1)
+        settings.windowLayout.enabledModes.removeAll { $0 == .maximize }
+        var invoked: [HotKeyTarget] = []
+
+        XCTAssertTrue(service.configure(settings: settings) { invoked.append($0) }.isEmpty)
+        registrar.handler(for: "Option+2")?()
+
+        XCTAssertEqual(registrar.unregisterAllCallCount, 1)
+        XCTAssertEqual(invoked, [.translation])
+    }
+
+    func testNewFailureStillRollsBackAfterLegacyFailure() {
+        let registrar = FakeHotKeyRegistrar()
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        settings.clipboardShortcut = HotKeyBinding(key: "F20", modifiers: ["Option"])
+        var invoked: [HotKeyTarget] = []
+        service.configure(settings: settings) { invoked.append($0) }
+        let original = registrar.registeredHotKeys
+        settings.windowLayout = settings.windowLayout.replacingPrimaryShortcut(
+            for: .maximize, with: HotKeyBinding(key: "8", modifiers: ["Option"])
+        )
+        registrar.failingDisplayValue = "Option+8"
+
+        let failures = service.configure(settings: settings) { _ in XCTFail("Rejected handler was installed") }
+        registrar.handler(for: "Option+2")?()
+
+        XCTAssertEqual(failures.map(\.hotKey.displayValue), ["Option+8"])
+        XCTAssertEqual(registrar.registeredHotKeys, original)
+        XCTAssertEqual(invoked, [.translation])
+    }
+
+    func testUnavailableShortcutReassignedToAnotherTargetMustRegisterSuccessfully() {
+        let registrar = FakeHotKeyRegistrar()
+        registrar.failingDisplayValue = "Control+Command+0"
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        XCTAssertEqual(service.configure(settings: settings).count, 1)
+        let original = registrar.registeredHotKeys
+        settings.windowLayout = settings.windowLayout.replacingPrimaryShortcut(for: .maximize, with: nil)
+            .replacingPrimaryShortcut(for: .leftHalf, with: HotKeyBinding(key: "0", modifiers: ["Control", "Command"]))
+
+        XCTAssertEqual(service.configure(settings: settings).map(\.hotKey.displayValue), ["Control+Command+0"])
+        XCTAssertEqual(registrar.registeredHotKeys, original)
+    }
+
+    func testRecoveredLegacyShortcutFailureStillBlocksLaterChanges() {
+        let registrar = FakeHotKeyRegistrar()
+        registrar.failingDisplayValue = "Option+1"
+        let service = HotKeyService(registrar: registrar)
+        var settings = AppSettings.defaults
+        XCTAssertEqual(service.configure(settings: settings).count, 1)
+        registrar.failingDisplayValue = nil
+        settings.windowLayout = settings.windowLayout.replacingPrimaryShortcut(
+            for: .maximize, with: HotKeyBinding(key: "8", modifiers: ["Option"])
+        )
+        XCTAssertTrue(service.configure(settings: settings).isEmpty)
+        XCTAssertNotNil(registrar.handler(for: "Option+1"))
+        settings.windowLayout = settings.windowLayout.replacingPrimaryShortcut(
+            for: .maximize, with: HotKeyBinding(key: "9", modifiers: ["Option"])
+        )
+        registrar.failingDisplayValue = "Option+1"
+
+        let failures = service.configure(settings: settings)
+
+        XCTAssertTrue(failures.contains { $0.hotKey.displayValue == "Option+1" })
+        XCTAssertNotNil(registrar.handler(for: "Option+8"))
+        XCTAssertNil(registrar.handler(for: "Option+9"))
+    }
+
     func testUnsupportedLegacyShortcutDoesNotDisableOtherToolsAtStartup() {
         let registrar = FakeHotKeyRegistrar()
         let service = HotKeyService(registrar: registrar)
@@ -228,9 +401,11 @@ private final class FakeHotKeyRegistrar: HotKeyRegistrar {
     private(set) var unregisterAllCallCount = 0
     private var handlers: [String: () -> Void] = [:]
     var failingDisplayValue: String?
+    var failuresByRegistrationPass: [Int: Set<String>] = [:]
 
     func register(_ hotKey: HotKey, handler: @escaping () -> Void) throws {
-        if hotKey.displayValue == failingDisplayValue {
+        if hotKey.displayValue == failingDisplayValue
+            || failuresByRegistrationPass[unregisterAllCallCount]?.contains(hotKey.displayValue) == true {
             throw HotKeyRegistrationError.registrationFailed(-9878)
         }
         registeredHotKeys.append(hotKey)

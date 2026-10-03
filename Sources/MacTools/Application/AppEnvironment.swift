@@ -204,7 +204,7 @@ final class AppEnvironment {
         logger: logger
     )
     var onSettingsChanged: (AppSettings) -> Void = { _ in }
-    var onValidateHotKeys: (AppSettings) throws -> Void = { _ in }
+    var onValidateHotKeys: (AppSettings) throws -> () -> Void = { _ in {} }
     /// 创建 `AppEnvironment`，保存传入依赖并建立初始状态。
     init() {
         let storeConfiguration = AppEnvironmentStoreConfiguration.make(
@@ -508,7 +508,6 @@ final class AppEnvironment {
 
         try Self.persistSettings(
             updated,
-            restoring: settings,
             validateHotKeys: onValidateHotKeys,
             persist: { try self.preferenceRepository.save($0) }
         )

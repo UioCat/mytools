@@ -72,6 +72,37 @@ private final class InactivePasteTarget: NSRunningApplication, @unchecked Sendab
 }
 
 extension ApplicationWorkerRegressionTests {
+    func testRetryDuringLastFailedWriteIsNotConsumedByThatFailure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let logger = Logger(debugLogDirectory: directory)
+        defer { logger.flush(); try? FileManager.default.removeItem(at: directory) }
+        let lastWriteEntered = expectation(description: "last automatic write is blocked")
+        let recovered = expectation(description: "accepted snapshots drained after user retry")
+        let state = RetryDuringFailureState(onBlockedWrite: { lastWriteEntered.fulfill() })
+        defer { state.releaseFailedWrite() }
+        let worker = ClipboardPollingWorker(service: ClipboardService(
+            pasteboard: WorkerRegressionPasteboard(), classifier: ClipboardClassifier(), settings: .defaults,
+            persist: { item, _, _ in try state.persist(item.text ?? "") }
+        ), logger: logger, maximumAttempts: 2, retryDelay: { _ in })
+        XCTAssertTrue(worker.enqueue(snapshot("first", index: 1)))
+        XCTAssertTrue(worker.enqueue(snapshot("second", index: 2)))
+        await worker.start { snapshot in
+            if snapshot.changeCount == 2 { recovered.fulfill() }
+        }
+        await fulfillment(of: [lastWriteEntered], timeout: 2)
+        XCTAssertTrue(worker.status.storagePaused)
+
+        worker.retryPending()
+        state.releaseFailedWrite()
+
+        await fulfillment(of: [recovered], timeout: 2)
+        await worker.stop()
+        XCTAssertEqual(state.values, ["first", "second"])
+        XCTAssertEqual(state.attempts, 4)
+        XCTAssertEqual(worker.status.count, 0)
+        XCTAssertFalse(worker.status.storagePaused)
+    }
+
     func testInFlightSnapshotStillConsumesByteBudget() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let logger = Logger(debugLogDirectory: directory)
@@ -234,6 +265,29 @@ private final class PersistenceState: @unchecked Sendable {
             guard allowed else { throw NSError(domain: "SyntheticWriteFailure", code: 1) }
             records.append(value)
         }
+    }
+}
+
+private final class RetryDuringFailureState: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failedWriteRelease = DispatchSemaphore(value: 0)
+    private let onBlockedWrite: @Sendable () -> Void
+    private var attemptCount = 0
+    private var records: [String] = []
+
+    init(onBlockedWrite: @escaping @Sendable () -> Void) { self.onBlockedWrite = onBlockedWrite }
+    var attempts: Int { lock.withLock { attemptCount } }
+    var values: [String] { lock.withLock { records } }
+    func releaseFailedWrite() { failedWriteRelease.signal() }
+
+    func persist(_ value: String) throws {
+        let attempt = lock.withLock { attemptCount += 1; return attemptCount }
+        if attempt == 2 {
+            onBlockedWrite()
+            _ = failedWriteRelease.wait(timeout: .now() + 3)
+        }
+        guard attempt > 2 else { throw NSError(domain: "SyntheticWriteFailure", code: 1) }
+        lock.withLock { records.append(value) }
     }
 }
 

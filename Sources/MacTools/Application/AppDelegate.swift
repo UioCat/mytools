@@ -43,11 +43,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = ApplicationMenu.makeMainMenu()
         menuBarController.install()
         environment.onValidateHotKeys = { [weak self] settings in
-            guard let self else { return }
-            let failures = hotKeyService.configure(settings: settings) { [weak self] target in
+            guard let self else { return {} }
+            let restore = try hotKeyService.configureForSave(settings: settings) { [weak self] target in
                 self?.handleHotKey(target)
             }
-            if let failure = failures.first { throw failure }
+            return { [weak self] in
+                for failure in restore() {
+                    self?.environment.logger.error("hotkey rollback failed: \(failure.hotKey.displayValue)")
+                }
+            }
         }
         environment.onSettingsChanged = { [weak self] settings in
             self?.configureHotKeys(settings: settings)

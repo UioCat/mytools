@@ -9,18 +9,17 @@ enum AppEnvironmentError: Error {
 }
 
 extension AppEnvironment {
-    /// 在持久化前验证运行时快捷键，保存失败时恢复原注册。
+    /// 在持久化前验证运行时快捷键，保存失败时执行注册事务的撤销动作。
     static func persistSettings(
         _ updated: AppSettings,
-        restoring previous: AppSettings,
-        validateHotKeys: (AppSettings) throws -> Void,
+        validateHotKeys: (AppSettings) throws -> () -> Void,
         persist: (AppSettings) throws -> Void
     ) throws {
-        try validateHotKeys(updated)
+        let restoreHotKeys = try validateHotKeys(updated)
         do {
             try persist(updated)
         } catch {
-            try? validateHotKeys(previous)
+            restoreHotKeys()
             throw error
         }
     }
